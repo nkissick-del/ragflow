@@ -386,17 +386,22 @@ class FileService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_folder_size(cls, folder_id):
-        size = 0
+        lhs = (
+            cls.model.select(cls.model.id, cls.model.size, cls.model.type)
+            .where(cls.model.parent_id == folder_id, cls.model.id != folder_id)
+            .cte("file_tree", recursive=True)
+        )
 
-        def dfs(parent_id):
-            nonlocal size
-            for f in cls.model.select(*[cls.model.id, cls.model.size, cls.model.type]).where(cls.model.parent_id == parent_id, cls.model.id != parent_id):
-                size += f.size
-                if f.type == FileType.FOLDER.value:
-                    dfs(f.id)
+        rhs = (
+            cls.model.select(cls.model.id, cls.model.size, cls.model.type)
+            .join(lhs, on=(cls.model.parent_id == lhs.c.id))
+            .where(cls.model.id != cls.model.parent_id, lhs.c.type == FileType.FOLDER.value)
+        )
 
-        dfs(folder_id)
-        return size
+        cte = lhs.union_all(rhs)
+
+        result = cls.model.select(fn.SUM(cte.c.size)).from_(cte).with_cte(cte).scalar()
+        return result or 0
 
     @classmethod
     @DB.connection_context()

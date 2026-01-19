@@ -208,17 +208,28 @@ export function TagTable() {
             className="w-1/2"
           />
           {selectedRowLength > 0 && (
-            <ConfirmDeleteDialog
-              onOk={handleDeleteTag(
-                table
-                  .getFilteredSelectedRowModel()
-                  .rows.map((x) => x.original.tag),
-              )}
-            >
-              <Button variant="outline" size="icon">
-                <Trash2 />
-              </Button>
-            </ConfirmDeleteDialog>
+            <Tooltip>
+              <ConfirmDeleteDialog
+                onOk={handleDeleteTag(
+                  table
+                    .getFilteredSelectedRowModel()
+                    .rows.map((x) => x.original.tag),
+                )}
+              >
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    aria-label={t('common.delete')}
+                  >
+                    <Trash2 />
+                  </Button>
+                </TooltipTrigger>
+              </ConfirmDeleteDialog>
+              <TooltipContent>
+                <p>{t('common.delete')}</p>
+              </TooltipContent>
+            </Tooltip>
           )}
         </div>
         <Table rootClassName="rounded-none border max-h-80 overflow-y-auto">

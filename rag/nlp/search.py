@@ -544,8 +544,7 @@ class Dealer:
                 doc["id"] = id
             if dict_chunks:
                 res.extend(dict_chunks.values())
-            # Only terminate if there are no hits in the search result,
-            # not if the chunks are empty (which could happen due to field filtering).
+            # Terminate if no hits are returned. Empty chunks (due to filtering) should not stop the loop.
             if len(self.dataStore.get_doc_ids(es_res)) == 0:
                 break
         return res

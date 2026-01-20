@@ -6,6 +6,7 @@ import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { IKnowledge } from '@/interfaces/database/knowledge';
 import { t } from 'i18next';
 import { ChevronRight } from 'lucide-react';
+import { memo } from 'react';
 import { DatasetDropdown } from './dataset-dropdown';
 import { useRenameDataset } from './use-rename-dataset';
 
@@ -13,31 +14,33 @@ export type DatasetCardProps = {
   dataset: IKnowledge;
 } & Pick<ReturnType<typeof useRenameDataset>, 'showDatasetRenameModal'>;
 
-export function DatasetCard({
-  dataset,
-  showDatasetRenameModal,
-}: DatasetCardProps) {
-  const { navigateToDataset } = useNavigatePage();
+// Memoized to prevent unnecessary re-renders when parent state (e.g. modal visibility) changes.
+export const DatasetCard = memo(
+  ({ dataset, showDatasetRenameModal }: DatasetCardProps) => {
+    const { navigateToDataset } = useNavigatePage();
 
-  return (
-    <HomeCard
-      data={{
-        ...dataset,
-        description: `${dataset.doc_num} ${t('knowledgeDetails.files')}`,
-      }}
-      moreDropdown={
-        <DatasetDropdown
-          showDatasetRenameModal={showDatasetRenameModal}
-          dataset={dataset}
-        >
-          <MoreButton></MoreButton>
-        </DatasetDropdown>
-      }
-      sharedBadge={<SharedBadge>{dataset.nickname}</SharedBadge>}
-      onClick={navigateToDataset(dataset.id)}
-    />
-  );
-}
+    return (
+      <HomeCard
+        data={{
+          ...dataset,
+          description: `${dataset.doc_num} ${t('knowledgeDetails.files')}`,
+        }}
+        moreDropdown={
+          <DatasetDropdown
+            showDatasetRenameModal={showDatasetRenameModal}
+            dataset={dataset}
+          >
+            <MoreButton></MoreButton>
+          </DatasetDropdown>
+        }
+        sharedBadge={<SharedBadge>{dataset.nickname}</SharedBadge>}
+        onClick={navigateToDataset(dataset.id)}
+      />
+    );
+  },
+);
+
+DatasetCard.displayName = 'DatasetCard';
 
 export function SeeAllCard() {
   const { navigateToDatasetList } = useNavigatePage();

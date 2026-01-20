@@ -5,6 +5,11 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from '@/components/ui/hover-card';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { DocumentType } from '@/constants/knowledge';
 import { useRemoveDocument } from '@/hooks/use-document-request';
 import { IDocumentInfo } from '@/interfaces/database/document';
@@ -13,6 +18,7 @@ import { formatDate } from '@/utils/date';
 import { downloadDocument } from '@/utils/file-util';
 import { Download, Eye, PenLine, Trash2 } from 'lucide-react';
 import { useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { UseRenameDocumentShowType } from './use-rename-document';
 import { isParserRunning } from './utils';
 
@@ -31,6 +37,7 @@ export function DatasetActionCell({
   const { id, run, type } = record;
   const isRunning = isParserRunning(run);
   const isVirtualDocument = type === DocumentType.Virtual;
+  const { t } = useTranslation();
 
   const { removeDocument } = useRemoveDocument();
 
@@ -51,15 +58,21 @@ export function DatasetActionCell({
 
   return (
     <section className="flex gap-4 items-center text-text-sub-title-invert opacity-0 group-hover:opacity-100 transition-opacity">
-      <Button
-        variant="transparent"
-        className="border-none hover:bg-bg-card text-text-primary"
-        size={'sm'}
-        disabled={isRunning}
-        onClick={handleRename}
-      >
-        <PenLine />
-      </Button>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="transparent"
+            className="border-none hover:bg-bg-card text-text-primary"
+            size={'sm'}
+            disabled={isRunning}
+            onClick={handleRename}
+            aria-label={t('common.rename')}
+          >
+            <PenLine />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>{t('common.rename')}</TooltipContent>
+      </Tooltip>
       <HoverCard>
         <HoverCardTrigger>
           <Button
@@ -67,6 +80,7 @@ export function DatasetActionCell({
             className="border-none hover:bg-bg-card text-text-primary"
             disabled={isRunning}
             size={'sm'}
+            aria-label={t('knowledgeDetails.view')}
           >
             <Eye />
           </Button>
@@ -93,26 +107,38 @@ export function DatasetActionCell({
       </HoverCard>
 
       {isVirtualDocument || (
-        <Button
-          variant="transparent"
-          className="border-none hover:bg-bg-card text-text-primary"
-          onClick={onDownloadDocument}
-          disabled={isRunning}
-          size={'sm'}
-        >
-          <Download />
-        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="transparent"
+              className="border-none hover:bg-bg-card text-text-primary"
+              onClick={onDownloadDocument}
+              disabled={isRunning}
+              size={'sm'}
+              aria-label={t('common.download')}
+            >
+              <Download />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{t('common.download')}</TooltipContent>
+        </Tooltip>
       )}
-      <ConfirmDeleteDialog onOk={handleRemove}>
-        <Button
-          variant="transparent"
-          className="border-none hover:bg-bg-card text-text-primary"
-          size={'sm'}
-          disabled={isRunning}
-        >
-          <Trash2 />
-        </Button>
-      </ConfirmDeleteDialog>
+      <Tooltip>
+        <ConfirmDeleteDialog onOk={handleRemove}>
+          <TooltipTrigger asChild>
+            <Button
+              variant="transparent"
+              className="border-none hover:bg-bg-card text-text-primary"
+              size={'sm'}
+              disabled={isRunning}
+              aria-label={t('common.delete')}
+            >
+              <Trash2 />
+            </Button>
+          </TooltipTrigger>
+        </ConfirmDeleteDialog>
+        <TooltipContent>{t('common.delete')}</TooltipContent>
+      </Tooltip>
     </section>
   );
 }

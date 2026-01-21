@@ -50,6 +50,7 @@ export function BulkOperateBar({
                 hidden={!isDeleteItem(x.id)}
                 onOk={x.onClick}
                 title={t('deleteModal.delFiles')}
+                tooltip={t('deleteModal.delFiles')}
                 content={{
                   title: t('common.deleteThem'),
                   node: (

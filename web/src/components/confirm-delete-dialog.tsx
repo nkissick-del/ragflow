@@ -9,6 +9,12 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { AlertDialogOverlay } from '@radix-ui/react-alert-dialog';
 import { DialogProps } from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
@@ -27,6 +33,7 @@ interface IProps {
   };
   okButtonText?: string;
   cancelButtonText?: string;
+  tooltip?: string;
 }
 
 export function ConfirmDeleteDialog({
@@ -41,6 +48,7 @@ export function ConfirmDeleteDialog({
   content,
   okButtonText,
   cancelButtonText,
+  tooltip,
 }: IProps & DialogProps) {
   const { t } = useTranslation();
 
@@ -48,13 +56,32 @@ export function ConfirmDeleteDialog({
     return children || <></>;
   }
 
+  const renderTrigger = () => {
+    if (!children) return null;
+
+    if (tooltip) {
+      return (
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <AlertDialogTrigger asChild>{children}</AlertDialogTrigger>
+            </TooltipTrigger>
+            <TooltipContent>{tooltip}</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      );
+    }
+
+    return <AlertDialogTrigger asChild>{children}</AlertDialogTrigger>;
+  };
+
   return (
     <AlertDialog
       onOpenChange={onOpenChange}
       open={open}
       defaultOpen={defaultOpen}
     >
-      {children && <AlertDialogTrigger asChild>{children}</AlertDialogTrigger>}
+      {renderTrigger()}
       <AlertDialogOverlay
         onClick={(e) => {
           e.stopPropagation();

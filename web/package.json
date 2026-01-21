@@ -151,7 +151,6 @@
     "@types/react-copy-to-clipboard": "^5.0.7",
     "@types/react-dom": "^18.0.11",
     "@types/react-syntax-highlighter": "^15.5.11",
-    "@types/testing-library__jest-dom": "^6.0.0",
     "@types/uuid": "^9.0.8",
     "@types/webpack-env": "^1.18.4",
     "@typescript-eslint/eslint-plugin": "^8.52.0",

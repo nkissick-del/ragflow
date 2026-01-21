@@ -51,8 +51,8 @@ function TavilyForm({ node }: INextOperatorForm) {
     include_raw_content: z.boolean(),
     include_images: z.boolean(),
     include_image_descriptions: z.boolean(),
-    include_domains: z.array(z.object({ value: z.any() })), // TODO: z.string should be used, but an error will be reported
-    exclude_domains: z.array(z.object({ value: z.any() })),
+    include_domains: z.array(z.object({ value: z.string() })),
+    exclude_domains: z.array(z.object({ value: z.string() })),
   });
 
   const form = useForm<z.infer<typeof FormSchema>>({

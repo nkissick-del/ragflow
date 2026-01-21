@@ -88,6 +88,7 @@ class RAGFlowPdfParser:
         try:
             pip_install_torch()
             import torch.cuda
+
             if torch.cuda.is_available():
                 self.updown_cnt_mdl.set_param({"device": "cuda"})
         except Exception:
@@ -408,10 +409,8 @@ class RAGFlowPdfParser:
             page_cols[pg] = best_k
             logging.info(f"[Page {pg}] best_score={best_score:.2f}, best_k={best_k}")
 
-
         global_cols = Counter(page_cols.values()).most_common(1)[0][0]
         logging.info(f"Global column_num decided by majority: {global_cols}")
-
 
         for pg, bxs in by_page.items():
             if not bxs:
@@ -1480,7 +1479,7 @@ class VisionParser(RAGFlowPdfParser):
             if pdf_page_num < start_page or pdf_page_num >= end_page:
                 continue
 
-            from rag.app.picture import vision_llm_chunk as picture_vision_llm_chunk
+            from rag.app.templates.picture import vision_llm_chunk as picture_vision_llm_chunk
 
             text = picture_vision_llm_chunk(
                 binary=img_binary,
@@ -1494,10 +1493,7 @@ class VisionParser(RAGFlowPdfParser):
 
             if text:
                 width, height = self.page_images[idx].size
-                all_docs.append((
-                    text,
-                    f"@@{pdf_page_num + 1}\t{0.0:.1f}\t{width / zoomin:.1f}\t{0.0:.1f}\t{height / zoomin:.1f}##"
-                ))
+                all_docs.append((text, f"@@{pdf_page_num + 1}\t{0.0:.1f}\t{width / zoomin:.1f}\t{0.0:.1f}\t{height / zoomin:.1f}##"))
         return all_docs, []
 
 

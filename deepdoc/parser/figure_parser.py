@@ -21,9 +21,10 @@ from PIL import Image
 from common.constants import LLMType
 from api.db.services.llm_service import LLMBundle
 from common.connection_utils import timeout
-from rag.app.picture import vision_llm_chunk as picture_vision_llm_chunk
+from rag.app.templates.picture import vision_llm_chunk as picture_vision_llm_chunk
 from rag.prompts.generator import vision_llm_figure_describe_prompt, vision_llm_figure_describe_prompt_with_context
 from rag.nlp import append_context2table_image4pdf
+
 
 # need to delete before pr
 def vision_figure_parser_figure_data_wrapper(figures_data_without_positions):
@@ -38,7 +39,8 @@ def vision_figure_parser_figure_data_wrapper(figures_data_without_positions):
         if isinstance(figure_data[1], Image.Image)
     ]
 
-def vision_figure_parser_docx_wrapper(sections, tbls, callback=None,**kwargs):
+
+def vision_figure_parser_docx_wrapper(sections, tbls, callback=None, **kwargs):
     if not sections:
         return tbls
     try:
@@ -56,7 +58,8 @@ def vision_figure_parser_docx_wrapper(sections, tbls, callback=None,**kwargs):
             callback(0.8, f"Visual model error: {e}. Skipping figure parsing enhancement.")
     return tbls
 
-def vision_figure_parser_figure_xlsx_wrapper(images,callback=None, **kwargs):
+
+def vision_figure_parser_figure_xlsx_wrapper(images, callback=None, **kwargs):
     tbls = []
     if not images:
         return []
@@ -66,13 +69,18 @@ def vision_figure_parser_figure_xlsx_wrapper(images,callback=None, **kwargs):
     except Exception:
         vision_model = None
     if vision_model:
-        figures_data = [((
-                        img["image"],   # Image.Image
-                        [img["image_description"]]     # description list (must be list)
-                    ),
-                    [
-                        (0, 0, 0, 0, 0)   # dummy position
-                    ]) for img in images]
+        figures_data = [
+            (
+                (
+                    img["image"],  # Image.Image
+                    [img["image_description"]],  # description list (must be list)
+                ),
+                [
+                    (0, 0, 0, 0, 0)  # dummy position
+                ],
+            )
+            for img in images
+        ]
         try:
             parser = VisionFigureParser(vision_model=vision_model, figures_data=figures_data, **kwargs)
             callback(0.22, "Parsing images...")
@@ -81,6 +89,7 @@ def vision_figure_parser_figure_xlsx_wrapper(images,callback=None, **kwargs):
         except Exception as e:
             callback(0.25, f"Excel visual model error: {e}. Skipping vision enhancement.")
     return tbls
+
 
 def vision_figure_parser_pdf_wrapper(tbls, callback=None, **kwargs):
     if not tbls:
@@ -132,6 +141,7 @@ def vision_figure_parser_docx_wrapper_naive(chunks, idx_lst, callback=None, **kw
     except Exception:
         vision_model = None
     if vision_model:
+
         @timeout(30, 3)
         def worker(idx, ck):
             context_above = ck.get("context_above", "")
@@ -158,16 +168,15 @@ def vision_figure_parser_docx_wrapper_naive(chunks, idx_lst, callback=None, **kw
             return idx, description_text
 
         with ThreadPoolExecutor(max_workers=10) as executor:
-            futures = [
-                executor.submit(worker, idx, chunks[idx])
-                for idx in idx_lst
-            ]
+            futures = [executor.submit(worker, idx, chunks[idx]) for idx in idx_lst]
 
             for future in as_completed(futures):
                 idx, description = future.result()
-                chunks[idx]['text'] += description
-    
-shared_executor = ThreadPoolExecutor(max_workers=10)    
+                chunks[idx]["text"] += description
+
+
+shared_executor = ThreadPoolExecutor(max_workers=10)
+
 
 class VisionFigureParser:
     def __init__(self, vision_model, figures_data, *args, **kwargs):
@@ -227,7 +236,9 @@ class VisionFigureParser:
                     context_above=context_above,
                     context_below=context_below,
                 )
-                logging.info(f"[VisionFigureParser] figure={figure_idx} context_size={self.context_size} context_above_len={len(context_above)} context_below_len={len(context_below)} prompt=with_context")
+                logging.info(
+                    f"[VisionFigureParser] figure={figure_idx} context_size={self.context_size} context_above_len={len(context_above)} context_below_len={len(context_below)} prompt=with_context"
+                )
                 logging.info(f"[VisionFigureParser] figure={figure_idx} context_above_snippet={context_above[:512]}")
                 logging.info(f"[VisionFigureParser] figure={figure_idx} context_below_snippet={context_below[:512]}")
             else:

@@ -70,7 +70,10 @@ from api.db.services.task_service import TaskService, has_canceled, CANVAS_DEBUG
 from api.db.services.file2document_service import File2DocumentService
 from common.versions import get_ragflow_version
 from api.db.db_models import close_connection
-from rag.app import laws, paper, presentation, manual, qa, table, book, resume, picture, naive, one, audio, email, tag
+from rag.app import orchestrator, tag
+
+from rag.app.templates import laws, paper, presentation, manual, q_and_a as qa, table, book, resume, picture, single_chunk, audio, email
+
 from rag.nlp import search, rag_tokenizer, add_positions
 from rag.raptor import RecursiveAbstractiveProcessing4TreeOrganizedRetrieval as Raptor
 from common.token_utils import num_tokens_from_string, truncate
@@ -84,8 +87,8 @@ from common.constants import PAGERANK_FLD, TAG_FLD, SVR_CONSUMER_GROUP_NAME
 BATCH_SIZE = 64
 
 FACTORY = {
-    "general": naive,
-    ParserType.NAIVE.value: naive,
+    "general": orchestrator,
+    ParserType.NAIVE.value: orchestrator,
     ParserType.PAPER.value: paper,
     ParserType.BOOK.value: book,
     ParserType.PRESENTATION.value: presentation,
@@ -95,10 +98,10 @@ FACTORY = {
     ParserType.TABLE.value: table,
     ParserType.RESUME.value: resume,
     ParserType.PICTURE.value: picture,
-    ParserType.ONE.value: one,
+    ParserType.ONE.value: single_chunk,
     ParserType.AUDIO.value: audio,
     ParserType.EMAIL.value: email,
-    ParserType.KG.value: naive,
+    ParserType.KG.value: orchestrator,
     ParserType.TAG.value: tag,
 }
 

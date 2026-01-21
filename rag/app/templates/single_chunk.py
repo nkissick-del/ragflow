@@ -19,11 +19,10 @@ from io import BytesIO
 import re
 
 from deepdoc.parser.utils import get_text
-from rag.app import naive
 from rag.nlp import rag_tokenizer, tokenize
 from deepdoc.parser import PdfParser, ExcelParser, HtmlParser
 from deepdoc.parser.figure_parser import vision_figure_parser_docx_wrapper_naive
-from rag.app.naive import by_plaintext, PARSERS
+from rag.app.format_parsers import by_plaintext, PARSERS, Docx
 from common.parser_config_utils import normalize_layout_recognizer
 
 
@@ -65,7 +64,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
 
     if re.search(r"\.docx$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
-        sections = naive.Docx()(filename, binary)
+        sections = Docx()(filename, binary)
         cks = []
         image_idxs = []
 

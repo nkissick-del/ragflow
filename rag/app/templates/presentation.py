@@ -23,10 +23,9 @@ from PIL import Image
 from PyPDF2 import PdfReader as pdf2_read
 
 from deepdoc.parser import PdfParser, PptParser, PlainParser
-from rag.app.naive import by_plaintext, PARSERS
+from rag.app.format_parsers import by_plaintext, PARSERS
 from common.parser_config_utils import normalize_layout_recognizer
-from rag.nlp import rag_tokenizer
-from rag.nlp import tokenize, is_english
+from rag.nlp import rag_tokenizer, tokenize, is_english
 
 
 class Ppt(PptParser):

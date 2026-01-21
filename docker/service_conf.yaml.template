@@ -153,3 +153,5 @@ postgres:
 #   secret_id: '${TENCENT_SECRET_ID}'
 #   secret_key: '${TENCENT_SECRET_KEY}'
 #   region: '${TENCENT_REGION}'
+docling:
+  base_url: '${DOCLING_BASE_URL:-http://localhost:5001}'

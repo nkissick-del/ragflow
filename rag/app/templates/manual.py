@@ -20,13 +20,13 @@ import re
 
 from common.constants import ParserType
 from io import BytesIO
+from rag.app import orchestrator
 from rag.nlp import rag_tokenizer, tokenize, tokenize_table, bullets_category, title_frequency, tokenize_chunks, docx_question_level, attach_media_context
 from common.token_utils import num_tokens_from_string
 from deepdoc.parser import PdfParser, DocxParser
 from deepdoc.parser.figure_parser import vision_figure_parser_pdf_wrapper, vision_figure_parser_docx_wrapper
 from docx import Document
 from PIL import Image
-from rag.app.naive import by_plaintext, PARSERS
 from common.parser_config_utils import normalize_layout_recognizer
 
 
@@ -191,7 +191,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
             layout_recognizer = "DeepDOC" if layout_recognizer else "Plain Text"
 
         name = layout_recognizer.strip().lower()
-        pdf_parser = PARSERS.get(name, by_plaintext)
+        pdf_parser = orchestrator.get_parser(name)
         callback(0.1, "Start to parse.")
 
         kwargs.pop("parse_method", None)
@@ -308,7 +308,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         return res
 
     elif re.search(r"\.docx?$", filename, re.IGNORECASE):
-        docx_parser = Docx()
+        docx_parser = orchestrator.Docx()
         ti_list, tbls = docx_parser(filename, binary, from_page=0, to_page=10000, callback=callback)
         tbls = vision_figure_parser_docx_wrapper(sections=ti_list, tbls=tbls, callback=callback, **kwargs)
         res = tokenize_table(tbls, doc, eng)

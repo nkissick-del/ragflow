@@ -19,8 +19,8 @@ import re
 from io import BytesIO
 
 from deepdoc.parser.utils import get_text
-from rag.app import naive
-from rag.app.naive import by_plaintext, PARSERS
+from rag.app import orchestrator
+from rag.app.format_parsers import by_plaintext, PARSERS
 from common.parser_config_utils import normalize_layout_recognizer
 from rag.nlp import bullets_category, is_english, remove_contents_table, hierarchical_merge, make_colon_as_title, naive_merge, random_choices, tokenize_table, tokenize_chunks, attach_media_context
 from rag.nlp import rag_tokenizer
@@ -71,7 +71,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
     sections, tbls = [], []
     if re.search(r"\.docx$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
-        doc_parser = naive.Docx()
+        doc_parser = orchestrator.Docx()
         # TODO: table of contents need to be removed
         main_sections = doc_parser(filename, binary=binary, from_page=from_page, to_page=to_page)
 

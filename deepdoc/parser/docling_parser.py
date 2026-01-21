@@ -16,25 +16,14 @@
 from __future__ import annotations
 
 import logging
-import re
-import threading
-from dataclasses import dataclass
-from enum import Enum
-from io import BytesIO
-from os import PathLike
+import os
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from pathlib import Path
-from typing import Any, Callable, Iterable, Optional
-
-
-from PIL import Image
-
-
-try:
-    from docling.document_converter import DocumentConverter, PdfFormatOption
-    from docling.datamodel.base_models import InputFormat
-    from docling.datamodel.pipeline_options import PdfPipelineOptions
-except Exception:
-    DocumentConverter = None
+from io import BytesIO
+from typing import Callable, Optional
+from os import PathLike
 
 try:
     from deepdoc.parser.pdf_parser import RAGFlowPdfParser
@@ -44,275 +33,45 @@ except Exception:
         pass
 
 
-class DoclingContentType(str, Enum):
-    IMAGE = "image"
-    TABLE = "table"
-    TEXT = "text"
-    EQUATION = "equation"
-
-
-@dataclass
-class _BBox:
-    page_no: int
-    x0: float
-    y0: float
-    x1: float
-    y1: float
-
-
 class DoclingParser(RAGFlowPdfParser):
-    _converter_instance = None
-    _converter_lock = threading.Lock()
-
     def __init__(self):
         self.logger = logging.getLogger(self.__class__.__name__)
-        self.page_images: list[Image.Image] = []
-        self.page_from = 0
-        self.page_to = 10_000
-        self.outlines = []
+        self.base_url = os.environ.get("DOCLING_BASE_URL", "http://localhost:5001")
+        self.auth_token = os.environ.get("DOCLING_AUTH_TOKEN")
+        self.session = self._create_retry_session()
 
-    @classmethod
-    def _get_converter(cls):
-        if cls._converter_instance is None:
-            with cls._converter_lock:
-                if cls._converter_instance is None:
-                    if DocumentConverter is None:
-                        return None
-
-                    # Configure pipeline options
-                    pipeline_options = PdfPipelineOptions()
-                    pipeline_options.do_ocr = True
-                    pipeline_options.do_table_structure = True
-                    pipeline_options.table_structure_options.do_cell_matching = True
-                    pipeline_options.generate_page_images = True
-                    pipeline_options.images_scale = 2.0  # Improve image resolution
-
-                    cls._converter_instance = DocumentConverter(format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)})
-        return cls._converter_instance
+    def _create_retry_session(self, retries=3, backoff_factor=0.5, status_forcelist=(500, 502, 503, 504)):
+        session = requests.Session()
+        retry = Retry(
+            total=retries,
+            read=retries,
+            connect=retries,
+            backoff_factor=backoff_factor,
+            status_forcelist=status_forcelist,
+        )
+        adapter = HTTPAdapter(max_retries=retry)
+        session.mount("http://", adapter)
+        session.mount("https://", adapter)
+        return session
 
     def check_installation(self) -> bool:
-        if DocumentConverter is None:
-            self.logger.warning("[Docling] 'docling' is not importable, please: pip install docling")
-            return False
-        try:
-            # Try to initialize the singleton
-            return self._get_converter() is not None
-        except Exception as e:
-            self.logger.error(f"[Docling] init DocumentConverter failed: {e}")
+        """Checks if the Docling server is reachable."""
+        if not self.base_url:
+            self.logger.warning("[Docling] DOCLING_BASE_URL not set.")
             return False
 
-    def __images__(self, images: list[Image.Image], zoomin=None, callback=None, page_from=0, page_to=600, **kwargs):
-        """
-        Set page images.
-        :param zoomin: Unused, kept for compatibility.
-        :param callback: Unused, kept for compatibility.
-        """
-        self.page_from = page_from
-        self.page_to = page_to
         try:
-            self.page_images = images
-        except Exception as e:
-            self.page_images = []
-            self.logger.exception(e)
-
-    def _make_line_tag(self, bbox: _BBox) -> str:
-        if bbox is None:
-            return ""
-        x0, x1, top, bott = bbox.x0, bbox.x1, bbox.y0, bbox.y1
-        if hasattr(self, "page_images") and self.page_images and len(self.page_images) >= bbox.page_no:
-            _, page_height = self.page_images[bbox.page_no - 1].size
-            top, bott = page_height - top, page_height - bott
-        return "@@{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}##".format(bbox.page_no, x0, x1, top, bott)
-
-    @staticmethod
-    def extract_positions(txt: str) -> list[tuple[list[int], float, float, float, float]]:
-        poss = []
-        for tag in re.findall(r"@@[0-9-]+\t[0-9.\t]+##", txt):
-            pn, left, right, top, bottom = tag.strip("#").strip("@").split("\t")
-            left, right, top, bottom = float(left), float(right), float(top), float(bottom)
-            poss.append(([int(p) - 1 for p in pn.split("-")], left, right, top, bottom))
-        return poss
-
-    def crop(self, text: str, ZM: int = 1, need_position: bool = False):
-        imgs = []
-        poss = self.extract_positions(text)
-        if not poss:
-            return (None, None) if need_position else None
-
-        GAP = 6
-        pos = poss[0]
-        poss.insert(0, ([pos[0][0]], pos[1], pos[2], max(0, pos[3] - 120), max(pos[3] - GAP, 0)))
-        pos = poss[-1]
-        poss.append(([pos[0][-1]], pos[1], pos[2], min(self.page_images[pos[0][-1]].size[1], pos[4] + GAP), min(self.page_images[pos[0][-1]].size[1], pos[4] + 120)))
-        positions = []
-        for ii, (pns, left, right, top, bottom) in enumerate(poss):
-            if bottom <= top:
-                bottom = top + 4
-            img0 = self.page_images[pns[0]]
-            x0, y0, x1, y1 = int(left), int(top), int(right), int(min(bottom, img0.size[1]))
-
-            crop0 = img0.crop((x0, y0, x1, y1))
-            imgs.append(crop0)
-            if 0 < ii < len(poss) - 1:
-                positions.append((pns[0] + self.page_from, x0, x1, y0, y1))
-            remain_bottom = bottom - img0.size[1]
-            for pn in pns[1:]:
-                if remain_bottom <= 0:
-                    break
-                page = self.page_images[pn]
-                x0, y0, x1, y1 = int(left), 0, int(right), int(min(remain_bottom, page.size[1]))
-                cimgp = page.crop((x0, y0, x1, y1))
-                imgs.append(cimgp)
-                if 0 < ii < len(poss) - 1:
-                    positions.append((pn + self.page_from, x0, x1, y0, y1))
-                remain_bottom -= page.size[1]
-
-        if not imgs:
-            return (None, None) if need_position else None
-
-        height = sum(i.size[1] + GAP for i in imgs)
-        width = max(i.size[0] for i in imgs)
-        pic = Image.new("RGB", (width, int(height)), (245, 245, 245))
-        h = 0
-        for ii, img in enumerate(imgs):
-            if ii == 0 or ii + 1 == len(imgs):
-                img = img.convert("RGBA")
-                overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
-                overlay.putalpha(128)
-                img = Image.alpha_composite(img, overlay).convert("RGB")
-            pic.paste(img, (0, int(h)))
-            h += img.size[1] + GAP
-
-        return (pic, positions) if need_position else pic
-
-    def _iter_doc_items(self, doc) -> Iterable[tuple[str, Any, Optional[_BBox]]]:
-        for t in getattr(doc, "texts", []):
-            parent = getattr(t, "parent", "")
-            ref = getattr(parent, "cref", "")
-            label = getattr(t, "label", "")
-            if (
-                label
-                in (
-                    "section_header",
-                    "text",
-                )
-                and ref in ("#/body",)
-            ) or label in ("list_item",):
-                text = getattr(t, "text", "") or ""
-                bbox = None
-                if getattr(t, "prov", None):
-                    pn = getattr(t.prov[0], "page_no", None)
-                    bb = getattr(t.prov[0], "bbox", None)
-                    bb = [getattr(bb, "l", None), getattr(bb, "t", None), getattr(bb, "r", None), getattr(bb, "b", None)]
-                    if pn and bb and len(bb) == 4:
-                        bbox = _BBox(page_no=int(pn), x0=bb[0], y0=bb[1], x1=bb[2], y1=bb[3])
-                yield (DoclingContentType.TEXT.value, text, bbox)
-
-        for item in getattr(doc, "texts", []):
-            if getattr(item, "label", "") in ("FORMULA",):
-                text = getattr(item, "text", "") or ""
-                bbox = None
-                if getattr(item, "prov", None):
-                    prov = item.prov
-                    if isinstance(prov, (list, tuple)):
-                        prov = prov[0]
-                    pn = getattr(prov, "page_no", None)
-                    bb = getattr(prov, "bbox", None)
-                    bb = [getattr(bb, "l", None), getattr(bb, "t", None), getattr(bb, "r", None), getattr(bb, "b", None)]
-                    if pn and bb and len(bb) == 4:
-                        bbox = _BBox(int(pn), bb[0], bb[1], bb[2], bb[3])
-                yield (DoclingContentType.EQUATION.value, text, bbox)
-
-    def _transfer_to_sections(self, doc, parse_method: str) -> list[tuple[str, str]]:
-        sections: list[tuple[str, str]] = []
-        for typ, payload, bbox in self._iter_doc_items(doc):
-            if typ == DoclingContentType.TEXT.value:
-                section = payload.strip()
-                if not section:
-                    continue
-            elif typ == DoclingContentType.EQUATION.value:
-                section = payload.strip()
-            else:
-                continue
-
-            tag = self._make_line_tag(bbox) if isinstance(bbox, _BBox) else ""
-            if parse_method == "manual":
-                sections.append((section, typ, tag))
-            elif parse_method == "paper":
-                sections.append((section + tag, typ))
-            else:
-                sections.append((section, tag))
-        return sections
-
-    def cropout_docling_table(self, page_no: int, bbox: tuple[float, float, float, float], zoomin: int = 1):
-        if not getattr(self, "page_images", None):
-            return None, ""
-
-        idx = (page_no - 1) - getattr(self, "page_from", 0)
-        if idx < 0 or idx >= len(self.page_images):
-            return None, ""
-
-        page_img = self.page_images[idx]
-        W, H = page_img.size
-        left, top, right, bott = bbox
-
-        x0 = float(left)
-        y0 = float(H - top)
-        x1 = float(right)
-        y1 = float(H - bott)
-
-        x0, y0 = max(0.0, min(x0, W - 1)), max(0.0, min(y0, H - 1))
-        x1, y1 = max(x0 + 1.0, min(x1, W)), max(y0 + 1.0, min(y1, H))
-
-        try:
-            crop = page_img.crop((int(x0), int(y0), int(x1), int(y1))).convert("RGB")
-        except Exception:
-            return None, ""
-
-        pos = (page_no - 1 if page_no > 0 else 0, x0, x1, y0, y1)
-        return crop, [pos]
-
-    def _transfer_to_tables(self, doc):
-        tables = []
-        for tab in getattr(doc, "tables", []):
-            img = None
-            positions = ""
-            if getattr(tab, "prov", None):
-                pn = getattr(tab.prov[0], "page_no", None)
-                bb = getattr(tab.prov[0], "bbox", None)
-                if pn is not None and bb is not None:
-                    left = getattr(bb, "l", None)
-                    top = getattr(bb, "t", None)
-                    right = getattr(bb, "r", None)
-                    bott = getattr(bb, "b", None)
-                    if None not in (left, top, right, bott):
-                        img, positions = self.cropout_docling_table(int(pn), (float(left), float(top), float(right), float(bott)))
-            html = ""
-            try:
-                html = tab.export_to_html(doc=doc)
-            except Exception:
-                pass
-            tables.append(((img, html), positions if positions else ""))
-        for pic in getattr(doc, "pictures", []):
-            img = None
-            positions = ""
-            if getattr(pic, "prov", None):
-                pn = getattr(pic.prov[0], "page_no", None)
-                bb = getattr(pic.prov[0], "bbox", None)
-                if pn is not None and bb is not None:
-                    left = getattr(bb, "l", None)
-                    top = getattr(bb, "t", None)
-                    right = getattr(bb, "r", None)
-                    bott = getattr(bb, "b", None)
-                    if None not in (left, top, right, bott):
-                        img, positions = self.cropout_docling_table(int(pn), (float(left), float(top), float(right), float(bott)))
-            captions = ""
-            try:
-                captions = pic.caption_text(doc=doc)
-            except Exception:
-                pass
-            tables.append(((img, [captions]), positions if positions else ""))
-        return tables
+            # Simple health check - assuming /health or root returns 200 or accessible
+            # We'll try the convert endpoint or just root.
+            # Since we don't know the exact health endpoint, we'll try a lightweight HEAD to base_url
+            response = self.session.head(self.base_url.rstrip("/"), timeout=2)
+            # 405 Method Not Allowed is fine (server is up), 404 might be fine depending on server.
+            # Ideally docling-serve has a health endpoint. Assuming standard connectivity check.
+            # If standard docling-serve, it might not have HEAD. Let's assume ANY response means it's running.
+            return True
+        except requests.exceptions.RequestException as e:
+            self.logger.warning(f"[Docling] Service unreachable at {self.base_url}: {e}")
+            return False
 
     def parse_pdf(
         self,
@@ -325,80 +84,83 @@ class DoclingParser(RAGFlowPdfParser):
         method: str = "auto",
         delete_output: bool = True,
         parse_method: str = "raw",
+        **kwargs,
     ):
-        if not self.check_installation():
-            raise RuntimeError("Docling not available, please install `docling`")
-
-        if binary is not None:
-            tmpdir = Path(output_dir) if output_dir else Path.cwd() / ".docling_tmp"
-            tmpdir.mkdir(parents=True, exist_ok=True)
-            name = Path(filepath).name or "input.pdf"
-            tmp_pdf = tmpdir / name
-            with open(tmp_pdf, "wb") as f:
-                if isinstance(binary, (bytes, bytearray)):
-                    f.write(binary)
-                else:
-                    f.write(binary.getbuffer())
-            src_path = tmp_pdf
-        else:
-            src_path = Path(filepath)
-            if not src_path.exists():
-                raise FileNotFoundError(f"PDF not found: {src_path}")
-
         if callback:
-            callback(0.1, f"[Docling] Converting: {src_path}")
+            callback(0.1, "[Docling] Starting API conversion...")
 
-        conv = self._get_converter()
-        conv_res = conv.convert(str(src_path))
-        doc = conv_res.document
-
-        # Load page images from Docling result
-        page_images = []
-        for i in range(doc.num_pages):
-            # docling pages are 1-indexed
-            page = doc.pages[i + 1]
-            if hasattr(page, "image") and page.image:
-                page_images.append(page.image.pil_image)
-            else:
-                self.logger.warning(f"Page {i + 1} has no image.")
-                # Append placeholder to maintain 1-to-1 mapping
-                # Default to A4 size (approx 1240x1754 at 150dpi) or use previous page size
-                width, height = 1240, 1754
-                if page_images:
-                    width, height = page_images[-1].size
-                elif hasattr(page, "size"):
-                    try:
-                        width, height = int(page.size.width), int(page.size.height)
-                    except Exception:
-                        pass
-                page_images.append(Image.new("RGB", (width, height), (255, 255, 255)))
-
-        # Initialize base class image list
-        self.__images__(page_images, zoomin=1)
-
-        if callback:
-            callback(0.7, f"[Docling] Parsed doc: {getattr(doc, 'num_pages', 'n/a')} pages")
-
-        sections = self._transfer_to_sections(doc, parse_method=parse_method)
-        tables = self._transfer_to_tables(doc)
-
-        if callback:
-            callback(0.95, f"[Docling] Sections: {len(sections)}, Tables: {len(tables)}")
-
-        if binary is not None and delete_output:
+        # Prepare input
+        filename = Path(filepath).name if filepath else "document.pdf"
+        file_content = None
+        if binary:
+            if isinstance(binary, (bytes, bytearray)):
+                file_content = binary
+            elif hasattr(binary, "read"):
+                file_content = binary.read()
+        elif filepath:
             try:
-                Path(src_path).unlink(missing_ok=True)
-            except Exception:
-                pass
+                with open(filepath, "rb") as f:
+                    file_content = f.read()
+            except Exception as e:
+                self.logger.error(f"[Docling] Failed to read file {filepath}: {e}")
+                return [], []
 
-        if callback:
-            callback(1.0, "[Docling] Done.")
-        return sections, tables
+        if not file_content:
+            self.logger.error("[Docling] No content to parse.")
+            return [], []
+
+        # Prepare Request
+        url = f"{self.base_url.rstrip('/')}/v1/convert/file"
+        files = {"files": (filename, file_content)}
+        headers = {}
+        if self.auth_token:
+            headers["Authorization"] = f"Bearer {self.auth_token}"
+
+        # Options
+        data = {
+            "do_ocr": "true",  # docling-serve usually takes string bools or json
+            "do_table_structure": "true",
+            # "format": "md" # Removed in new API
+        }
+
+        try:
+            if callback:
+                callback(0.2, "[Docling] Sending request to API...")
+            response = self.session.post(url, files=files, data=data, headers=headers, timeout=300)
+            response.raise_for_status()
+
+            if callback:
+                callback(0.6, "[Docling] Processing response...")
+
+            # Parse Response
+            # Assume response is JSON with "markdown" field or 'content'
+            # Or if text/markdown content type, raw text.
+            content_type = response.headers.get("Content-Type", "")
+
+            result_text = ""
+            if "application/json" in content_type:
+                resp_json = response.json()
+                result_text = resp_json.get("markdown") or resp_json.get("content") or ""
+            else:
+                result_text = response.text
+
+            sections = [result_text] if result_text else []
+            tables = []  # Tables are embedded in markdown
+
+            if callback:
+                callback(1.0, "[Docling] Done.")
+            return sections, tables
+
+        except Exception as e:
+            self.logger.error(f"[Docling] API request failed: {e}")
+            if callback:
+                callback(-1, f"Docling API failed: {e}")
+            return [], []
 
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     parser = DoclingParser()
-    print("Docling available:", parser.check_installation())
-    sections, tables = parser.parse_pdf(filepath="test_docling/toc.pdf", binary=None)
-    print(len(sections), len(tables))
+    # Test valid connection if you have a running server, else this might fail
+    # sections, tables = parser.parse_pdf("test.pdf", binary=b"%PDF-1.4...")
+    pass

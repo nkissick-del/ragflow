@@ -150,9 +150,8 @@ def chunk(filename, binary=None, callback=None, **kwargs):
 
     logging.debug("chunked resume to " + str(doc))
     kb_id = kwargs.get("kb_id")
-    if not kb_id:
-        raise ValueError("kb_id is required for resume parsing")
-    KnowledgebaseService.update_parser_config(kb_id, {"field_map": field_map})
+    if kb_id:
+        KnowledgebaseService.update_parser_config(kb_id, {"field_map": field_map})
     return [doc]
 
 

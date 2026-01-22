@@ -37,18 +37,22 @@ class Pdf(PdfParser):
         from timeit import default_timer as timer
 
         start = timer()
-        callback(0.1, "OCR started")
+        if callback:
+            callback(0.1, "OCR started")
         self.__images__(filename if not binary else binary, zoomin, from_page, to_page, callback)
-        callback(0.5, "OCR finished ({:.2f}s)".format(timer() - start))
+        if callback:
+            callback(0.5, "OCR finished ({:.2f}s)".format(timer() - start))
 
         start = timer()
         self._layouts_rec(zoomin)
-        callback(0.63, "Layout analysis ({:.2f}s)".format(timer() - start))
+        if callback:
+            callback(0.63, "Layout analysis ({:.2f}s)".format(timer() - start))
         logging.debug(f"layouts cost: {timer() - start}s")
 
         start = timer()
         self._table_transformer_job(zoomin)
-        callback(0.68, "Table analysis ({:.2f}s)".format(timer() - start))
+        if callback:
+            callback(0.68, "Table analysis ({:.2f}s)".format(timer() - start))
 
         start = timer()
         self._text_merge()
@@ -57,7 +61,8 @@ class Pdf(PdfParser):
         column_width = np.median(widths) if widths else 0
         self._concat_downward()
         self._filter_forpages()
-        callback(0.75, "Text merged ({:.2f}s)".format(timer() - start))
+        if callback:
+            callback(0.75, "Text merged ({:.2f}s)".format(timer() - start))
 
         # clean mess
         if column_width < self.page_images[0].size[0] / zoomin / 2:
@@ -115,7 +120,8 @@ class Pdf(PdfParser):
         if not abstr:
             i = 0
 
-        callback(0.8, "Page {}~{}: Text merging finished".format(from_page, min(to_page, self.total_page)))
+        if callback:
+            callback(0.8, "Page {}~{}: Text merging finished".format(from_page, min(to_page, self.total_page)))
         for b in self.boxes:
             logging.debug("{} {}".format(b["text"], b.get("layoutno")))
         logging.debug("{}".format(tbls))

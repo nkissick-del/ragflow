@@ -10,7 +10,8 @@ try:
     print("Successfully imported rag.app.templates.manual")
 except ImportError as e:
     print(f"ImportError (expected if dependencies missing): {e}")
-    # If we can't import, we can't test class attributes easily, but at least syntax is checked before ImportError
+    # ImportError may occur for dependency failures or missing modules at runtime.
+    # For standalone syntax-only validation, use py_compile or ast.parse on the module file instead of relying on import.
 except SyntaxError as e:
     print(f"SyntaxError: {e}")
     sys.exit(1)

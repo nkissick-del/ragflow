@@ -43,19 +43,19 @@ class Pdf(PdfParser):
             callback(0.0, "OCR started")
         self.__images__(filename if not binary else binary, zoomin, from_page, to_page, callback)
         if callback:
-            callback(1.0, "OCR finished ({:.2f}s)".format(timer() - start))
+            callback(0.5, "OCR finished ({:.2f}s)".format(timer() - start))
         logging.debug("OCR: {}".format(timer() - start))
 
         start = timer()
         self._layouts_rec(zoomin)
         if callback:
-            callback(0.65, "Layout analysis ({:.2f}s)".format(timer() - start))
+            callback(0.6, "Layout analysis ({:.2f}s)".format(timer() - start))
         logging.debug("layouts: {}".format(timer() - start))
 
         start = timer()
         self._table_transformer_job(zoomin)
         if callback:
-            callback(0.67, "Table analysis ({:.2f}s)".format(timer() - start))
+            callback(0.7, "Table analysis ({:.2f}s)".format(timer() - start))
 
         start = timer()
         self._text_merge()
@@ -63,7 +63,7 @@ class Pdf(PdfParser):
         self._concat_downward()
         self._filter_forpages()
         if callback:
-            callback(0.68, "Text merged ({:.2f}s)".format(timer() - start))
+            callback(0.8, "Text merged ({:.2f}s)".format(timer() - start))
 
         # clean mess
         for b in self.boxes:

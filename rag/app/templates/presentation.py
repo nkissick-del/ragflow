@@ -61,17 +61,17 @@ class Pdf(PdfParser):
     def __call__(self, filename, binary=None, from_page=0, to_page=100000, zoomin=3, callback=None, **kwargs):
         # 1. OCR
         if callback:
-            callback(msg="OCR started")
+            callback(0.1, "OCR started")
         self.__images__(filename if not binary else binary, zoomin, from_page, to_page, callback)
 
         # 2. Layout Analysis
         if callback:
-            callback(msg="Layout Analysis")
+            callback(0.4, "Layout Analysis")
         self._layouts_rec(zoomin)
 
         # 3. Table Analysis
         if callback:
-            callback(msg="Table Analysis")
+            callback(0.6, "Table Analysis")
         self._table_transformer_job(zoomin)
 
         # 4. Text Merge

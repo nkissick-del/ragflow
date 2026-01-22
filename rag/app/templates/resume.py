@@ -53,8 +53,8 @@ def remote_call(filename, binary):
             resume = step_one.refactor(pd.DataFrame([{"resume_content": json.dumps(resume), "tob_resume_id": "x", "updated_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}]))
             resume = step_two.parse(resume)
             return resume
-        except requests.exceptions.RequestException:
-            pass
+        except requests.exceptions.RequestException as e:
+            logging.warning(f"Resume parsing HTTP request failed: {e}")
         except Exception:
             logging.exception("Resume parsing failed")
         time.sleep(1 * (i + 1))
@@ -149,7 +149,10 @@ def chunk(filename, binary=None, callback=None, **kwargs):
         doc[n] = resume[n]
 
     logging.debug("chunked resume to " + str(doc))
-    KnowledgebaseService.update_parser_config(kwargs["kb_id"], {"field_map": field_map})
+    kb_id = kwargs.get("kb_id")
+    if not kb_id:
+        raise ValueError("kb_id is required for resume parsing")
+    KnowledgebaseService.update_parser_config(kb_id, {"field_map": field_map})
     return [doc]
 
 

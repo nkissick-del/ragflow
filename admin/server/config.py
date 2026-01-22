@@ -280,7 +280,11 @@ def load_configurations(config_path: str) -> list[BaseConfig]:
                 url = v.get("hosts", "")
                 parsed = urlparse(url)
                 host = parsed.hostname
-                port = parsed.port
+                # Default to port 9200 if not specified (same as OpenSearch)
+                try:
+                    port: int = parsed.port or int(v.get("port") or 9200)
+                except (ValueError, TypeError):
+                    port = 9200
                 if not host or not isinstance(port, int):
                     logging.warning(f"Invalid ES url: {url}, expected scheme://host:port")
                     continue
@@ -313,6 +317,11 @@ def load_configurations(config_path: str) -> list[BaseConfig]:
                     except ValueError:
                         logging.warning(f"Invalid Infinity port in uri: {uri}")
                         continue
+
+                # Validate host is non-empty before creating config
+                if not host or not host.strip():
+                    logging.warning(f"Skipping Infinity config: empty host (id={id_count}, name={name}, uri={uri})")
+                    continue
 
                 database: str = v.get("db_name", "default_db")
                 config = InfinityConfig(id=id_count, name=name, host=host, port=port, service_type="retrieval", retrieval_type="infinity", db_name=database, detail_func_name="get_infinity_status")

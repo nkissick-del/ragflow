@@ -136,6 +136,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
     # Check if this is a Docling parse to pass flag
     is_docling = parser_config.get("layout_recognizer") == "Docling"
 
+    # Remove parser_config from kwargs if present to avoid multiple values error for 'parser_config'
+    kwargs.pop("parser_config", None)
+
     res = General.chunk(filename, sections, tables, section_images, pdf_parser, is_markdown, parser_config, doc, is_english, callback, is_docling=is_docling, **kwargs)
 
     logging.info("naive_merge({}): {}".format(filename, timer() - st))

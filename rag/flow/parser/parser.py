@@ -33,7 +33,7 @@ from common.misc_utils import get_uuid
 from deepdoc.parser import ExcelParser
 from deepdoc.parser.pdf_parser import PlainParser, RAGFlowPdfParser, VisionParser
 from deepdoc.parser.tcadp_parser import TCADPParser
-from rag.app.orchestrator import Docx
+from rag.app.format_parsers import Docx
 
 from rag.flow.base import ProcessBase, ProcessParamBase
 from rag.flow.parser.schema import ParserFromUpstream

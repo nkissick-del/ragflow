@@ -115,6 +115,54 @@ class TestDoclingIntegration(unittest.TestCase):
         self.assertEqual(args[0], -1)
         self.assertIn("Processing failed", args[1])
 
+    @patch("requests.Session")
+    def test_docling_parser_semantic_mode(self, mock_session_cls):
+        """Test that semantic mode returns structured string instead of splitlines()."""
+        mock_session = mock_session_cls.return_value
+
+        mock_submit = MagicMock()
+        mock_submit.status_code = 200
+        mock_submit.json.return_value = {"task_id": "test_task_semantic"}
+
+        mock_poll = MagicMock()
+        mock_poll.status_code = 200
+        mock_poll.json.return_value = {"status": "success"}
+
+        mock_result = MagicMock()
+        mock_result.status_code = 200
+        mock_result.headers = {"Content-Type": "application/json"}
+        mock_result.json.return_value = {"markdown": "# Heading\n\nParagraph one.\n\n## Subheading\n\nParagraph two."}
+
+        mock_health = MagicMock()
+        mock_health.status_code = 200
+
+        def side_effect_get(url, **kwargs):
+            if "health" in url:
+                return mock_health
+            if "poll" in url:
+                return mock_poll
+            if "result" in url:
+                return mock_result
+            return MagicMock(status_code=404)
+
+        mock_session.post.return_value = mock_submit
+        mock_session.get.side_effect = side_effect_get
+
+        with patch.dict(os.environ, {"DOCLING_BASE_URL": "http://mock-docling"}):
+            parser = DoclingParser()
+            parser._create_retry_session = MagicMock(return_value=mock_session)
+
+            # Test SEMANTIC mode - should return string
+            sections_semantic, _ = parser.parse_pdf("test.pdf", binary=b"dummy", use_semantic_chunking=True)
+            self.assertIsInstance(sections_semantic, str)
+            self.assertIn("# Heading", sections_semantic)
+            self.assertIn("## Subheading", sections_semantic)
+
+            # Test LEGACY mode (default) - should return list
+            sections_legacy, _ = parser.parse_pdf("test.pdf", binary=b"dummy", use_semantic_chunking=False)
+            self.assertIsInstance(sections_legacy, list)
+            self.assertIn("# Heading", sections_legacy)
+
 
 if __name__ == "__main__":
     unittest.main()

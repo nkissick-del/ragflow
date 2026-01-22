@@ -1,0 +1,40 @@
+# Test-only requirements for running unit tests locally without Docker
+# These are minimal dependencies needed to run mocked unit tests
+#
+# Usage:
+#   python3 -m venv .venv-test
+#   source .venv-test/bin/activate
+#   pip install -r requirements-test.txt
+#   ./scripts/run_local_tests.sh
+#
+
+# Testing framework
+pytest>=7.0.0
+pytest-cov>=4.0.0
+
+# Type hints and validation
+pydantic>=2.0.0
+
+# Token counting
+tiktoken>=0.5.0
+
+# Common utilities
+requests>=2.28.0
+urllib3>=2.0.0
+
+# Required by rag.nlp
+chardet>=5.0.0
+Pillow>=9.0.0
+word2number>=1.1
+cn2an>=0.5.0
+roman-numbers>=1.0.0
+
+# Required by format parsers
+python-docx>=0.8.0
+openpyxl>=3.0.0
+python-pptx>=0.6.0
+pypdf>=3.0.0
+beautifulsoup4>=4.0.0
+html2text>=2020.1.16
+lxml>=4.0.0
+markdown>=3.0.0

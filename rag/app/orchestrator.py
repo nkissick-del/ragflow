@@ -21,6 +21,7 @@ from rag.app.format_parsers import PARSERS, by_deepdoc, by_mineru, by_docling, b
 
 from rag.app.router import UniversalRouter
 from rag.app.templates.general import General
+from rag.app.standardized_document import StandardizedDocument
 from rag.utils.file_utils import extract_embed_file, extract_html
 from rag.nlp import rag_tokenizer
 
@@ -38,7 +39,40 @@ __all__ = [
     "by_paddleocr",
     "by_plaintext",
     "chunk",
+    "adapt_docling_output",
 ]
+
+
+def adapt_docling_output(sections, tables, parser_config) -> StandardizedDocument:
+    """
+    Convert Docling parser output to Standardized IR.
+
+    This adapter normalizes Docling's output into the StandardizedDocument
+    format that semantic templates consume.
+
+    Args:
+        sections: Either a string (new semantic mode) or List[str] (legacy mode)
+        tables: List of extracted tables (typically empty for Docling, embedded in markdown)
+        parser_config: Parser configuration dict
+
+    Returns:
+        StandardizedDocument: Normalized document ready for template processing
+    """
+    # If sections is already a string (new Docling format), use it directly
+    if isinstance(sections, str):
+        content = sections
+    else:
+        # Legacy: sections is List[str], join them back
+        content = "\n".join(sections) if sections else ""
+
+    return StandardizedDocument(
+        content=content,
+        metadata={
+            "parser": "docling",
+            "layout_recognizer": parser_config.get("layout_recognizer", "Docling"),
+        },
+        elements=[],  # Semantic template will parse these from content
+    )
 
 
 def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, **kwargs):
@@ -132,14 +166,24 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
                 sub_url_res = chunk(f"{index}.html", html_bytes, callback=callback, lang=lang, is_root=False, **kwargs)
             url_res.extend(sub_url_res)
 
-    # 5. Template Processing (General)
-    # Check if this is a Docling parse to pass flag
+    # 5. Template Processing
     is_docling = parser_config.get("layout_recognizer") == "Docling"
+    use_semantic = parser_config.get("use_semantic_chunking", False)
 
     # Remove parser_config from kwargs if present to avoid multiple values error for 'parser_config'
     kwargs.pop("parser_config", None)
 
-    res = General.chunk(filename, sections, tables, section_images, pdf_parser, is_markdown, parser_config, doc, is_english, callback, is_docling=is_docling, **kwargs)
+    if is_docling and use_semantic and isinstance(sections, str):
+        # NEW PATH: Docling with semantic chunking enabled
+        # Route to semantic template for structure-aware processing
+        from rag.app.templates.semantic import Semantic
+
+        standardized = adapt_docling_output(sections, tables, parser_config)
+        res = Semantic.chunk(filename, standardized, parser_config, doc, is_english, callback, **kwargs)
+        logging.info(f"[Orchestrator] Used Semantic template for {filename}")
+    else:
+        # LEGACY PATH: DeepDOC, or Docling without semantic flag
+        res = General.chunk(filename, sections, tables, section_images, pdf_parser, is_markdown, parser_config, doc, is_english, callback, is_docling=is_docling, **kwargs)
 
     logging.info("naive_merge({}): {}".format(filename, timer() - st))
 

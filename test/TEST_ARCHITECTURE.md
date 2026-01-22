@@ -278,6 +278,41 @@ test_document_service.py
 └── Handle corrupted files
 ```
 
+### Unit Tests: "Semantic Chunking" (Brain Transplant)
+
+Reference: [architecture_propsal.md](../docs/architecture_propsal.md)
+
+```python
+test/unit_test/rag/app/
+├── test_standardized_document.py   # StandardizedDocument dataclass
+│   ├── Create document with content
+│   ├── Create document with metadata
+│   ├── Create document with elements
+│   └── Default value handling
+│
+├── test_orchestrator.py            # DoclingAdapter and routing
+│   ├── adapt_docling_output with string input
+│   ├── adapt_docling_output with list input (legacy)
+│   ├── Semantic routing with use_semantic_chunking flag
+│   └── Legacy routing without flag
+│
+└── templates/
+    └── test_semantic.py            # Header tracking algorithm
+        ├── Single header parsing
+        ├── Nested headers (H1 > H2 > H3)
+        ├── Sibling headers (H2 followed by H2)
+        ├── Going up hierarchy (H3 to H2)
+        ├── Code block protection
+        ├── Multiple code blocks
+        ├── Empty content handling
+        ├── No headers content
+        └── Chunk splitting for large content
+
+test/integration/
+└── test_docling_integration.py     # Docling parser integration
+    └── test_docling_parser_semantic_mode
+```
+
 ### API Contract Tests: "Interface Stability"
 
 ```python

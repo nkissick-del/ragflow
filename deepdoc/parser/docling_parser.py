@@ -239,16 +239,25 @@ class DoclingParser(RAGFlowPdfParser):
             if result_text:
                 result_text = re.sub(r"!\[.*?\]\(data:image\/[^)]*;base64,[^)]*\)", "", result_text)
 
-            # Split by newline to allow granular chunking in General.chunk
-            # This ensures RAGFlow can merge lines up to the token limit (e.g., 128)
-            # instead of treating the entire document as one massive chunk.
-            sections = result_text.splitlines() if result_text else []
-            tables = []  # Tables are embedded in markdown
+            # Feature flag for semantic chunking (new structured output)
+            # When enabled, return the full Markdown string for semantic template processing
+            # When disabled (default), maintain backward compatibility with splitlines()
+            use_semantic = kwargs.get("use_semantic_chunking", False)
+
+            if use_semantic:
+                # NEW PATH: Return structured Markdown for semantic template
+                # The orchestration layer will normalize this into StandardizedDocument
+                sections = result_text if result_text else ""
+                tables = []  # Tables are embedded in markdown
+            else:
+                # LEGACY PATH: Split by newline for General.chunk compatibility
+                sections = result_text.splitlines() if result_text else []
+                tables = []  # Tables are embedded in markdown
 
             if callback:
                 callback(1.0, "[Docling] Done.")
 
-            self.logger.info(f"[Docling] Successfully parsed, result length: {len(result_text)} chars")
+            self.logger.info(f"[Docling] Successfully parsed, result length: {len(result_text)} chars, semantic_mode={use_semantic}")
             return sections, tables
 
         except Exception as e:

@@ -70,6 +70,7 @@ export function ConfirmDeleteDialog({
               {title ?? t('common.deleteModalTitle')}
               <AlertDialogCancel
                 onClick={onCancel}
+                aria-label={t('common.close')}
                 className="border-none bg-transparent hover:border-none hover:bg-transparent absolute right-3 top-3 hover:text-text-primary"
               >
                 <X size={16} />

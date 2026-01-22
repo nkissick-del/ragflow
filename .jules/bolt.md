@@ -5,3 +5,7 @@
 ## 2024-05-24 - Frontend: Memoizing Table Columns
 **Learning:** In React table implementations (like TanStack Table), re-creating the `columns` definition array on every render forces the table library to recalculate its internal state, potentially leading to unnecessary processing and child component re-renders.
 **Action:** Always wrap column definitions in `useMemo` when using `useReactTable` or similar libraries, ensuring that the column structure remains referentially stable unless its dependencies actually change.
+
+## 2025-05-26 - Backend: Peewee Query Immutability
+**Learning:** Peewee's `order_by()` method returns a *new* query object and does not modify the query in-place. Ignoring the return value leads to unordered results, which can be disastrous when combined with offset-based pagination.
+**Action:** Always assign the result of `order_by()` back to the query variable (e.g., `query = query.order_by(...)`) or chain it directly.

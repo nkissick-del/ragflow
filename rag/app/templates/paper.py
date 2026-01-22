@@ -221,7 +221,11 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
 
     chunks = []
     last_sid = -2
-    for (txt, _), sec_id in zip(sorted_sections, sec_ids):
+    for item, sec_id in zip(sorted_sections, sec_ids):
+        if isinstance(item, tuple):
+            txt = item[0]
+        else:
+            txt = str(item)
         if sec_id == last_sid:
             if chunks:
                 chunks[-1] += "\n" + txt

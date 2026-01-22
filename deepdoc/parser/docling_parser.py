@@ -161,7 +161,8 @@ class DoclingParser(RAGFlowPdfParser):
                     poll_response = session.get(poll_url, timeout=15, headers={"Connection": "close"})
                     if poll_response.status_code == 404:
                         self.logger.warning(f"[Docling] Polling returned 404 for task {task_id}. Attempting to fetch result directly.")
-                        break  # Break loop to attempt result fetch immediately
+                        status = "success"  # Set success so validation passes and we attempt fetch
+                        break
 
                     poll_response.raise_for_status()
 
@@ -236,7 +237,7 @@ class DoclingParser(RAGFlowPdfParser):
             # Clean Base64 images from Markdown to prevent "garbage" chunks
             # Pattern matches: ![Alt Text](data:image/...)
             if result_text:
-                result_text = re.sub(r"!\[.*?\]\(data:image\/.*?;base64,.*?\)", "", result_text)
+                result_text = re.sub(r"!\[.*?\]\(data:image\/[^)]*;base64,[^)]*\)", "", result_text)
 
             # Split by newline to allow granular chunking in General.chunk
             # This ensures RAGFlow can merge lines up to the token limit (e.g., 128)

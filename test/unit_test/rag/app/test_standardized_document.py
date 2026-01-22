@@ -17,7 +17,7 @@
 Unit tests for StandardizedDocument dataclass and DocumentElement.
 
 Tests the contract between parsers and templates as defined in:
-- docs/architecture_propsal.md Section 5
+- docs/architecture_proposal.md Section 5
 """
 
 import unittest

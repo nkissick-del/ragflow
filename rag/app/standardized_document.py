@@ -20,7 +20,7 @@ This module defines the contract between parsers (Layer 1) and templates (Layer 
 All parser adapters in the orchestration layer must produce StandardizedDocument
 objects, and all templates must consume them.
 
-Reference: architecture_propsal.md Section 5
+Reference: architecture_proposal.md Section 5
 """
 
 from dataclasses import dataclass, field

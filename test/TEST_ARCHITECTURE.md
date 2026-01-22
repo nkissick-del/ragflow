@@ -280,7 +280,7 @@ test_document_service.py
 
 ### Unit Tests: "Semantic Chunking" (Brain Transplant)
 
-Reference: [architecture_propsal.md](../docs/architecture_propsal.md)
+Reference: [architecture_proposal.md](../docs/architecture_proposal.md)
 
 ```python
 test/unit_test/rag/app/

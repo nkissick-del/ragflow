@@ -122,11 +122,17 @@ class TestSemanticRouting(unittest.TestCase):
 
         parser_config = {"layout_recognizer": "Docling", "use_semantic_chunking": True}
 
-        with patch("rag.app.templates.semantic.Semantic", mock_semantic):
-            res = orchestrator.chunk("test.pdf", b"content", parser_config=parser_config)
+        # The decorator patch on rag.app.orchestrator.Semantic is sufficient
+        # No need for redundant inner patch of rag.app.templates.semantic.Semantic
+        res = orchestrator.chunk("test.pdf", b"content", parser_config=parser_config)
 
         # Should use Semantic template
         mock_semantic.chunk.assert_called_once()
+
+        # Verify the result contains the expected semantic chunk
+        self.assertEqual(len(res), 1)
+        self.assertEqual(res[0]["content"], "semantic result")
+        self.assertEqual(res[0]["header_path"], "/Heading/")
 
     @patch("rag.app.orchestrator.UniversalRouter")
     @patch("rag.app.orchestrator.General")

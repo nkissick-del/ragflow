@@ -108,7 +108,9 @@ class TestPresentationTemplate(unittest.TestCase):
             parser("dummy.pdf", callback=None)
         except TypeError as e:
             self.fail(f"Pdf raised TypeError with callback=None: {e}")
-        except Exception:
+        except (FileNotFoundError, AttributeError, KeyError):
+            # These exceptions are acceptable due to mocking limitations
+            # (e.g., mock object missing attributes, file operations on dummy paths)
             pass
 
     def test_ppt_callback_none_safe(self):
@@ -118,7 +120,8 @@ class TestPresentationTemplate(unittest.TestCase):
             parser("dummy.pptx", 0, 10, callback=None)
         except TypeError as e:
             self.fail(f"Ppt raised TypeError with callback=None: {e}")
-        except Exception:
+        except (FileNotFoundError, AttributeError, KeyError):
+            # These exceptions are acceptable due to mocking limitations
             pass
 
     def test_chunk_callback_none_safe(self):
@@ -130,14 +133,16 @@ class TestPresentationTemplate(unittest.TestCase):
             chunk("dummy.pdf", callback=None)
         except TypeError as e:
             self.fail(f"chunk(pdf) raised TypeError with callback=None: {e}")
-        except Exception:
+        except (FileNotFoundError, AttributeError, KeyError):
+            # These exceptions are acceptable due to mocking limitations
             pass
 
         try:
             chunk("dummy.pptx", callback=None)
         except TypeError as e:
             self.fail(f"chunk(ppt) raised TypeError with callback=None: {e}")
-        except Exception:
+        except (FileNotFoundError, AttributeError, KeyError):
+            # These exceptions are acceptable due to mocking limitations
             pass
 
     def test_chunk_passes_correct_to_page(self):

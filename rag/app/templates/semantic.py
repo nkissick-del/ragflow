@@ -104,10 +104,11 @@ class Semantic:
         # Convert to RAGFlow chunk format
         results = []
         for chunk in semantic_chunks:
+            tokens = rag_tokenizer.tokenize(chunk.text)
             ck = {
-                "content_with_weight": rag_tokenizer.tokenize(chunk.text),
-                "content_ltks": rag_tokenizer.tokenize(chunk.text),
-                "content_sm_ltks": rag_tokenizer.fine_grained_tokenize(rag_tokenizer.tokenize(chunk.text)),
+                "content_with_weight": tokens,
+                "content_ltks": tokens,
+                "content_sm_ltks": rag_tokenizer.fine_grained_tokenize(tokens),
             }
             # Add document metadata
             ck.update(doc)
@@ -183,25 +184,92 @@ class Semantic:
                 paragraphs = text.split("\n\n")
                 current_chunk = ""
                 current_tokens = 0
+                separator_tokens = num_tokens("\n\n")
+
+                def split_large_paragraph(para: str) -> List[str]:
+                    """Split a large paragraph at sentence boundaries."""
+                    # Try to split at sentence boundaries
+                    sentences = re.split(r"(?<=[.!?])\s+", para)
+                    if len(sentences) <= 1:
+                        # Can't split further, log warning and return as-is
+                        logging.warning(f"[Semantic] Paragraph exceeds chunk_token_num ({num_tokens(para)} > {chunk_token_num}) and cannot be split at sentence boundaries")
+                        return [para]
+
+                    # Group sentences to fit within chunk_token_num
+                    result = []
+                    current_sentence_group = ""
+                    current_sentence_tokens = 0
+
+                    for sentence in sentences:
+                        sentence_tokens = num_tokens(sentence)
+                        space_tokens = num_tokens(" ") if current_sentence_group else 0
+
+                        if current_sentence_tokens + sentence_tokens + space_tokens > chunk_token_num and current_sentence_group:
+                            result.append(current_sentence_group)
+                            current_sentence_group = sentence
+                            current_sentence_tokens = sentence_tokens
+                        else:
+                            current_sentence_group += (" " if current_sentence_group else "") + sentence
+                            current_sentence_tokens += sentence_tokens + space_tokens
+
+                    if current_sentence_group:
+                        result.append(current_sentence_group)
+
+                    return result if result else [para]
 
                 for para in paragraphs:
                     para_tokens = num_tokens(para)
 
-                    if current_tokens + para_tokens > chunk_token_num and current_chunk:
+                    # Handle oversized paragraphs
+                    if para_tokens > chunk_token_num:
+                        # First, emit any accumulated content
+                        if current_chunk:
+                            chunks.append(SemanticChunk(text=current_chunk.strip(), header_path=header_path, metadata={"tokens": current_tokens}))
+                            current_chunk = ""
+                            current_tokens = 0
+
+                        # Split the large paragraph
+                        para_pieces = split_large_paragraph(para)
+                        for piece in para_pieces:
+                            piece_tokens = num_tokens(piece)
+                            if piece_tokens <= chunk_token_num:
+                                chunks.append(SemanticChunk(text=piece.strip(), header_path=header_path, metadata={"tokens": piece_tokens}))
+                            else:
+                                # Still too large, emit with warning (already logged in split_large_paragraph)
+                                chunks.append(SemanticChunk(text=piece.strip(), header_path=header_path, metadata={"tokens": piece_tokens, "oversized": True}))
+                        continue
+
+                    # Calculate total tokens including separator
+                    sep_cost = separator_tokens if current_chunk else 0
+                    if current_tokens + para_tokens + sep_cost > chunk_token_num and current_chunk:
                         # Emit current chunk
                         chunks.append(SemanticChunk(text=current_chunk.strip(), header_path=header_path, metadata={"tokens": current_tokens}))
 
-                        # Handle overlap
+                        # Handle overlap (token-based)
                         if overlap_percent > 0:
-                            overlap_chars = int(len(current_chunk) * overlap_percent / 100)
-                            current_chunk = current_chunk[-overlap_chars:] + "\n\n" + para
+                            overlap_tokens = int(current_tokens * overlap_percent / 100)
+                            # Take last portion of current_chunk by rebuilding from end
+                            # Simple approach: recompute by taking trailing text
+                            overlap_text = current_chunk
+                            while num_tokens(overlap_text) > overlap_tokens and len(overlap_text) > 0:
+                                # Remove from start until we're within overlap_tokens
+                                first_space = overlap_text.find(" ")
+                                if first_space == -1:
+                                    break
+                                overlap_text = overlap_text[first_space + 1 :]
+                            current_chunk = overlap_text + "\n\n" + para if overlap_text else para
+                            current_tokens = num_tokens(current_chunk)
                         else:
                             current_chunk = para
-                        current_tokens = num_tokens(current_chunk)
+                            current_tokens = para_tokens
                     else:
-                        # Add to current chunk
-                        current_chunk += ("\n\n" if current_chunk else "") + para
-                        current_tokens += para_tokens
+                        # Add to current chunk, accounting for separator
+                        if current_chunk:
+                            current_chunk += "\n\n" + para
+                            current_tokens += para_tokens + separator_tokens
+                        else:
+                            current_chunk = para
+                            current_tokens = para_tokens
 
                 # Emit final chunk
                 if current_chunk.strip():

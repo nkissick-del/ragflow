@@ -119,6 +119,17 @@ Currently, the `General` template acts as a "Blender":
 The "handshake" between the orchestration layer and templates:
 
 ```python
+from dataclasses import dataclass, field
+from typing import List, Dict, Any, Optional
+
+@dataclass
+class DocumentElement:
+    """A semantic element extracted from the document."""
+    type: str  # "heading", "paragraph", "table", "code_block", "list", "image"
+    content: str
+    level: Optional[int] = None  # For headings: 1-6
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
 @dataclass
 class StandardizedDocument:
     """The contract between parsers and templates."""
@@ -127,10 +138,10 @@ class StandardizedDocument:
     content: str
     
     # Metadata about the document
-    metadata: dict  # {"source": "docling", "pages": 10, ...}
+    metadata: Dict[str, Any] = field(default_factory=dict)  # {"source": "docling", "pages": 10, ...}
     
     # Pre-parsed structure (optional, for efficiency)
-    elements: List[DocumentElement]  # headers, paragraphs, tables, code blocks
+    elements: Optional[List[DocumentElement]] = None  # headers, paragraphs, tables, code blocks
 ```
 
 All parsers (via their adapters) must produce this format. All templates consume this format.

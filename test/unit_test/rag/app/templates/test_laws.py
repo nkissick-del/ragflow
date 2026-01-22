@@ -85,35 +85,60 @@ class TestLawsTemplate(unittest.TestCase):
             pdf("dummy.pdf", binary=b"dummy", callback=None)
         except TypeError as e:
             self.fail(f"Pdf.__call__ raised TypeError with callback=None: {e}")
-        except Exception:
-            pass  # Other exceptions are acceptable for this test
+        except (FileNotFoundError, ValueError, AttributeError, KeyError):
+            # These exceptions are acceptable due to mocking limitations
+            # (e.g., missing file, mock object attribute access)
+            pass
 
     def test_doc_binary_none_uses_from_file(self):
         """Verify .doc parsing handles None binary correctly by using from_file."""
         with patch("rag.app.templates.laws.re.search") as mock_re_search:
-            mock_re_search.side_effect = lambda pat, f, flags=0: pat == r"\.doc$"
+            # Return a Match-like object when pattern matches, None otherwise
+            def search_side_effect(pat, f, flags=0):
+                if pat == r"\.doc$":
+                    match_mock = MagicMock()
+                    match_mock.group.return_value = ".doc"
+                    return match_mock
+                return None
 
-            with patch.dict(sys.modules, {"tika": MagicMock(), "tika.parser": MagicMock()}):
-                tika_mk = sys.modules["tika"].parser
-                tika_mk.from_file.return_value = {"content": "parsed content"}
+            mock_re_search.side_effect = search_side_effect
 
+            # Create a consistent tika parser mock
+            tika_parser_mock = MagicMock()
+            tika_parser_mock.from_file.return_value = {"content": "parsed content"}
+            tika_mock = MagicMock()
+            tika_mock.parser = tika_parser_mock
+
+            with patch.dict(sys.modules, {"tika": tika_mock, "tika.parser": tika_parser_mock}):
                 laws.chunk("test.doc", binary=None, callback=lambda *args, **kwargs: None)
 
-                tika_mk.from_file.assert_called_with("test.doc")
-                tika_mk.from_buffer.assert_not_called()
+                tika_parser_mock.from_file.assert_called_with("test.doc")
+                tika_parser_mock.from_buffer.assert_not_called()
 
     def test_doc_binary_bytes_uses_from_buffer(self):
         """Verify .doc parsing handles bytes binary correctly by using from_buffer."""
         with patch("rag.app.templates.laws.re.search") as mock_re_search:
-            mock_re_search.side_effect = lambda pat, f, flags=0: pat == r"\.doc$"
-            with patch.dict(sys.modules, {"tika": MagicMock(), "tika.parser": MagicMock()}):
-                tika_mk = sys.modules["tika"].parser
-                tika_mk.from_buffer.return_value = {"content": "parsed content"}
+            # Return a Match-like object when pattern matches, None otherwise
+            def search_side_effect(pat, f, flags=0):
+                if pat == r"\.doc$":
+                    match_mock = MagicMock()
+                    match_mock.group.return_value = ".doc"
+                    return match_mock
+                return None
 
+            mock_re_search.side_effect = search_side_effect
+
+            # Create a consistent tika parser mock
+            tika_parser_mock = MagicMock()
+            tika_parser_mock.from_buffer.return_value = {"content": "parsed content"}
+            tika_mock = MagicMock()
+            tika_mock.parser = tika_parser_mock
+
+            with patch.dict(sys.modules, {"tika": tika_mock, "tika.parser": tika_parser_mock}):
                 laws.chunk("test.doc", binary=b"some bytes", callback=lambda *args, **kwargs: None)
 
-                tika_mk.from_buffer.assert_called()
-                args, _ = tika_mk.from_buffer.call_args
+                tika_parser_mock.from_buffer.assert_called()
+                args, _ = tika_parser_mock.from_buffer.call_args
                 self.assertIsInstance(args[0], BytesIO)
 
     def test_not_implemented_error_lists_all_formats(self):

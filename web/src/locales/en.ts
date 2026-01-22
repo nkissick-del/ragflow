@@ -39,6 +39,7 @@ export default {
       move: 'Move',
       warn: 'Warn',
       action: 'Action',
+      moreOptions: 'More options',
       s: 'S',
       pleaseSelect: 'Please select',
       pleaseInput: 'Please input',

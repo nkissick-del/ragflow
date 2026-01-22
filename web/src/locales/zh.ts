@@ -38,6 +38,7 @@ export default {
       move: '移动',
       warn: '提醒',
       action: '操作',
+      moreOptions: '更多选项',
       s: '秒',
       pleaseSelect: '请选择',
       pleaseInput: '请输入',

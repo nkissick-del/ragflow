@@ -32,7 +32,8 @@ class Ppt(PptParser):
     def __call__(self, fnm, from_page, to_page, callback=None):
         txts = super().__call__(fnm, from_page, to_page)
 
-        callback(0.5, "Text extraction finished.")
+        if callback:
+            callback(0.5, "Text extraction finished.")
         import aspose.slides as slides
         import aspose.pydrawing as drawing
 
@@ -47,7 +48,8 @@ class Ppt(PptParser):
                 except RuntimeError as e:
                     raise RuntimeError(f"ppt parse error at page {i + 1}, original error: {str(e)}") from e
         assert len(imgs) == len(txts), "Slides text and image do not match: {} vs. {}".format(len(imgs), len(txts))
-        callback(0.9, "Image extraction finished")
+        if callback:
+            callback(0.9, "Image extraction finished")
         self.is_english = is_english(txts)
         return [(txts[i], imgs[i]) for i in range(len(txts))]
 
@@ -58,15 +60,18 @@ class Pdf(PdfParser):
 
     def __call__(self, filename, binary=None, from_page=0, to_page=100000, zoomin=3, callback=None, **kwargs):
         # 1. OCR
-        callback(msg="OCR started")
+        if callback:
+            callback(msg="OCR started")
         self.__images__(filename if not binary else binary, zoomin, from_page, to_page, callback)
 
         # 2. Layout Analysis
-        callback(msg="Layout Analysis")
+        if callback:
+            callback(msg="Layout Analysis")
         self._layouts_rec(zoomin)
 
         # 3. Table Analysis
-        callback(msg="Table Analysis")
+        if callback:
+            callback(msg="Table Analysis")
         self._table_transformer_job(zoomin)
 
         # 4. Text Merge
@@ -130,7 +135,8 @@ class Pdf(PdfParser):
             page_img = self.page_images[i]
             res.append((full_page_text, page_img))
 
-        callback(0.9, "Parsing finished")
+        if callback:
+            callback(0.9, "Parsing finished")
 
         return res, []
 
@@ -141,7 +147,8 @@ class PlainPdf(PlainParser):
         page_txt = []
         for page in self.pdf.pages[from_page:to_page]:
             page_txt.append(page.extract_text())
-        callback(0.9, "Parsing finished")
+        if callback:
+            callback(0.9, "Parsing finished")
         return [(txt, None) for txt in page_txt], []
 
 
@@ -159,7 +166,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
     res = []
     if re.search(r"\.pptx?$", filename, re.IGNORECASE):
         ppt_parser = Ppt()
-        for pn, (txt, img) in enumerate(ppt_parser(filename if not binary else binary, from_page, 1000000, callback)):
+        for pn, (txt, img) in enumerate(ppt_parser(filename if not binary else binary, from_page, to_page, callback)):
             d = copy.deepcopy(doc)
             pn += from_page
             d["image"] = img
@@ -178,7 +185,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
 
         name = layout_recognizer.strip().lower()
         parser = PARSERS.get(name, by_plaintext)
-        callback(0.1, "Start to parse.")
+        if callback:
+            callback(0.1, "Start to parse.")
 
         sections, _, _ = parser(
             filename=filename,
@@ -200,7 +208,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         if name in ["tcadp", "docling", "mineru", "paddleocr"]:
             parser_config["chunk_token_num"] = 0
 
-        callback(0.8, "Finish parsing.")
+        if callback:
+            callback(0.8, "Finish parsing.")
 
         for pn, (txt, img) in enumerate(sections):
             d = copy.deepcopy(doc)

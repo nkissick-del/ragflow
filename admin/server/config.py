@@ -20,7 +20,7 @@ import threading
 from enum import Enum
 
 from pydantic import BaseModel
-from typing import Any
+from typing import Any, Optional
 from common.config_utils import read_config
 from urllib.parse import urlparse
 
@@ -86,10 +86,17 @@ class MySQLConfig(MetaConfig):
 
 
 class PostgresConfig(MetaConfig):
+    username: Optional[str] = None
+    password: Optional[str] = None
+
     def to_dict(self) -> dict[str, Any]:
         result = super().to_dict()
         if "extra" not in result:
             result["extra"] = dict()
+        extra_dict = result["extra"].copy()
+        extra_dict["username"] = self.username
+        extra_dict["password"] = self.password
+        result["extra"] = extra_dict
         return result
 
 
@@ -270,10 +277,13 @@ def load_configurations(config_path: str) -> list[BaseConfig]:
                 id_count += 1
             case "es":
                 name: str = "elasticsearch"
-                url = v["hosts"]
+                url = v.get("hosts", "")
                 parsed = urlparse(url)
-                host: str = parsed.hostname
-                port: int = parsed.port
+                host = parsed.hostname
+                port = parsed.port
+                if not host or not isinstance(port, int):
+                    logging.warning(f"Invalid ES url: {url}, expected scheme://host:port")
+                    continue
                 username: str = v.get("username")
                 password: str = v.get("password")
                 config = ElasticsearchConfig(
@@ -292,10 +302,18 @@ def load_configurations(config_path: str) -> list[BaseConfig]:
 
             case "infinity":
                 name: str = "infinity"
-                url = v["uri"]
-                parts = url.split(":", 1)
-                host = parts[0]
-                port = int(parts[1])
+                uri = v.get("uri", "")
+                host = uri
+                port = 7997
+                if ":" in uri:
+                    parts = uri.split(":", 1)
+                    host = parts[0]
+                    try:
+                        port = int(parts[1])
+                    except ValueError:
+                        logging.warning(f"Invalid Infinity port in uri: {uri}")
+                        continue
+
                 database: str = v.get("db_name", "default_db")
                 config = InfinityConfig(id=id_count, name=name, host=host, port=port, service_type="retrieval", retrieval_type="infinity", db_name=database, detail_func_name="get_infinity_status")
                 configurations.append(config)
@@ -349,10 +367,13 @@ def load_configurations(config_path: str) -> list[BaseConfig]:
                     logging.warning(f"Error parsing docling config: {e}")
             case "os":
                 name: str = "opensearch"
-                url = v["hosts"]
+                url = v.get("hosts", "")
                 parsed = urlparse(url)
-                host: str = parsed.hostname
-                port: int = parsed.port
+                host: str = parsed.hostname or v.get("host") or ""
+                try:
+                    port: int = parsed.port or int(v.get("port") or 9200)
+                except (ValueError, TypeError):
+                    port = 9200
                 username: str = v.get("username")
                 password: str = v.get("password")
                 config = ElasticsearchConfig(

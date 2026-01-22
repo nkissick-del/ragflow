@@ -60,19 +60,21 @@ class Docx(DocxParser):
         level_set = set()
         bull = bullets_category([p.text for p in self.doc.paragraphs])
         for p in self.doc.paragraphs:
-            if pn > to_page:
-                break
-            question_level, p_text = docx_question_level(p, bull)
-            if not p_text.strip("\n"):
-                continue
-            lines.append((question_level, p_text))
-            level_set.add(question_level)
             for run in p.runs:
                 if "lastRenderedPageBreak" in run._element.xml:
                     pn += 1
                     continue
                 if "w:br" in run._element.xml and 'type="page"' in run._element.xml:
                     pn += 1
+            if pn > to_page:
+                break
+            if not (from_page <= pn < to_page):
+                continue
+            question_level, p_text = docx_question_level(p, bull)
+            if not p_text.strip("\n"):
+                continue
+            lines.append((question_level, p_text))
+            level_set.add(question_level)
 
         sorted_levels = sorted(level_set)
 
@@ -84,14 +86,6 @@ class Docx(DocxParser):
 
         return [element for element in root.get_tree() if element]
 
-    def __str__(self) -> str:
-        return f"""
-            question:{self.question},
-            answer:{self.answer},
-            level:{self.level},
-            childs:{self.childs}
-        """
-
 
 class Pdf(PdfParser):
     def __init__(self):
@@ -99,6 +93,11 @@ class Pdf(PdfParser):
         super().__init__()
 
     def __call__(self, filename, binary=None, from_page=0, to_page=100000, zoomin=3, callback=None):
+        if not callback:
+
+            def callback(*args, **kwargs):
+                pass
+
         from timeit import default_timer as timer
 
         start = timer()
@@ -191,8 +190,11 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
             logging.warning(f"tika not available: {e}. Unsupported .doc parsing for {filename}.")
             return []
 
-        binary = BytesIO(binary)
-        doc_parsed = tika_parser.from_buffer(binary)
+        if binary and isinstance(binary, bytes):
+            doc_parsed = tika_parser.from_buffer(BytesIO(binary))
+        else:
+            doc_parsed = tika_parser.from_file(filename)
+
         if doc_parsed.get("content", None) is not None:
             sections = doc_parsed["content"].split("\n")
             sections = [s for s in sections if s]
@@ -202,7 +204,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
             logging.warning(f"tika.parser got empty content from {filename}.")
             return []
     else:
-        raise NotImplementedError("file type not supported yet(doc, docx, pdf, txt supported)")
+        raise NotImplementedError("file type not supported yet(doc, docx, pdf, txt, md, markdown, mdx, htm, html supported)")
 
     # Remove 'Contents' part
     remove_contents_table(sections, eng)

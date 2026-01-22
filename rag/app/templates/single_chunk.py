@@ -30,6 +30,11 @@ class Pdf(PdfParser):
     def __call__(self, filename, binary=None, from_page=0, to_page=100000, zoomin=3, callback=None):
         from timeit import default_timer as timer
 
+        if callback is None:
+
+            def callback(*args, **kwargs):
+                pass
+
         start = timer()
         callback(msg="OCR started")
         self.__images__(filename if not binary else binary, zoomin, from_page, to_page, callback)
@@ -55,6 +60,11 @@ class Pdf(PdfParser):
 
 
 def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, **kwargs):
+    if callback is None:
+
+        def callback(*args, **kwargs):
+            pass
+
     """
     Supported file formats are docx, pdf, excel, txt.
     One file forms a chunk which maintains original text order.
@@ -126,6 +136,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         callback(0.1, "Start to parse.")
         excel_parser = ExcelParser()
         sections = excel_parser.html(binary, 1000000000)
+        callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.(txt|md|markdown|mdx)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
@@ -149,15 +160,18 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
             logging.warning(f"tika not available: {e}. Unsupported .doc parsing for {filename}.")
             return []
 
-        binary = BytesIO(binary)
-        doc_parsed = tika_parser.from_buffer(binary)
-        if doc_parsed.get("content", None) is not None:
-            sections = doc_parsed["content"].split("\n")
-            sections = [s for s in sections if s]
+        sections = []
+        if binary:
+            if isinstance(binary, bytes):
+                binary = BytesIO(binary)
+            doc_parsed = tika_parser.from_buffer(binary)
+            if doc_parsed.get("content", None) is not None:
+                sections = doc_parsed["content"].split("\n")
+                sections = [s for s in sections if s]
         callback(0.8, "Finish parsing.")
 
     else:
-        raise NotImplementedError("file type not supported yet(doc, docx, pdf, txt supported)")
+        raise NotImplementedError("file type not supported yet(doc, docx, pdf, txt, xlsx, md, markdown, mdx, htm, html supported)")
 
     doc = {"docnm_kwd": filename, "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))}
     doc["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(doc["title_tks"])

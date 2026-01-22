@@ -32,7 +32,10 @@ class General:
     @staticmethod
     def chunk(filename, sections, tables, section_images, pdf_parser, is_markdown, parser_config, doc, is_english, callback, **kwargs):
         res = []
-        child_deli = (parser_config.get("children_delimiter") or "").encode("utf-8").decode("unicode_escape").encode("latin1").decode("utf-8")
+        try:
+            child_deli = (parser_config.get("children_delimiter") or "").encode("utf-8").decode("unicode_escape").encode("latin1").decode("utf-8")
+        except Exception:
+            child_deli = parser_config.get("children_delimiter") or ""
 
         # 1. Handle Tables (if any)
         if tables:
@@ -52,7 +55,9 @@ class General:
             table_context_size = max(0, int(parser_config.get("table_context_size", 0) or 0))
             image_context_size = max(0, int(parser_config.get("image_context_size", 0) or 0))
 
-            chunks, images = naive_merge_docx(sections, int(parser_config.get("chunk_token_num", 128)), parser_config.get("delimiter", "\n!?。；！？"), table_context_size, image_context_size)
+            chunk_token_num = int(parser_config.get("chunk_token_num", 128) or 128)
+            chunk_token_num = max(0, chunk_token_num)
+            chunks, images = naive_merge_docx(sections, chunk_token_num, parser_config.get("delimiter", "\n!?。；！？"), table_context_size, image_context_size)
 
             vision_figure_parser_docx_wrapper_naive(chunks=chunks, idx_lst=images, callback=callback, **kwargs)
 
@@ -66,8 +71,10 @@ class General:
         if is_markdown:
             merged_chunks = []
             merged_images = []
-            chunk_limit = max(0, int(parser_config.get("chunk_token_num", 128)))
-            overlapped_percent = int(parser_config.get("overlapped_percent", 0))
+            chunk_limit = int(parser_config.get("chunk_token_num", 128) or 128)
+            chunk_limit = max(0, chunk_limit)
+            overlapped_percent = int(parser_config.get("overlapped_percent", 0) or 0)
+            overlapped_percent = max(0, min(100, overlapped_percent))
 
             current_text = ""
             current_tokens = 0
@@ -92,9 +99,10 @@ class General:
 
                 if current_text:
                     current_text += "\n" + text
+                    current_tokens += sec_tokens + num_tokens_from_string("\n")
                 else:
                     current_text = text
-                current_tokens += sec_tokens
+                    current_tokens += sec_tokens
 
                 if sec_image:
                     current_image = concat_img(current_image, sec_image) if current_image else sec_image
@@ -116,10 +124,14 @@ class General:
                     section_images = None
 
             if section_images:
-                chunks, images = naive_merge_with_images(sections, section_images, int(parser_config.get("chunk_token_num", 128)), parser_config.get("delimiter", "\n!?。；！？"))
+                chunk_token_num = int(parser_config.get("chunk_token_num", 128) or 128)
+                chunk_token_num = max(0, chunk_token_num)
+                chunks, images = naive_merge_with_images(sections, section_images, chunk_token_num, parser_config.get("delimiter", "\n!?。；！？"))
                 res.extend(tokenize_chunks_with_images(chunks, doc, is_english, images, child_delimiters_pattern=child_deli))
             else:
-                chunks = naive_merge(sections, int(parser_config.get("chunk_token_num", 128)), parser_config.get("delimiter", "\n!?。；！？"))
+                chunk_token_num = int(parser_config.get("chunk_token_num", 128) or 128)
+                chunk_token_num = max(0, chunk_token_num)
+                chunks = naive_merge(sections, chunk_token_num, parser_config.get("delimiter", "\n!?。；！？"))
                 res.extend(tokenize_chunks(chunks, doc, is_english, pdf_parser, child_delimiters_pattern=child_deli))
 
         return res

@@ -135,7 +135,7 @@ services:
       # - TESSDATA_PREFIX=/app/models/tesseract/ # Commented out for safety
       - XDG_DATA_HOME=/app/models/.local/share
     volumes:
-      - /mnt/user/appdata/docling/models:/app/models
+      - ${MODELS_PATH:-./models}:/app/models
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:5001/health" ]
       interval: 30s
@@ -152,9 +152,11 @@ services:
     networks:
       - ragflow
     restart: unless-stopped
-      # resources:
-      #   reservations:
-      #     devices:
-      #       - driver: nvidia
-      #         count: all
-      #         capabilities: [ gpu ]
+    # Uncomment for GPU support:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [ gpu ]

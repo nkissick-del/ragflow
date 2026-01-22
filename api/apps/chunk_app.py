@@ -161,8 +161,12 @@ async def set():
             _d = d
             if doc.parser_id == ParserType.QA:
                 arr = [t for t in re.split(r"[\n\t]", req["content_with_weight"]) if len(t) > 1]
-                q, a = rmPrefix(arr[0]), rmPrefix("\n".join(arr[1:]))
-                _d = beAdoc(d, q, a, not any([rag_tokenizer.is_chinese(t) for t in q + a]))
+                if not arr:
+                    q, a = "", ""
+                    _d = beAdoc(d, q, a, True)
+                else:
+                    q, a = rmPrefix(arr[0]), rmPrefix("\n".join(arr[1:]))
+                    _d = beAdoc(d, q, a, not any([rag_tokenizer.is_chinese(t) for t in q + a]))
 
             v, c = embd_mdl.encode([doc.name, content_with_weight if not _d.get("question_kwd") else "\n".join(_d["question_kwd"])])
             v = 0.1 * v[0] + 0.9 * v[1] if doc.parser_id != ParserType.QA else v[1]

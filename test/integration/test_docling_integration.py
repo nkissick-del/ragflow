@@ -3,8 +3,8 @@ from unittest.mock import patch, MagicMock
 import os
 import sys
 
-# Ensure ragflow is in python path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+# Ensure ragflow is in python path (go up two levels from test/integration/ to project root)
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
 # Only import DoclingParser
 from deepdoc.parser.docling_parser import DoclingParser

@@ -80,8 +80,9 @@ class UniversalRouter:
             return sections, tables, None, pdf_parser, False, urls
 
         elif re.search(r"\.(csv|xlsx?)$", filename, re.IGNORECASE):
-            layout_recognizer = parser_config.get("layout_recognize", "DeepDOC")
-            if layout_recognizer == "TCADP Parser":
+            layout_recognizer = parser_config.get("layout_recognizer", parser_config.get("layout_recognize", "DeepDOC"))
+            layout_recognizer_normalized = layout_recognizer.strip().lower() if isinstance(layout_recognizer, str) else ""
+            if layout_recognizer_normalized == "tcadp parser":
                 table_result_type = parser_config.get("table_result_type", "1")
                 markdown_image_response_type = parser_config.get("markdown_image_response_type", "1")
                 tcadp_parser = TCADPParser(table_result_type=table_result_type, markdown_image_response_type=markdown_image_response_type)

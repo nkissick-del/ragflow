@@ -11,20 +11,22 @@ from rag.app.templates import q_and_a
 class TestQAndA(unittest.TestCase):
     def test_chunk_excel(self):
         # Simulate Excel extraction logic
-        # Since Excel parsing is complex/binary dependent, we verify the dispatcher logic behavior
-        # or we mock the ExcelParser class
+        # The q_and_a.chunk function calls excel_parser(filename, binary, callback) and iterates
+        # over the returned (question, answer) tuples using: for ii, (q, a) in enumerate(excel_parser(...))
         with patch("rag.app.templates.q_and_a.Excel") as MockParser:
             mock_instance = MockParser.return_value
-            # return mocked rows. q_and_a iterates over the instance directly.
-            mock_instance.return_value = [("Q: What is this?", "A: A test.")]
+            # The Excel.__call__ returns a list of (question, answer) tuples directly
+            # q_and_a.chunk iterates over this list via: for ii, (q, a) in enumerate(excel_parser(...))
+            mock_instance.return_value = [("What is this?", "A test answer.")]
 
             res = q_and_a.chunk("test.xlsx", b"content", callback=lambda p, m: None)
 
-            # Verification logic for Excel depends on how q_and_a processes the result of excel_parser.html
-            # In qa.py: sections = excel_parser.html(binary, ...)
-            # Then tokenize(doc, "\n".join(sections), ...)
-
+            # Verify that the result contains the expected Q&A chunk data
             self.assertEqual(len(res), 1)
+            # Check the chunk has the expected question/answer content
+            self.assertIn("content_with_weight", res[0])
+            self.assertIn("What is this?", res[0]["content_with_weight"])
+            self.assertIn("A test answer", res[0]["content_with_weight"])
 
     def test_chunk_txt(self):
         # Text file Q&A logic

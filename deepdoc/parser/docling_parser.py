@@ -40,7 +40,7 @@ class DoclingParser(RAGFlowPdfParser):
         self.auth_token = os.environ.get("DOCLING_AUTH_TOKEN")
         self.session = self._create_retry_session()
 
-    def _create_retry_session(self, retries=3, backoff_factor=0.5, status_forcelist=(500, 502, 503, 504)):
+    def _create_retry_session(self, retries=3, backoff_factor=0.5, status_forcelist=(429, 500, 502, 503, 504)):
         session = requests.Session()
         retry = Retry(
             total=retries,
@@ -48,6 +48,7 @@ class DoclingParser(RAGFlowPdfParser):
             connect=retries,
             backoff_factor=backoff_factor,
             status_forcelist=status_forcelist,
+            allowed_methods=None,  # Allow retries on all methods including POST
         )
         adapter = HTTPAdapter(max_retries=retry)
         session.mount("http://", adapter)
@@ -61,14 +62,14 @@ class DoclingParser(RAGFlowPdfParser):
             return False
 
         try:
-            # Simple health check - assuming /health or root returns 200 or accessible
-            # We'll try the convert endpoint or just root.
-            # Since we don't know the exact health endpoint, we'll try a lightweight HEAD to base_url
+            # Simple health check - try a lightweight HEAD request to the base URL
             response = self.session.head(self.base_url.rstrip("/"), timeout=2)
-            # 405 Method Not Allowed is fine (server is up), 404 might be fine depending on server.
-            # Ideally docling-serve has a health endpoint. Assuming standard connectivity check.
-            # If standard docling-serve, it might not have HEAD. Let's assume ANY response means it's running.
-            return True
+            # Accept 2xx, 3xx (redirects), 404 (endpoint not found but server up), 405 (method not allowed but server up)
+            if response.status_code < 400 or response.status_code in (404, 405):
+                return True
+            else:
+                self.logger.warning(f"[Docling] Service returned error status {response.status_code} at {self.base_url}")
+                return False
         except requests.exceptions.RequestException as e:
             self.logger.warning(f"[Docling] Service unreachable at {self.base_url}: {e}")
             return False

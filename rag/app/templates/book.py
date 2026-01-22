@@ -29,11 +29,18 @@ from deepdoc.parser.figure_parser import vision_figure_parser_docx_wrapper
 from PIL import Image
 
 
+def _noop_callback(*args, **kwargs):
+    """No-op callback placeholder."""
+    pass
+
+
 class Pdf(PdfParser):
     def __call__(self, filename, binary=None, from_page=0, to_page=100000, zoomin=3, callback=None):
         from timeit import default_timer as timer
 
         start = timer()
+        callback = callback or _noop_callback
+
         callback(msg="OCR started")
         self.__images__(filename if not binary else binary, zoomin, from_page, to_page, callback)
         callback(msg="OCR finished ({:.2f}s)".format(timer() - start))
@@ -59,6 +66,7 @@ class Pdf(PdfParser):
 
 
 def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, **kwargs):
+    callback = callback or _noop_callback
     """
     Supported file formats are docx, pdf, txt.
     Since a book is long and not all the parts are useful, if it's a PDF,
@@ -143,6 +151,10 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
             logging.warning(f"tika not available: {e}. Unsupported .doc parsing for {filename}.")
             return []
 
+        if binary is None:
+            with open(filename, "rb") as f:
+                binary = f.read()
+
         binary = BytesIO(binary)
         doc_parsed = tika_parser.from_buffer(binary)
         if doc_parsed.get("content", None) is not None:
@@ -150,9 +162,11 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
             sections = [(line, "") for line in sections if line]
             remove_contents_table(sections, eng=is_english(random_choices([t for t, _ in sections], k=200)))
             callback(0.8, "Finish parsing.")
+        else:
+            callback(0.9, "Finish parsing. No content found.")
 
     else:
-        raise NotImplementedError("file type not supported yet(doc, docx, pdf, txt supported)")
+        raise NotImplementedError("file type not supported yet(doc, docx, pdf, txt, html, htm supported)")
 
     make_colon_as_title(sections)
     bull = bullets_category([t for t in random_choices([t for t, _ in sections], k=100)])
@@ -183,4 +197,7 @@ if __name__ == "__main__":
     def dummy(prog=None, msg=""):
         pass
 
+    if len(sys.argv) < 2:
+        print("Usage: python book.py <filename>")
+        sys.exit(1)
     chunk(sys.argv[1], from_page=1, to_page=10, callback=dummy)

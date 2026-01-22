@@ -168,7 +168,7 @@ def login_verify(f):
                 return jsonify({"code": 500, "message": "Access denied", "data": None}), 200
         except Exception:
             logging.exception("An error occurred during admin login verification.")
-            return jsonify({"code": 500, "message": "An internal server error occurred."}), 200
+            return jsonify({"code": 500, "message": "An internal server error occurred.", "data": None}), 200
 
         return f(*args, **kwargs)
 

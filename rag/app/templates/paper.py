@@ -30,16 +30,16 @@ from common.parser_config_utils import normalize_layout_recognizer
 
 class Pdf(PdfParser):
     def __init__(self):
-        self.model_speciess = ParserType.PAPER.value
+        self.model_species = ParserType.PAPER.value
         super().__init__()
 
     def __call__(self, filename, binary=None, from_page=0, to_page=100000, zoomin=3, callback=None):
         from timeit import default_timer as timer
 
         start = timer()
-        callback(msg="OCR started")
+        callback(0.1, "OCR started")
         self.__images__(filename if not binary else binary, zoomin, from_page, to_page, callback)
-        callback(msg="OCR finished ({:.2f}s)".format(timer() - start))
+        callback(0.5, "OCR finished ({:.2f}s)".format(timer() - start))
 
         start = timer()
         self._layouts_rec(zoomin)
@@ -53,7 +53,8 @@ class Pdf(PdfParser):
         start = timer()
         self._text_merge()
         tbls = self._extract_table_figure(True, zoomin, True, True)
-        column_width = np.median([b["x1"] - b["x0"] for b in self.boxes])
+        widths = [b["x1"] - b["x0"] for b in self.boxes]
+        column_width = np.median(widths) if widths else 0
         self._concat_downward()
         self._filter_forpages()
         callback(0.75, "Text merged ({:.2f}s)".format(timer() - start))
@@ -89,10 +90,11 @@ class Pdf(PdfParser):
                     title = ""
                     break
                 for j in range(3):
+                    if i + j >= len(self.boxes):
+                        break
                     if _begin(self.boxes[i + j]["text"]):
                         break
                     authors.append(self.boxes[i + j]["text"])
-                    break
                 break
         # get abstract
         abstr = ""
@@ -145,6 +147,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
 
         if name == "deepdoc":
             doc_parser = orchestrator.Pdf()
+            pdf_parser = doc_parser
             paper = doc_parser(filename if not binary else binary, from_page=from_page, to_page=to_page, callback=callback)
             sections = paper.get("sections", [])
         else:
@@ -226,84 +229,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         attach_media_context(res, table_ctx, image_ctx)
     return res
 
+    # Removed dead code block
 
-"""
-    readed = [0] * len(paper["lines"])
-    # find colon firstly
-    i = 0
-    while i + 1 < len(paper["lines"]):
-        txt = pdf_parser.remove_tag(paper["lines"][i][0])
-        j = i
-        if txt.strip("\n").strip()[-1] not in ":：":
-            i += 1
-            continue
-        i += 1
-        while i < len(paper["lines"]) and not paper["lines"][i][0]:
-            i += 1
-        if i >= len(paper["lines"]): break
-        proj = [paper["lines"][i][0].strip()]
-        i += 1
-        while i < len(paper["lines"]) and paper["lines"][i][0].strip()[0] == proj[-1][0]:
-            proj.append(paper["lines"][i])
-            i += 1
-        for k in range(j, i): readed[k] = True
-        txt = txt[::-1]
-        if eng:
-            r = re.search(r"(.*?) ([\\.;?!]|$)", txt)
-            txt = r.group(1)[::-1] if r else txt[::-1]
-        else:
-            r = re.search(r"(.*?) ([。？；！]|$)", txt)
-            txt = r.group(1)[::-1] if r else txt[::-1]
-        for p in proj:
-            d = copy.deepcopy(doc)
-            txt += "\n" + pdf_parser.remove_tag(p)
-            d["image"], poss = pdf_parser.crop(p, need_position=True)
-            add_positions(d, poss)
-            tokenize(d, txt, eng)
-            res.append(d)
-
-    i = 0
-    chunk = []
-    tk_cnt = 0
-    def add_chunk():
-        nonlocal chunk, res, doc, pdf_parser, tk_cnt
-        d = copy.deepcopy(doc)
-        ck = "\n".join(chunk)
-        tokenize(d, pdf_parser.remove_tag(ck), pdf_parser.is_english)
-        d["image"], poss = pdf_parser.crop(ck, need_position=True)
-        add_positions(d, poss)
-        res.append(d)
-        chunk = []
-        tk_cnt = 0
-
-    while i < len(paper["lines"]):
-        if tk_cnt > 128:
-            add_chunk()
-        if readed[i]:
-            i += 1
-            continue
-        readed[i] = True
-        txt, layouts = paper["lines"][i]
-        txt_ = pdf_parser.remove_tag(txt)
-        i += 1
-        cnt = num_tokens_from_string(txt_)
-        if any([
-            layouts.find("title") >= 0 and chunk,
-            cnt + tk_cnt > 128 and tk_cnt > 32,
-        ]):
-            add_chunk()
-            chunk = [txt]
-            tk_cnt = cnt
-        else:
-            chunk.append(txt)
-            tk_cnt += cnt
-
-    if chunk: add_chunk()
-    for i, d in enumerate(res):
-        print(d)
-        # d["image"].save(f"./logs/{i}.jpg")
-    return res
-"""
 
 if __name__ == "__main__":
     import sys

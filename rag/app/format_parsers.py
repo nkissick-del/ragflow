@@ -187,7 +187,7 @@ class Docx(DocxParser):
                     if block_type != "p":
                         continue
 
-                    if block.style and re.search(r"Heading\s*(\d+)", block.style.name, re.I):
+                    if block.style and block.style.name and re.search(r"Heading\s*(\d+)", block.style.name, re.I):
                         try:
                             level_match = re.search(r"(\d+)", block.style.name)
                             if level_match:
@@ -337,22 +337,27 @@ class Pdf(PdfParser):
     def __call__(self, filename, binary=None, from_page=0, to_page=100000, zoomin=3, callback=None, separate_tables_figures=False):
         start = timer()
         first_start = start
-        callback(msg="OCR started")
-        self.__images__(filename if not binary else binary, zoomin, from_page, to_page, callback)
-        callback(msg="OCR finished ({:.2f}s)".format(timer() - start))
+
+        def safe_callback(progress, msg):
+            if callback and callable(callback):
+                callback(progress, msg)
+
+        safe_callback(0, "OCR started")
+        self.__images__(filename if not binary else binary, zoomin, from_page, to_page, safe_callback)
+        safe_callback(0, "OCR finished ({:.2f}s)".format(timer() - start))
         logging.info("OCR({}~{}): {:.2f}s".format(from_page, to_page, timer() - start))
 
         start = timer()
         self._layouts_rec(zoomin)
-        callback(0.63, "Layout analysis ({:.2f}s)".format(timer() - start))
+        safe_callback(0.63, "Layout analysis ({:.2f}s)".format(timer() - start))
 
         start = timer()
         self._table_transformer_job(zoomin)
-        callback(0.65, "Table analysis ({:.2f}s)".format(timer() - start))
+        safe_callback(0.65, "Table analysis ({:.2f}s)".format(timer() - start))
 
         start = timer()
         self._text_merge(zoomin=zoomin)
-        callback(0.67, "Text merged ({:.2f}s)".format(timer() - start))
+        safe_callback(0.67, "Text merged ({:.2f}s)".format(timer() - start))
 
         if separate_tables_figures:
             tbls, figures = self._extract_table_figure(True, zoomin, True, True, True)
@@ -388,8 +393,8 @@ class Markdown(MarkdownParser):
 
     def get_hyperlink_urls(self, soup):
         if soup:
-            return set([a.get("href") for a in soup.find_all("a") if a.get("href")])
-        return []
+            return {a.get("href") for a in soup.find_all("a") if a.get("href")}
+        return set()
 
     def extract_image_urls_with_lines(self, text):
         md_img_re = re.compile(r"!\[[^\]]*\]\(([^)\s]+)")
@@ -473,8 +478,7 @@ class Markdown(MarkdownParser):
             txt = binary.decode(encoding, errors="ignore")
         else:
             with open(filename, "r") as f:
-                with open(filename, "r") as f:
-                    txt = f.read()
+                txt = f.read()
 
         remainder, tables = self.extract_tables_and_remainder(f"{txt}\n", separate_tables=separate_tables)
         # To eliminate duplicate tables in chunking result, uncomment code below and set separate_tables to True in line 410.
@@ -577,7 +581,8 @@ def by_docling(filename, binary=None, from_page=0, to_page=100000, lang="Chinese
     parse_method = kwargs.get("parse_method", "raw")
 
     if not pdf_parser.check_installation():
-        callback(-1, "Docling not found.")
+        if callback and callable(callback):
+            callback(-1, "Docling not found.")
         return None, None, pdf_parser
 
     sections, tables = pdf_parser.parse_pdf(
@@ -595,7 +600,8 @@ def by_tcadp(filename, binary=None, from_page=0, to_page=100000, lang="Chinese",
     tcadp_parser = TCADPParser()
 
     if not tcadp_parser.check_installation():
-        callback(-1, "TCADP parser not available. Please check Tencent Cloud API configuration.")
+        if callback and callable(callback):
+            callback(-1, "TCADP parser not available. Please check Tencent Cloud API configuration.")
         return None, None, tcadp_parser
 
     sections, tables = tcadp_parser.parse_pdf(filepath=filename, binary=binary, callback=callback, output_dir=os.environ.get("TCADP_OUTPUT_DIR", ""), file_type="PDF")
@@ -644,10 +650,11 @@ def by_paddleocr(
                 return sections, tables, pdf_parser
             except Exception as e:
                 logging.error(f"Failed to parse pdf via LLMBundle PaddleOCR ({paddleocr_llm_name}): {e}")
+                if callback and callable(callback):
+                    callback(-1, f"PaddleOCR parsing failed: {e}")
+                return None, None, None
 
-        return None, None, None
-
-    if callback:
+    if callback and callable(callback):
         callback(-1, "PaddleOCR not found.")
     return None, None, None
 

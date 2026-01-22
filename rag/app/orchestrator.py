@@ -55,7 +55,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
     st = timer()
 
     # 1. Setup
-    parser_config = kwargs.get("parser_config", {"chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC", "analyze_hyperlink": True})
+    parser_config = kwargs.get("parser_config", {"chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognizer": "DeepDOC", "analyze_hyperlink": True})
     is_english = lang.lower() == "english"
 
     doc = {"docnm_kwd": filename, "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))}
@@ -106,7 +106,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
 
             # Switch to DeepDOC and retry
             parser_config["layout_recognizer"] = "DeepDOC"
-            # Remove Docling specific config if any to avoid confusion, though DeepDOC ignores them mostly
+            # Update kwargs with the modified parser_config so the router receives the override
+            kwargs["parser_config"] = parser_config
             try:
                 parsed = UniversalRouter.route(filename, binary, from_page, to_page, lang, callback, **kwargs)
                 sections, tables, section_images, pdf_parser, is_markdown, urls = parsed

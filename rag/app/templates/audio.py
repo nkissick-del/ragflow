@@ -29,30 +29,34 @@ def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
 
     # is it English
     is_english = lang.lower() == "english"  # is_english(sections)
+
+    tmp_path = ""
     try:
         _, ext = os.path.splitext(filename)
         if not ext:
             raise RuntimeError("No extension detected.")
 
-        if ext not in [".da", ".wave", ".wav", ".mp3", ".wav", ".aac", ".flac", ".ogg", ".aiff", ".au", ".midi", ".wma",
-                       ".realaudio", ".vqf", ".oggvorbis", ".aac", ".ape"]:
+        ext = ext.lower()
+        if ext not in {".wav", ".mp3", ".aac", ".flac", ".ogg", ".aiff", ".au", ".midi", ".wma", ".realaudio", ".vqf", ".oggvorbis", ".ape", ".dra"}:
             raise RuntimeError(f"Extension {ext} is not supported yet.")
 
-        tmp_path = ""
         with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmpf:
             tmpf.write(binary)
             tmpf.flush()
             tmp_path = os.path.abspath(tmpf.name)
 
-        callback(0.1, "USE Sequence2Txt LLM to transcription the audio")
+        if callback:
+            callback(0.1, "USE Sequence2Txt LLM to transcription the audio")
         seq2txt_mdl = LLMBundle(tenant_id, LLMType.SPEECH2TEXT, lang=lang)
         ans = seq2txt_mdl.transcription(tmp_path)
-        callback(0.8, "Sequence2Txt LLM respond: %s ..." % ans[:32])
+        if callback:
+            callback(0.8, "Sequence2Txt LLM respond: %s ..." % ans[:32])
 
         tokenize(doc, ans, is_english)
         return [doc]
     except Exception as e:
-        callback(prog=-1, msg=str(e))
+        if callback:
+            callback(-1, str(e))
     finally:
         if tmp_path and os.path.exists(tmp_path):
             try:

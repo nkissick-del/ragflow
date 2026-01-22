@@ -19,8 +19,19 @@ class TestFormatParsers(unittest.TestCase):
         docx_parser = format_parsers.Docx()
         self.assertIsNotNone(docx_parser)
 
-        # Pdf parser usually requires inheritance or mixins, check basic signature
-        self.assertTrue(issubclass(format_parsers.Pdf, object))
+        # Pdf parser inherits from PdfParser - validate inheritance and interface
+        from deepdoc.parser import PdfParser
+
+        self.assertTrue(issubclass(format_parsers.Pdf, PdfParser))
+
+        # Verify essential methods exist on the Pdf class
+        self.assertTrue(hasattr(format_parsers.Pdf, "__call__"))
+        self.assertTrue(callable(getattr(format_parsers.Pdf, "__call__", None)))
+
+        # Verify the Pdf class can be instantiated
+        pdf_parser = format_parsers.Pdf()
+        self.assertIsInstance(pdf_parser, format_parsers.Pdf)
+        self.assertIsInstance(pdf_parser, PdfParser)
 
 
 if __name__ == "__main__":

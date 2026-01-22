@@ -28,8 +28,6 @@ import io
 def chunk(
     filename,
     binary=None,
-    from_page=0,
-    to_page=100000,
     lang="Chinese",
     callback=None,
     **kwargs,
@@ -79,12 +77,14 @@ def chunk(
 
         if content_type == "text/plain":
             payload = msg.get_payload(decode=True)
-            charset = msg.get_content_charset() or "utf-8"
-            _decode_payload(payload, charset, text_txt)
+            if payload:
+                charset = msg.get_content_charset() or "utf-8"
+                _decode_payload(payload, charset, text_txt)
         elif content_type == "text/html":
             payload = msg.get_payload(decode=True)
-            charset = msg.get_content_charset() or "utf-8"
-            _decode_payload(payload, charset, html_txt)
+            if payload:
+                charset = msg.get_content_charset() or "utf-8"
+                _decode_payload(payload, charset, html_txt)
         elif "multipart" in content_type:
             if msg.is_multipart():
                 for part in msg.iter_parts():
@@ -113,8 +113,8 @@ def chunk(
                 payload = part.get_payload(decode=True)
                 try:
                     attachment_res.extend(naive_chunk(filename, payload, callback=callback, **kwargs))
-                except Exception:
-                    pass
+                except Exception as e:
+                    logging.error(f"Failed to process attachment {filename}: {e}")
 
     return main_res + attachment_res
 

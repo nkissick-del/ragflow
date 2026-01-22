@@ -38,7 +38,7 @@ def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
         "docnm_kwd": filename,
         "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename)),
     }
-    eng = lang.lower() == "english"
+    eng = (lang or "").lower() == "english"
 
     parser_config = kwargs.get("parser_config", {}) or {}
     image_ctx = max(0, int(parser_config.get("image_context_size", 0) or 0))
@@ -51,14 +51,14 @@ def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
                 }
             )
             cv_mdl = LLMBundle(tenant_id, llm_type=LLMType.IMAGE2TEXT, lang=lang)
-            ans = asyncio.run(
-                cv_mdl.async_chat(system="", history=[], gen_conf={}, video_bytes=binary, filename=filename))
-            callback(0.8, "CV LLM respond: %s ..." % ans[:32])
-            ans += "\n" + ans
+            ans = asyncio.run(cv_mdl.async_chat(system="", history=[], gen_conf={}, video_bytes=binary, filename=filename))
+            if callback:
+                callback(0.8, "CV LLM respond: %s ..." % ans[:32])
             tokenize(doc, ans, eng)
             return [doc]
         except Exception as e:
-            callback(prog=-1, msg=str(e))
+            if callback:
+                callback(-1, str(e))
     else:
         img = Image.open(io.BytesIO(binary)).convert("RGB")
         doc.update(
@@ -69,30 +69,35 @@ def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
         )
         bxs = ocr(np.array(img))
         txt = "\n".join([t[0] for _, t in bxs if t[0]])
-        callback(0.4, "Finish OCR: (%s ...)" % txt[:12])
+        if callback:
+            callback(0.4, "Finish OCR: (%s ...)" % txt[:12])
         if (eng and len(txt.split()) > 32) or len(txt) > 32:
             tokenize(doc, txt, eng)
-            callback(0.8, "OCR results is too long to use CV LLM.")
+            if callback:
+                callback(0.8, "OCR results is too long to use CV LLM.")
             return attach_media_context([doc], 0, image_ctx)
 
         try:
-            callback(0.4, "Use CV LLM to describe the picture.")
+            if callback:
+                callback(0.4, "Use CV LLM to describe the picture.")
             cv_mdl = LLMBundle(tenant_id, LLMType.IMAGE2TEXT, lang=lang)
             img_binary = io.BytesIO()
             img.save(img_binary, format="JPEG")
             img_binary.seek(0)
             ans = cv_mdl.describe(img_binary.read())
-            callback(0.8, "CV LLM respond: %s ..." % ans[:32])
+            if callback:
+                callback(0.8, "CV LLM respond: %s ..." % ans[:32])
             txt += "\n" + ans
             tokenize(doc, txt, eng)
             return attach_media_context([doc], 0, image_ctx)
         except Exception as e:
-            callback(prog=-1, msg=str(e))
+            if callback:
+                callback(-1, str(e))
 
     return []
 
 
-def vision_llm_chunk(binary, vision_model, prompt=None, callback=None):
+def vision_llm_chunk(pil_image: Image.Image, vision_model, prompt=None, callback=None):
     """
     A simple wrapper to process image to markdown texts via VLM.
 
@@ -101,8 +106,7 @@ def vision_llm_chunk(binary, vision_model, prompt=None, callback=None):
     """
     callback = callback or (lambda prog, msg: None)
 
-    img = binary
-    txt = ""
+    img = pil_image
 
     try:
         with io.BytesIO() as img_binary:
@@ -115,8 +119,7 @@ def vision_llm_chunk(binary, vision_model, prompt=None, callback=None):
 
             img_binary.seek(0)
             ans = clean_markdown_block(vision_model.describe_with_prompt(img_binary.read(), prompt))
-            txt += "\n" + ans
-            return txt
+            return ans
 
     except Exception as e:
         callback(-1, str(e))

@@ -32,33 +32,38 @@ from common.parser_config_utils import normalize_layout_recognizer
 
 class Pdf(PdfParser):
     def __init__(self):
-        self.model_speciess = ParserType.MANUAL.value
+        self.model_species = ParserType.MANUAL.value
         super().__init__()
 
     def __call__(self, filename, binary=None, from_page=0, to_page=100000, zoomin=3, callback=None):
         from timeit import default_timer as timer
 
         start = timer()
-        callback(msg="OCR started")
+        if callback:
+            callback(0.0, "OCR started")
         self.__images__(filename if not binary else binary, zoomin, from_page, to_page, callback)
-        callback(msg="OCR finished ({:.2f}s)".format(timer() - start))
+        if callback:
+            callback(1.0, "OCR finished ({:.2f}s)".format(timer() - start))
         logging.debug("OCR: {}".format(timer() - start))
 
         start = timer()
         self._layouts_rec(zoomin)
-        callback(0.65, "Layout analysis ({:.2f}s)".format(timer() - start))
+        if callback:
+            callback(0.65, "Layout analysis ({:.2f}s)".format(timer() - start))
         logging.debug("layouts: {}".format(timer() - start))
 
         start = timer()
         self._table_transformer_job(zoomin)
-        callback(0.67, "Table analysis ({:.2f}s)".format(timer() - start))
+        if callback:
+            callback(0.67, "Table analysis ({:.2f}s)".format(timer() - start))
 
         start = timer()
         self._text_merge()
         tbls = self._extract_table_figure(True, zoomin, True, True)
         self._concat_downward()
         self._filter_forpages()
-        callback(0.68, "Text merged ({:.2f}s)".format(timer() - start))
+        if callback:
+            callback(0.68, "Text merged ({:.2f}s)".format(timer() - start))
 
         # clean mess
         for b in self.boxes:
@@ -162,10 +167,12 @@ class Docx(DocxParser):
                     for j in range(i + 1, len(r.cells)):
                         if c.text == r.cells[j].text:
                             span += 1
-                            i = j
                         else:
                             break
-                    i += 1
+                    tcPr = c._tc.tcPr
+                    if tcPr is not None and tcPr.gridSpan is not None:
+                        span = int(tcPr.gridSpan.val)
+                    i += span
                     html += f"<td>{c.text}</td>" if span == 1 else f"<td colspan='{span}'>{c.text}</td>"
                 html += "</tr>"
             html += "</table>"
@@ -192,7 +199,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
 
         name = layout_recognizer.strip().lower()
         pdf_parser = orchestrator.get_parser(name)
-        callback(0.1, "Start to parse.")
+        if callback:
+            callback(0.1, "Start to parse.")
 
         kwargs.pop("parse_method", None)
         kwargs.pop("mineru_llm_name", None)
@@ -240,7 +248,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         if name in ["tcadp", "docling", "mineru", "paddleocr"]:
             parser_config["chunk_token_num"] = 0
 
-        callback(0.8, "Finish parsing.")
+        if callback:
+            callback(0.8, "Finish parsing.")
 
         if len(sections) > 0 and len(pdf_parser.outlines) / len(sections) > 0.03:
             max_lvl = max([lvl for _, lvl in pdf_parser.outlines])
@@ -282,7 +291,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         chunks = []
         last_sid = -2
         tk_cnt = 0
-        for txt, sec_id, poss in sorted(sections, key=lambda x: (x[-1][0][0], x[-1][0][3], x[-1][0][1])):
+        for txt, sec_id, poss in sorted(sections, key=lambda x: (x[-1][0][0], x[-1][0][3], x[-1][0][1]) if x[-1] else (float("inf"), 0, 0)):
             poss = "\t".join([tag(*pos) for pos in poss])
             if tk_cnt < 32 or (tk_cnt < 1024 and (sec_id == last_sid or sec_id == -1)):
                 if chunks:

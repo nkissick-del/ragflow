@@ -53,8 +53,7 @@ class Excel(ExcelParser):
             ws = wb[sheet_name]
             images = Excel._extract_images_from_worksheet(ws, sheetname=sheet_name)
             if images:
-                image_descriptions = vision_figure_parser_figure_xlsx_wrapper(images=images, callback=callback,
-                                                                              **kwargs)
+                image_descriptions = vision_figure_parser_figure_xlsx_wrapper(images=images, callback=callback, **kwargs)
                 if image_descriptions and len(image_descriptions) == len(images):
                     for i, bf in enumerate(image_descriptions):
                         images[i]["image_description"] = "\n".join(bf[0][1])
@@ -107,7 +106,8 @@ class Excel(ExcelParser):
 
                 col_name = df.columns[excel_col]
 
-                if not df.iloc[df_row_idx][col_name]:
+                val = df.iloc[df_row_idx][col_name]
+                if pd.isna(val) or val is None or str(val) == "":
                     df.iat[df_row_idx, excel_col] = img["image_description"]
             res.append(df)
         for img in flow_images:
@@ -115,15 +115,15 @@ class Excel(ExcelParser):
                 (
                     (
                         img["image"],  # Image.Image
-                        [img["image_description"]]  # description list (must be list)
+                        [img["image_description"]],  # description list (must be list)
                     ),
                     [
                         (0, 0, 0, 0, 0)  # dummy position
-                    ]
+                    ],
                 )
             )
-        callback(0.3, ("Extract records: {}~{}".format(from_page + 1, min(to_page, from_page + rn)) + (
-            f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
+        if callback:
+            callback(0.3, ("Extract records: {}~{}".format(from_page + 1, min(to_page, from_page + rn)) + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
         return res, tables
 
     def _parse_headers(self, ws, rows):
@@ -248,7 +248,12 @@ class Excel(ExcelParser):
                 headers.append(header)
             else:
                 headers.append(f"Column_{col_idx + 1}")
-        final_headers = [h for h in headers if h and h != "-"]
+        final_headers = []
+        for i, h in enumerate(headers):
+            if not h or h == "-":
+                final_headers.append(f"Column_{i + 1}")
+            else:
+                final_headers.append(h)
         return final_headers
 
     def _is_valid_header_part(self, value):
@@ -319,18 +324,18 @@ def trans_bool(s):
 def column_data_type(arr):
     arr = list(arr)
     counts = {"int": 0, "float": 0, "text": 0, "datetime": 0, "bool": 0}
-    trans = {t: f for f, t in
-             [(int, "int"), (float, "float"), (trans_datatime, "datetime"), (trans_bool, "bool"), (str, "text")]}
+    trans = {t: f for f, t in [(int, "int"), (float, "float"), (trans_datatime, "datetime"), (trans_bool, "bool"), (str, "text")]}
     float_flag = False
     for a in arr:
         if a is None:
             continue
-        if re.match(r"[+-]?[0-9]+$", str(a).replace("%%", "")) and not str(a).replace("%%", "").startswith("0"):
+        cleaned = str(a).replace("%%", "")
+        if re.match(r"^[+-]?[0-9]+$", cleaned) and not cleaned.startswith("0"):
             counts["int"] += 1
-            if int(str(a)) > 2 ** 63 - 1:
+            if int(cleaned) > 2**63 - 1:
                 float_flag = True
                 break
-        elif re.match(r"[+-]?[0-9.]{,19}$", str(a).replace("%%", "")) and not str(a).replace("%%", "").startswith("0"):
+        elif re.match(r"^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$", cleaned) and not cleaned.startswith("0"):
             counts["float"] += 1
         elif re.match(r"(true|yes|是|\*|✓|✔|☑|✅|√|false|no|否|⍻|×)$", str(a), flags=re.IGNORECASE):
             counts["bool"] += 1
@@ -347,7 +352,7 @@ def column_data_type(arr):
         if arr[i] is None:
             continue
         try:
-            arr[i] = trans[ty](str(arr[i]))
+            arr[i] = trans[ty](str(arr[i]).replace("%%", ""))
         except Exception as e:
             arr[i] = None
             logging.warning(f"Column {i}: {e}")
@@ -371,6 +376,11 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
 
     Every row in table will be treated as a chunk.
     """
+    if callback is None:
+
+        def callback(*args, **kwargs):
+            pass
+
     tbls = []
     is_english = lang.lower() == "english"
     if re.search(r"\.xlsx?$", filename, re.IGNORECASE):
@@ -395,8 +405,7 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
                 continue
             rows.append(row)
 
-        callback(0.3, ("Extract records: {}~{}".format(from_page, min(len(lines), to_page)) + (
-            f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
+        callback(0.3, ("Extract records: {}~{}".format(from_page, min(len(lines), to_page)) + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
 
         dfs = [pd.DataFrame(np.array(rows), columns=headers)]
     elif re.search(r"\.csv$", filename, re.IGNORECASE):
@@ -413,17 +422,13 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
         fails = []
         rows = []
 
-        for i, row in enumerate(all_rows[1 + from_page: 1 + to_page]):
+        for i, row in enumerate(all_rows[1 + from_page : 1 + to_page]):
             if len(row) != len(headers):
                 fails.append(str(i + from_page))
                 continue
             rows.append(row)
 
-        callback(
-            0.3,
-            (f"Extract records: {from_page}~{from_page + len(rows)}" +
-             (f"{len(fails)} failure, line: {','.join(fails[:3])}..." if fails else ""))
-        )
+        callback(0.3, (f"Extract records: {from_page}~{from_page + len(rows)}" + (f"{len(fails)} failure, line: {','.join(fails[:3])}..." if fails else "")))
 
         dfs = [pd.DataFrame(rows, columns=headers)]
     else:
@@ -452,8 +457,7 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
             df[clmns[j]] = cln
             if ty == "text":
                 txts.extend([str(c) for c in cln if c])
-        clmns_map = [(py_clmns[i].lower() + fieds_map[clmn_tys[i]], str(clmns[i]).replace("_", " ")) for i in
-                     range(len(clmns))]
+        clmns_map = [(py_clmns[i].lower() + fieds_map[clmn_tys[i]], str(clmns[i]).replace("_", " ")) for i in range(len(clmns))]
 
         eng = lang.lower() == "english"  # is_english(txts)
         for ii, row in df.iterrows():
@@ -476,7 +480,9 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
         if tbls:
             doc = {"docnm_kwd": filename, "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))}
             res.extend(tokenize_table(tbls, doc, is_english))
-        KnowledgebaseService.update_parser_config(kwargs["kb_id"], {"field_map": {k: v for k, v in clmns_map}})
+        kb_id = kwargs.get("kb_id")
+        if kb_id:
+            KnowledgebaseService.update_parser_config(kb_id, {"field_map": {k: v for k, v in clmns_map}})
     callback(0.35, "")
 
     return res
@@ -485,9 +491,7 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
 if __name__ == "__main__":
     import sys
 
-
     def dummy(prog=None, msg=""):
         pass
-
 
     chunk(sys.argv[1], callback=dummy)

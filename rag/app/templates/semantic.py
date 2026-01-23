@@ -48,6 +48,7 @@ try:
     def num_tokens(text: str) -> int:
         return len(_enc.encode(text))
 except ImportError:
+    logging.warning("[Semantic] tiktoken not installed. Using fallback estimator for num_tokens.")
 
     def num_tokens(text: str) -> int:
         # Simple estimation: ~4 chars per token for English
@@ -178,7 +179,8 @@ class Semantic:
 
             if tokens <= chunk_token_num:
                 # Fits in single chunk
-                chunks.append(SemanticChunk(text=text.strip(), header_path=header_path, metadata={"tokens": tokens}))
+                final_text = text.strip()
+                chunks.append(SemanticChunk(text=final_text, header_path=header_path, metadata={"tokens": num_tokens(final_text)}))
             else:
                 # Split large sections at paragraph boundaries
                 paragraphs = text.split("\n\n")
@@ -188,11 +190,24 @@ class Semantic:
 
                 def split_large_paragraph(para: str) -> List[str]:
                     """Split a large paragraph at sentence boundaries."""
-                    # Try to split at sentence boundaries
-                    sentences = re.split(r"(?<=[.!?])\s+", para)
-                    if len(sentences) <= 1:
-                        # Can't split further, log warning and return as-is
-                        logging.warning(f"[Semantic] Paragraph exceeds chunk_token_num ({num_tokens(para)} > {chunk_token_num}) and cannot be split at sentence boundaries")
+                    sentences = []
+                    try:
+                        import nltk
+
+                        try:
+                            sentences = nltk.sent_tokenize(para)
+                        except LookupError:
+                            # Attempt to download punkt if missing
+                            logging.warning("[Semantic] 'punkt' not found. Attempting to download...")
+                            nltk.download("punkt")
+                            sentences = nltk.sent_tokenize(para)
+                    except (ImportError, LookupError) as e:
+                        logging.warning(f"[Semantic] NLTK/punkt not available ({e}). Falling back to regex splitting.")
+                        # Fallback to regex splitting
+                        sentences = re.split(r"(?<=[.!?])\s+", para)
+
+                    if not sentences:
+                        logging.warning("[Semantic] No sentences found. Returning original paragraph.")
                         return [para]
 
                     # Group sentences to fit within chunk_token_num
@@ -202,6 +217,34 @@ class Semantic:
 
                     for sentence in sentences:
                         sentence_tokens = num_tokens(sentence)
+
+                        # Handle single sentence exceeding limit
+                        if sentence_tokens > chunk_token_num:
+                            # 1. Flush any existing group
+                            if current_sentence_group:
+                                result.append(current_sentence_group)
+                                current_sentence_group = ""
+                                current_sentence_tokens = 0
+
+                            # 2. Split the oversized sentence iteratively
+                            words = sentence.split(" ")
+                            temp_chunk = ""
+                            temp_tokens = 0
+                            for word in words:
+                                word_tokens = num_tokens(word)
+                                space_tokens = num_tokens(" ") if temp_chunk else 0
+                                if temp_tokens + word_tokens + space_tokens > chunk_token_num and temp_chunk:
+                                    result.append(temp_chunk)
+                                    temp_chunk = word
+                                    temp_tokens = word_tokens
+                                else:
+                                    temp_chunk += (" " if temp_chunk else "") + word
+                                    temp_tokens += word_tokens + space_tokens
+
+                            if temp_chunk:
+                                result.append(temp_chunk)
+                            continue
+
                         space_tokens = num_tokens(" ") if current_sentence_group else 0
 
                         if current_sentence_tokens + sentence_tokens + space_tokens > chunk_token_num and current_sentence_group:
@@ -249,16 +292,24 @@ class Semantic:
                         if overlap_percent > 0:
                             overlap_tokens = int(current_tokens * overlap_percent / 100)
                             # Take last portion of current_chunk by rebuilding from end
-                            # Simple approach: recompute by taking trailing text
+                            # Optimized O(n) approach: compute count once and subtract
                             overlap_text = current_chunk
-                            while num_tokens(overlap_text) > overlap_tokens and len(overlap_text) > 0:
+                            overlap_count = num_tokens(overlap_text)
+
+                            while overlap_count > overlap_tokens and len(overlap_text) > 0:
                                 # Remove from start until we're within overlap_tokens
                                 first_space = overlap_text.find(" ")
                                 if first_space == -1:
                                     break
+
+                                removed_piece = overlap_text[: first_space + 1]
+                                overlap_count -= num_tokens(removed_piece)
                                 overlap_text = overlap_text[first_space + 1 :]
+
                             current_chunk = overlap_text + "\n\n" + para if overlap_text else para
-                            current_tokens = num_tokens(current_chunk)
+                            # Update current_tokens efficiently
+                            sep_cost = separator_tokens if overlap_text else 0
+                            current_tokens = overlap_count + sep_cost + para_tokens
                         else:
                             current_chunk = para
                             current_tokens = para_tokens
@@ -273,7 +324,8 @@ class Semantic:
 
                 # Emit final chunk
                 if current_chunk.strip():
-                    chunks.append(SemanticChunk(text=current_chunk.strip(), header_path=header_path, metadata={"tokens": num_tokens(current_chunk)}))
+                    final_text = current_chunk.strip()
+                    chunks.append(SemanticChunk(text=final_text, header_path=header_path, metadata={"tokens": num_tokens(final_text)}))
 
         for line in lines:
             # Track code blocks (don't parse headers inside them)

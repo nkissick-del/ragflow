@@ -75,7 +75,7 @@ case "${1:-semantic}" in
         ;;
     all)
         # Run all unit tests that don't require Docker dependencies
-        # Excludes: test_orchestrator.py (needs rag.app.orchestrator imports which need heavy deps)
+        # Excludes: test_orchestrator.py, test_format_parsers.py (require heavy deps/imports)
         # Includes: standardized_document, semantic template, and other standalone tests
         echo -e "${YELLOW}Running all locally-compatible unit tests...${NC}"
         pytest "$PROJECT_ROOT/test/unit_test/rag/app" \

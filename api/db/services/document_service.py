@@ -125,6 +125,21 @@ class DocumentService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def get_first_unparsed_document(cls, kb_id):
+        # returns the first document that is unparsed or running
+        # used for checking if KB is ready
+        fields = [cls.model.name, cls.model.run, cls.model.chunk_num]
+
+        condition = (cls.model.kb_id == kb_id) & (
+            (cls.model.run.in_([TaskStatus.RUNNING.value, TaskStatus.CANCEL.value, TaskStatus.FAIL.value])) |
+            ((cls.model.run == TaskStatus.UNSTART.value) & (cls.model.chunk_num == 0))
+        )
+
+        doc = cls.model.select(*fields).where(condition).limit(1).dicts().first()
+        return doc
+
+    @classmethod
+    @DB.connection_context()
     def get_by_kb_id(cls, kb_id, page_number, items_per_page, orderby, desc, keywords, run_status, types, suffix, doc_ids=None, return_empty_metadata=False):
         fields = cls.get_cls_model_fields()
         if keywords:

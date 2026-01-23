@@ -102,11 +102,9 @@ class KnowledgebaseService(CommonService):
             return False, "Knowledge base not found"
         kb = kbs[0]
 
-        # Get all documents in the dataset
-        docs, _ = DocumentService.get_by_kb_id(kb_id, 1, 1000, "create_time", True, "", [], [])
-
-        # Check parsing status of each document
-        for doc in docs:
+        # Check if there is any document not parsed yet
+        doc = DocumentService.get_first_unparsed_document(kb_id)
+        if doc:
             # If document is being parsed, don't allow chat creation
             if doc['run'] == TaskStatus.RUNNING.value or doc['run'] == TaskStatus.CANCEL.value or doc['run'] == TaskStatus.FAIL.value:
                 return False, f"Document '{doc['name']}' in dataset '{kb.name}' is still being parsed. Please wait until all documents are parsed before starting a chat."

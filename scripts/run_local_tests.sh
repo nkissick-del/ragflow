@@ -58,6 +58,11 @@ source "$VENV_DIR/bin/activate"
 REQ_FILE="$PROJECT_ROOT/requirements-test.txt"
 MARKER_FILE="$VENV_DIR/.deps_installed"
 
+if [ ! -f "$REQ_FILE" ]; then
+    echo "Error: $REQ_FILE not found."
+    exit 1
+fi
+
 if [ ! -f "$MARKER_FILE" ] || [ "$REQ_FILE" -nt "$MARKER_FILE" ]; then
     echo -e "${YELLOW}Installing test dependencies...${NC}"
     pip install --upgrade pip -q

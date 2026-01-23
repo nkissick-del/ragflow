@@ -48,6 +48,7 @@ from rag.nlp import rag_tokenizer
 # Try to import token counting utility, fallback to simple estimation
 try:
     import os
+    import threading
     from tiktoken import encoding_for_model
 
     # Default model for token counting
@@ -56,28 +57,116 @@ try:
     _DEFAULT_TOKENIZER_MODEL = "gpt-3.5-turbo"
     _tokenizer_model = os.environ.get("SEMANTIC_TOKENIZER_MODEL", _DEFAULT_TOKENIZER_MODEL)
     _enc = None  # Lazy-initialized on first use
+    _tokenizer_lock = threading.Lock()  # Protects _tokenizer_model and _enc
+    _validation_error = None  # Stores validation error if model is invalid
+
+    def _validate_tokenizer_model(model_name: str) -> bool:
+        """
+        Validate that the tokenizer model is supported by tiktoken.
+
+        Args:
+            model_name: Model name to validate
+
+        Returns:
+            True if valid, False otherwise (sets _validation_error)
+        """
+        global _validation_error
+        try:
+            # Try to create encoder to validate the model
+            _ = encoding_for_model(model_name)
+            _validation_error = None
+            return True
+        except KeyError:
+            # Model not found in tiktoken
+            _validation_error = (
+                f"Invalid tokenizer model: '{model_name}'. "
+                f"This model is not supported by tiktoken. "
+                f"Common models include: 'gpt-4', 'gpt-4-32k', 'gpt-3.5-turbo', "
+                f"'text-embedding-ada-002', 'text-embedding-3-small', 'text-embedding-3-large'. "
+                f"See tiktoken documentation for full list."
+            )
+            logging.error(f"[Semantic] {_validation_error}")
+            return False
+        except Exception as e:
+            # Other errors (e.g., network issues if model list needs updating)
+            _validation_error = f"Error validating tokenizer model '{model_name}': {type(e).__name__}: {e}"
+            logging.error(f"[Semantic] {_validation_error}")
+            return False
+
+    # Validate environment variable at module load
+    if not _validate_tokenizer_model(_tokenizer_model):
+        logging.warning(
+            f"[Semantic] Falling back to default model '{_DEFAULT_TOKENIZER_MODEL}' due to invalid "
+            f"SEMANTIC_TOKENIZER_MODEL='{_tokenizer_model}'"
+        )
+        _tokenizer_model = _DEFAULT_TOKENIZER_MODEL
+        # Re-validate the default (should always succeed)
+        if not _validate_tokenizer_model(_tokenizer_model):
+            raise RuntimeError(f"[Semantic] Default tokenizer model '{_DEFAULT_TOKENIZER_MODEL}' is invalid. This should never happen.")
 
     def set_tokenizer_model(model_name: str):
         """
         Configure the tokenizer model for token counting.
 
+        This function validates the model name immediately and raises ValueError if invalid.
+        It is thread-safe and can be called at any time, but it's recommended to configure
+        the tokenizer once at application startup before any concurrent document processing
+        begins to avoid unnecessary re-initialization overhead.
+
         Args:
             model_name: Model name for tiktoken (e.g., "gpt-4", "gpt-3.5-turbo", "text-embedding-ada-002")
 
+        Raises:
+            ValueError: If the model name is not supported by tiktoken
+
         Example:
-            set_tokenizer_model("gpt-4")
+            # At application startup
+            try:
+                set_tokenizer_model("gpt-4")
+            except ValueError as e:
+                print(f"Invalid model: {e}")
+                # Fall back to default or handle error
+
+        Note:
+            Changing the model after processing has started will cause the encoder
+            to be re-initialized on the next call to num_tokens(), which may have
+            a small performance impact.
         """
         global _tokenizer_model, _enc
-        _tokenizer_model = model_name
-        _enc = None  # Reset encoder to force re-initialization
+
+        # Validate before acquiring lock (validation may be slow)
+        if not _validate_tokenizer_model(model_name):
+            raise ValueError(_validation_error)
+
+        with _tokenizer_lock:
+            _tokenizer_model = model_name
+            _enc = None  # Reset encoder to force re-initialization
 
     def _get_encoder():
-        """Lazy-initialize the tiktoken encoder."""
+        """
+        Lazy-initialize the tiktoken encoder (thread-safe).
+
+        Returns:
+            Initialized tiktoken encoder for the configured model
+
+        Raises:
+            RuntimeError: If the encoder cannot be initialized (should not happen
+                         if validation was successful)
+        """
         global _enc
-        if _enc is None:
-            _enc = encoding_for_model(_tokenizer_model)
-            logging.info(f"[Semantic] Initialized tiktoken encoder for model: {_tokenizer_model}")
-        return _enc
+        with _tokenizer_lock:
+            if _enc is None:
+                try:
+                    _enc = encoding_for_model(_tokenizer_model)
+                    logging.info(f"[Semantic] Initialized tiktoken encoder for model: {_tokenizer_model}")
+                except Exception as e:
+                    error_msg = (
+                        f"Failed to initialize tiktoken encoder for model '{_tokenizer_model}': {e}. "
+                        f"This should not happen if validation succeeded. Please report this issue."
+                    )
+                    logging.error(f"[Semantic] {error_msg}")
+                    raise RuntimeError(error_msg) from e
+            return _enc
 
     def num_tokens(text: str, is_english: bool = None) -> int:
         """
@@ -245,7 +334,7 @@ class Semantic:
         lines = content.split("\n")
 
         header_stack: List[Tuple[int, str]] = []  # (level, text)
-        code_block = False
+        code_block_fence = None  # Tracks fence type: None, "```", or "~~~"
         current_section = ""
         chunks: List[SemanticChunk] = []
 
@@ -418,13 +507,34 @@ class Semantic:
         for line in lines:
             # Track code blocks (don't parse headers inside them)
             # Support both backtick (```) and tilde (~~~) fenced code blocks per CommonMark spec
+            # Only matching fence types can close a block (e.g., ``` closes ```, not ~~~)
             stripped = line.lstrip()
-            if stripped.startswith("```") or stripped.startswith("~~~"):
-                code_block = not code_block
+
+            # Check for backtick fence
+            if stripped.startswith("```"):
+                if code_block_fence is None:
+                    # Opening a backtick fence
+                    code_block_fence = "```"
+                elif code_block_fence == "```":
+                    # Closing the matching backtick fence
+                    code_block_fence = None
+                # If code_block_fence is "~~~", this is content inside a tilde fence, not a fence marker
                 current_section += line + "\n"
                 continue
 
-            if not code_block:
+            # Check for tilde fence
+            if stripped.startswith("~~~"):
+                if code_block_fence is None:
+                    # Opening a tilde fence
+                    code_block_fence = "~~~"
+                elif code_block_fence == "~~~":
+                    # Closing the matching tilde fence
+                    code_block_fence = None
+                # If code_block_fence is "```", this is content inside a backtick fence, not a fence marker
+                current_section += line + "\n"
+                continue
+
+            if code_block_fence is None:
                 # Check for Markdown header
                 header_match = re.match(r"^(#+)\s+(.*)", line)
                 if header_match:

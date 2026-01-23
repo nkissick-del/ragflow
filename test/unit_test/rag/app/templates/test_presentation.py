@@ -21,7 +21,16 @@ _MOCKED_MODULES = [
     "common",
     "common.parser_config_utils",
 ]
+
+# Track intermediate package names that may be created by imports
+_INTERMEDIATE_PACKAGES = [
+    "rag",
+    "rag.app",
+    "rag.app.templates",
+]
+
 _original_modules = {mod: sys.modules.get(mod) for mod in _MOCKED_MODULES}
+_original_intermediate_packages = {pkg: sys.modules.get(pkg) for pkg in _INTERMEDIATE_PACKAGES}
 
 # Mock PIL with a working Image.open
 mock_pil_image_module = MagicMock()
@@ -233,6 +242,17 @@ def teardown_module():
         else:
             # Restore original module
             sys.modules[mod] = original_value
+
+    # Restore intermediate package names to ensure complete isolation
+    # Process in reverse order (deepest to shallowest) to avoid parent/child issues
+    for pkg in reversed(_INTERMEDIATE_PACKAGES):
+        original_value = _original_intermediate_packages.get(pkg)
+        if original_value is None:
+            # Package didn't exist originally, remove it
+            sys.modules.pop(pkg, None)
+        else:
+            # Restore original package
+            sys.modules[pkg] = original_value
 
 
 if __name__ == "__main__":

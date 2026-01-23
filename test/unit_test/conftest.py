@@ -2,9 +2,43 @@ import sys
 from unittest.mock import MagicMock
 import warnings
 import types
+from pathlib import Path
 
 # Suppress warnings
 warnings.filterwarnings("ignore")
+
+
+# =============================================================================
+# Project path setup
+# =============================================================================
+def _setup_project_path():
+    """Add project root to sys.path by finding repo marker files.
+
+    Walks up from this file's directory to find the repository root
+    (identified by pyproject.toml, setup.cfg, or .git), then adds it
+    to sys.path if not already present.
+    """
+    current = Path(__file__).resolve().parent
+    repo_markers = ["pyproject.toml", "setup.cfg", ".git"]
+
+    # Walk up the directory tree
+    for parent in [current] + list(current.parents):
+        # Check if any repo marker exists in this directory
+        if any((parent / marker).exists() for marker in repo_markers):
+            repo_root = str(parent)
+            if repo_root not in sys.path:
+                sys.path.insert(0, repo_root)
+            return repo_root
+
+    # Fallback: couldn't find repo root
+    raise RuntimeError(
+        f"Could not find repository root from {__file__}. "
+        f"Looked for: {', '.join(repo_markers)}"
+    )
+
+
+# Set up project path before any imports
+_setup_project_path()
 
 # =============================================================================
 # Mock heavy dependencies that are difficult to install on Mac

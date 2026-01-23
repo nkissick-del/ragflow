@@ -6,6 +6,33 @@ import os
 # Ensure ragflow is in python path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../..")))
 
+# Mock dependencies to prevent heavy imports (DB, ML models, etc.)
+# This allows running unit tests without installing the full environment.
+from unittest.mock import MagicMock
+
+_mock_modules = [
+    "rag.app.format_parsers",
+    "rag.app.router",
+    "rag.app.templates.general",
+    "rag.app.templates.semantic",
+    "rag.nlp",
+    "rag.utils.file_utils",
+    "common",
+    "common.settings",
+    "api.db.services.llm_service",
+]
+
+module_mocks = {}
+for mod_name in _mock_modules:
+    module_mocks[mod_name] = MagicMock()
+    sys.modules[mod_name] = module_mocks[mod_name]
+
+# Setup specific mock attributes needed by orchestrator import
+module_mocks["rag.app.format_parsers"].PARSERS = {}
+# rag.nlp.rag_tokenizer is imported as `from rag.nlp import rag_tokenizer`
+# We ensure rag.nlp has the attribute
+module_mocks["rag.nlp"].rag_tokenizer = MagicMock()
+
 from rag.app import orchestrator
 from rag.app.standardized_document import StandardizedDocument
 
@@ -65,6 +92,20 @@ class TestAdaptDoclingOutput(unittest.TestCase):
         self.assertEqual(result.metadata["parser"], "docling")
         self.assertEqual(result.metadata["layout_recognizer"], "Docling")
 
+    def test_adapt_with_tables(self):
+        """Test adapter handling of tables."""
+        sections = "# Header\nText"
+        tables = [{"type": "table", "content": "| A | B |\n|---|---|\n| 1 | 2 |"}]
+        parser_config = {"layout_recognizer": "Docling"}
+
+        result = orchestrator.adapt_docling_output(sections, tables, parser_config)
+
+        self.assertIsInstance(result, StandardizedDocument)
+        self.assertEqual(result.content, sections)
+        self.assertEqual(result.metadata["tables"], tables)
+        self.assertEqual(result.metadata["parser"], "docling")
+        self.assertEqual(result.metadata["layout_recognizer"], "Docling")
+
     def test_adapt_list_input_legacy(self):
         """Test adapter with legacy list format."""
         sections = ["# Heading", "Paragraph text here."]
@@ -106,14 +147,14 @@ class TestSemanticRouting(unittest.TestCase):
 
         parser_config = {"layout_recognizer": "Docling", "use_semantic_chunking": True}
 
-        with patch.dict("os.environ", {}):
-            res = orchestrator.chunk("test.pdf", b"content", parser_config=parser_config)
+        # os.environ patch removed as requested
+        res = orchestrator.chunk("test.pdf", b"content", parser_config=parser_config)
 
         # Should use General because sections is a list, not string
         mock_general.chunk.assert_called_once()
 
     @patch("rag.app.orchestrator.UniversalRouter")
-    @patch("rag.app.orchestrator.Semantic")
+    @patch("rag.app.templates.semantic.Semantic")
     def test_semantic_path_with_string_sections(self, mock_semantic, mock_router):
         """Test that string sections with use_semantic_chunking routes to Semantic template."""
         # Sections as string = new semantic path
@@ -148,6 +189,7 @@ class TestSemanticRouting(unittest.TestCase):
 
         # Should use General because flag is not set
         mock_general.chunk.assert_called_once()
+        self.assertEqual(res, [{"content": "general result"}])
 
 
 if __name__ == "__main__":

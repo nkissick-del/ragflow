@@ -26,6 +26,7 @@ from unittest.mock import patch
 
 # Import the semantic template components
 from rag.app.templates.semantic import Semantic, SemanticChunk
+from rag.app.standardized_document import StandardizedDocument
 
 
 class TestSemanticChunkDataclass(unittest.TestCase):
@@ -221,8 +222,6 @@ class TestSemanticChunkMethod(unittest.TestCase):
         mock_tokenizer.tokenize.return_value = "tokenized content"
         mock_tokenizer.fine_grained_tokenize.return_value = "fine grained"
 
-        from rag.app.standardized_document import StandardizedDocument
-
         doc = StandardizedDocument(content="# Test\n\nContent here.")
         parser_config = {"chunk_token_num": 500}
         doc_metadata = {"docnm_kwd": "test.pdf", "title_tks": "test"}
@@ -245,8 +244,6 @@ class TestSemanticChunkMethod(unittest.TestCase):
         """Test that header_path is correctly preserved in output."""
         mock_tokenizer.tokenize.return_value = "tokenized"
         mock_tokenizer.fine_grained_tokenize.return_value = "fine"
-
-        from rag.app.standardized_document import StandardizedDocument
 
         content = """# Introduction
 

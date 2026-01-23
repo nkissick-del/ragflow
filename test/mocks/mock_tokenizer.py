@@ -21,19 +21,19 @@ class MockRagTokenizer:
         """Return input as-is for testing."""
         return tks if tks else ""
 
-    def tag(self, text: str):
+    def tag(self, text: str) -> list[str]:
         """Mock tag function."""
         return []
 
-    def freq(self, word: str):
+    def freq(self, word: str) -> int:
         """Mock freq function."""
         return 0
 
-    def _tradi2simp(self, text: str):
+    def _tradi2simp(self, text: str) -> str:
         """Mock traditional to simplified conversion."""
         return text
 
-    def _strQ2B(self, text: str):
+    def _strQ2B(self, text: str) -> str:
         """Mock full-width to half-width conversion."""
         return text
 

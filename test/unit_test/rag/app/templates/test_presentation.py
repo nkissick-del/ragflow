@@ -1,18 +1,76 @@
 import unittest
 from unittest.mock import MagicMock, patch
 import sys
-import os
+import types
 
-# Add project root to path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../..")))
+# Project root is automatically added to sys.path by test/unit_test/conftest.py
 
 # ----------------- MOCK SETUP START -----------------
+# Save original sys.modules state for cleanup
+_MOCKED_MODULES = [
+    "PIL",
+    "PIL.Image",
+    "PyPDF2",
+    "aspose",
+    "aspose.slides",
+    "aspose.pydrawing",
+    "deepdoc",
+    "deepdoc.parser",
+    "rag.nlp",
+    "rag.app.format_parsers",
+    "common",
+    "common.parser_config_utils",
+]
+_original_modules = {mod: sys.modules.get(mod) for mod in _MOCKED_MODULES}
+
+# Mock PIL with a working Image.open
+mock_pil_image_module = MagicMock()
+mock_pil_image = MagicMock()
+mock_pil_image.copy.return_value = MagicMock()  # Return a mock image object
+mock_pil_image_module.open.return_value = mock_pil_image
 sys.modules["PIL"] = MagicMock()
-sys.modules["PIL.Image"] = MagicMock()
+sys.modules["PIL.Image"] = mock_pil_image_module
+
 sys.modules["PyPDF2"] = MagicMock()
-sys.modules["aspose"] = MagicMock()
-sys.modules["aspose.slides"] = MagicMock()
-sys.modules["aspose.pydrawing"] = MagicMock()
+
+# Mock aspose.slides with proper slide structure
+# The key is to make the presentation object work as a context manager
+# and have its slides attribute be a list that can be sliced
+
+def create_mock_presentation(*args, **kwargs):
+    """Factory function that creates a new presentation mock each time."""
+    mock_slide = MagicMock()
+    mock_thumbnail = MagicMock()
+    mock_thumbnail.save = MagicMock()
+    mock_slide.get_thumbnail.return_value = mock_thumbnail
+
+    mock_presentation = MagicMock()
+    mock_presentation.slides = [mock_slide]  # One slide to match MockPptParser's ["text"]
+    # Use lambda to return self for context manager
+    # __enter__ is called with self, so it needs to accept that argument
+    mock_presentation.__enter__ = lambda self: mock_presentation
+    # __exit__ is called with self, exc_type, exc_value, traceback
+    mock_presentation.__exit__ = lambda self, *args: False
+    return mock_presentation
+
+# Create proper module objects instead of MagicMock to avoid interference
+# The parent aspose module must also be a proper module, otherwise Python's import
+# mechanism will access MagicMock attributes instead of sys.modules entries
+mock_aspose = types.ModuleType("aspose")
+
+mock_aspose_slides = types.ModuleType("aspose.slides")
+mock_aspose_slides.Presentation = MagicMock(side_effect=create_mock_presentation)
+mock_aspose.slides = mock_aspose_slides  # Link the module to the parent
+
+mock_aspose_drawing = types.ModuleType("aspose.pydrawing")
+mock_aspose_drawing.imaging = MagicMock()
+mock_aspose_drawing.imaging.ImageFormat = MagicMock()
+mock_aspose_drawing.imaging.ImageFormat.jpeg = "jpeg"
+mock_aspose.pydrawing = mock_aspose_drawing  # Link the module to the parent
+
+sys.modules["aspose"] = mock_aspose
+sys.modules["aspose.slides"] = mock_aspose_slides
+sys.modules["aspose.pydrawing"] = mock_aspose_drawing
 
 
 class MockPdfParser:
@@ -92,7 +150,7 @@ class TestPresentationTemplate(unittest.TestCase):
 
     def setUp(self):
         patcher = patch("rag.app.templates.presentation.BytesIO")
-        self.MockBytesIO = patcher.start()
+        patcher.start()
         self.addCleanup(patcher.stop)
 
     def test_pdf_callback_none_safe(self):
@@ -126,24 +184,27 @@ class TestPresentationTemplate(unittest.TestCase):
 
     def test_chunk_callback_none_safe(self):
         """Test chunk function with callback=None."""
+        # Create a mock parser that returns the expected 3-tuple
         mock_parser_impl = MagicMock(return_value=([], None, None))
-        sys.modules["rag.app.format_parsers"].PARSERS["deepdoc"] = mock_parser_impl
 
-        try:
-            chunk("dummy.pdf", callback=None)
-        except TypeError as e:
-            self.fail(f"chunk(pdf) raised TypeError with callback=None: {e}")
-        except (FileNotFoundError, AttributeError, KeyError):
-            # These exceptions are acceptable due to mocking limitations
-            pass
+        # Patch PARSERS directly in the presentation module namespace
+        # This is necessary because PARSERS is imported at module level
+        with patch.dict("rag.app.templates.presentation.PARSERS", {"deepdoc": mock_parser_impl}, clear=False):
+            try:
+                chunk("dummy.pdf", callback=None)
+            except TypeError as e:
+                self.fail(f"chunk(pdf) raised TypeError with callback=None: {e}")
+            except (FileNotFoundError, AttributeError, KeyError):
+                # These exceptions are acceptable due to mocking limitations
+                pass
 
-        try:
-            chunk("dummy.pptx", callback=None)
-        except TypeError as e:
-            self.fail(f"chunk(ppt) raised TypeError with callback=None: {e}")
-        except (FileNotFoundError, AttributeError, KeyError):
-            # These exceptions are acceptable due to mocking limitations
-            pass
+            try:
+                chunk("dummy.pptx", callback=None)
+            except TypeError as e:
+                self.fail(f"chunk(ppt) raised TypeError with callback=None: {e}")
+            except (FileNotFoundError, AttributeError, KeyError):
+                # These exceptions are acceptable due to mocking limitations
+                pass
 
     def test_chunk_passes_correct_to_page(self):
         """Test that chunk passes the correct to_page parameter to PptParser."""
@@ -156,6 +217,22 @@ class TestPresentationTemplate(unittest.TestCase):
 
             args, _ = mock_ppt_instance.call_args
             self.assertEqual(args[2], 123, f"Expected to_page=123, got {args[2]}")
+
+
+def teardown_module():
+    """Restore sys.modules to original state after tests complete."""
+    # Remove the imported presentation module to allow fresh imports in other tests
+    if "rag.app.templates.presentation" in sys.modules:
+        del sys.modules["rag.app.templates.presentation"]
+
+    # Restore original sys.modules entries
+    for mod, original_value in _original_modules.items():
+        if original_value is None:
+            # Module didn't exist originally, remove it
+            sys.modules.pop(mod, None)
+        else:
+            # Restore original module
+            sys.modules[mod] = original_value
 
 
 if __name__ == "__main__":

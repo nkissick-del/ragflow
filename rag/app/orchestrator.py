@@ -40,6 +40,7 @@ __all__ = [
     "by_plaintext",
     "chunk",
     "adapt_docling_output",
+    "StandardizedDocument",
 ]
 
 
@@ -70,6 +71,7 @@ def adapt_docling_output(sections, tables, parser_config) -> StandardizedDocumen
         metadata={
             "parser": "docling",
             "layout_recognizer": parser_config.get("layout_recognizer", "Docling"),
+            "tables": tables,
         },
         elements=[],  # Semantic template will parse these from content
     )

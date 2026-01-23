@@ -1,14 +1,30 @@
 import unittest
 from unittest.mock import MagicMock, patch
 import sys
-import os
 from io import BytesIO
 
-# Add project root to path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../..")))
+# Project root is automatically added to sys.path by test/unit_test/conftest.py
 
 
 # ----------------- MOCK SETUP START -----------------
+# Save original sys.modules state for cleanup
+_MOCKED_MODULES = [
+    "docx",
+    "docx.Document",
+    "docx.opc.exceptions",
+    "docx.oxml",
+    "deepdoc",
+    "deepdoc.parser",
+    "deepdoc.parser.utils",
+    "common",
+    "common.constants",
+    "common.parser_config_utils",
+    "rag.nlp",
+    "rag.app.format_parsers",
+]
+_original_modules = {mod: sys.modules.get(mod) for mod in _MOCKED_MODULES}
+
+
 class DummyPdfParser:
     def __init__(self):
         self.boxes = [{"text": "dummy", "x0": 0}]
@@ -144,6 +160,22 @@ class TestLawsTemplate(unittest.TestCase):
                 self.assertIn(ext, msg, f"Message missing extension: {ext}")
         else:
             self.fail("Did not raise NotImplementedError")
+
+
+def teardown_module():
+    """Restore sys.modules to original state after tests complete."""
+    # Remove the imported laws module to allow fresh imports in other tests
+    if "rag.app.templates.laws" in sys.modules:
+        del sys.modules["rag.app.templates.laws"]
+
+    # Restore original sys.modules entries
+    for mod, original_value in _original_modules.items():
+        if original_value is None:
+            # Module didn't exist originally, remove it
+            sys.modules.pop(mod, None)
+        else:
+            # Restore original module
+            sys.modules[mod] = original_value
 
 
 if __name__ == "__main__":

@@ -34,10 +34,15 @@ NC='\033[0m' # No Color
 
 echo -e "${GREEN}=== RAGFlow Local Test Runner ===${NC}"
 
-# Check Python version
+# Check for python3 and validate version >= 3.10
 if ! command -v python3 &> /dev/null; then
     echo "Error: python3 not found. Please install Python 3.10+."
     exit 1
+fi
+
+if ! python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)'; then
+     echo "Error: Python 3.10+ is required. Found $(python3 --version 2>&1)."
+     exit 1
 fi
 
 # Create venv if it doesn't exist
@@ -50,11 +55,14 @@ fi
 source "$VENV_DIR/bin/activate"
 
 # Install dependencies if needed
-if [ ! -f "$VENV_DIR/.deps_installed" ]; then
+REQ_FILE="$PROJECT_ROOT/requirements-test.txt"
+MARKER_FILE="$VENV_DIR/.deps_installed"
+
+if [ ! -f "$MARKER_FILE" ] || [ "$REQ_FILE" -nt "$MARKER_FILE" ]; then
     echo -e "${YELLOW}Installing test dependencies...${NC}"
     pip install --upgrade pip -q
-    pip install -r "$PROJECT_ROOT/requirements-test.txt" -q
-    touch "$VENV_DIR/.deps_installed"
+    pip install -r "$REQ_FILE" -q
+    touch "$MARKER_FILE"
     echo -e "${GREEN}Dependencies installed.${NC}"
 fi
 

@@ -24,7 +24,7 @@ Reference: architecture_proposal.md Section 5
 """
 
 from dataclasses import dataclass, field
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Literal
 
 
 @dataclass
@@ -35,7 +35,7 @@ class DocumentElement:
     Examples: heading, paragraph, table, code_block, list, image
     """
 
-    type: str  # "heading", "paragraph", "table", "code_block", "list", "image"
+    type: Literal["heading", "paragraph", "table", "code_block", "list", "image"]
     content: str
     level: Optional[int] = None  # For headings: 1-6
     metadata: Dict[str, Any] = field(default_factory=dict)

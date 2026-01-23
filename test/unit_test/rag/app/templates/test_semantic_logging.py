@@ -1,11 +1,8 @@
 import unittest
 from unittest.mock import patch, MagicMock
 import sys
-import os
 
-
-# Ensure project root is in path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../../")))
+# Project root is automatically added to sys.path by test/unit_test/conftest.py
 
 
 class TestSemanticLogging(unittest.TestCase):

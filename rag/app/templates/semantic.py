@@ -22,10 +22,16 @@ paragraphs) and adds header hierarchy metadata to each chunk.
 
 Key Features:
 1. Stack-based header tracking (adapted from LlamaIndex MarkdownNodeParser)
-2. Code block protection (don't parse headers inside ```)
+2. Code block protection (don't parse headers inside ``` or ~~~)
 3. Never split mid-paragraph
 4. Configurable chunk size with overlap
 5. header_path metadata on each chunk
+6. Configurable tokenizer model (via env var or set_tokenizer_model())
+
+Token Counting:
+- Uses tiktoken when available (configurable model, default: gpt-3.5-turbo)
+- Falls back to heuristic estimation for CJK vs English text
+- Configure via SEMANTIC_TOKENIZER_MODEL env var or set_tokenizer_model()
 
 Reference: LlamaIndex MarkdownNodeParser
 https://github.com/run-llama/llama_index/blob/main/llama-index-core/llama_index/core/node_parser/file/markdown.py
@@ -41,18 +47,93 @@ from rag.nlp import rag_tokenizer
 
 # Try to import token counting utility, fallback to simple estimation
 try:
+    import os
     from tiktoken import encoding_for_model
 
-    _enc = encoding_for_model("gpt-3.5-turbo")
+    # Default model for token counting
+    # Can be overridden via environment variable SEMANTIC_TOKENIZER_MODEL
+    # or by calling set_tokenizer_model()
+    _DEFAULT_TOKENIZER_MODEL = "gpt-3.5-turbo"
+    _tokenizer_model = os.environ.get("SEMANTIC_TOKENIZER_MODEL", _DEFAULT_TOKENIZER_MODEL)
+    _enc = None  # Lazy-initialized on first use
 
-    def num_tokens(text: str) -> int:
-        return len(_enc.encode(text))
+    def set_tokenizer_model(model_name: str):
+        """
+        Configure the tokenizer model for token counting.
+
+        Args:
+            model_name: Model name for tiktoken (e.g., "gpt-4", "gpt-3.5-turbo", "text-embedding-ada-002")
+
+        Example:
+            set_tokenizer_model("gpt-4")
+        """
+        global _tokenizer_model, _enc
+        _tokenizer_model = model_name
+        _enc = None  # Reset encoder to force re-initialization
+
+    def _get_encoder():
+        """Lazy-initialize the tiktoken encoder."""
+        global _enc
+        if _enc is None:
+            _enc = encoding_for_model(_tokenizer_model)
+            logging.info(f"[Semantic] Initialized tiktoken encoder for model: {_tokenizer_model}")
+        return _enc
+
+    def num_tokens(text: str, is_english: bool = None) -> int:
+        """
+        Count tokens using tiktoken encoder.
+
+        The encoder model can be configured via:
+        1. Environment variable SEMANTIC_TOKENIZER_MODEL
+        2. Calling set_tokenizer_model(model_name)
+        3. Defaults to "gpt-3.5-turbo" if not configured
+
+        Args:
+            text: Text to count tokens for
+            is_english: Ignored when tiktoken is available (uses actual tokenizer)
+
+        Returns:
+            Actual token count from tiktoken encoder
+        """
+        if not text:
+            return 0
+        encoder = _get_encoder()
+        return len(encoder.encode(text))
 except ImportError:
     logging.warning("[Semantic] tiktoken not installed. Using fallback estimator for num_tokens.")
 
-    def num_tokens(text: str) -> int:
-        # Simple estimation: ~4 chars per token for English
-        return len(text) // 4
+    def num_tokens(text: str, is_english: bool = None) -> int:
+        """
+        Fallback token estimator when tiktoken is unavailable.
+
+        Heuristic-based estimation:
+        - English/Latin scripts: ~4 chars per token (conservative estimate)
+        - CJK languages: ~1.5-2 chars per token (denser tokenization)
+
+        Limitations:
+        - This is a rough approximation and may vary significantly by content
+        - Actual token counts depend on tokenizer vocabulary and algorithm
+        - Mixed-language content uses the dominant language's ratio
+
+        Args:
+            text: Text to count tokens for
+            is_english: If True, use English ratio. If False, use CJK ratio.
+                       If None, defaults to English ratio (conservative).
+
+        Returns:
+            Estimated token count
+        """
+        if not text:
+            return 0
+
+        # Default to English estimation if not specified
+        if is_english is None or is_english:
+            # English: ~4 chars per token (conservative for safety)
+            return len(text) // 4
+        else:
+            # CJK: ~1.5-2 chars per token (denser tokenization)
+            # Using 1.8 as middle ground: len(text) / 1.8 ≈ len(text) * 5 // 9
+            return round(len(text) * 5 / 9)
 
 
 @dataclass
@@ -97,7 +178,7 @@ class Semantic:
             callback(0.5, "[Semantic] Parsing document structure...")
 
         # Parse into semantic chunks using header tracking
-        semantic_chunks = Semantic._parse_with_headers(standardized_doc.content, chunk_token_num, overlap_percent)
+        semantic_chunks = Semantic._parse_with_headers(standardized_doc.content, chunk_token_num, overlap_percent, is_english)
 
         if callback:
             callback(0.8, f"[Semantic] Tokenizing {len(semantic_chunks)} chunks...")
@@ -133,7 +214,7 @@ class Semantic:
         return results
 
     @staticmethod
-    def _parse_with_headers(content: str, chunk_token_num: int, overlap_percent: int) -> List[SemanticChunk]:
+    def _parse_with_headers(content: str, chunk_token_num: int, overlap_percent: int, is_english: bool = True) -> List[SemanticChunk]:
         """
         Stack-based header tracking algorithm.
 
@@ -150,12 +231,16 @@ class Semantic:
             content: Full Markdown content
             chunk_token_num: Maximum tokens per chunk
             overlap_percent: Percentage of previous chunk to overlap
+            is_english: Whether content is primarily English (affects token estimation)
 
         Returns:
             List of SemanticChunk objects
         """
         if not content:
             return []
+
+        # Create language-aware token counter for consistent estimation throughout parsing
+        count_tokens = lambda text: num_tokens(text, is_english=is_english)
 
         lines = content.split("\n")
 
@@ -175,18 +260,18 @@ class Semantic:
             if not text.strip():
                 return
 
-            tokens = num_tokens(text)
+            tokens = count_tokens(text)
 
             if tokens <= chunk_token_num:
                 # Fits in single chunk
                 final_text = text.strip()
-                chunks.append(SemanticChunk(text=final_text, header_path=header_path, metadata={"tokens": num_tokens(final_text)}))
+                chunks.append(SemanticChunk(text=final_text, header_path=header_path, metadata={"tokens": count_tokens(final_text)}))
             else:
                 # Split large sections at paragraph boundaries
                 paragraphs = text.split("\n\n")
                 current_chunk = ""
                 current_tokens = 0
-                separator_tokens = num_tokens("\n\n")
+                separator_tokens = count_tokens("\n\n")
 
                 def split_large_paragraph(para: str) -> List[str]:
                     """Split a large paragraph at sentence boundaries."""
@@ -218,7 +303,7 @@ class Semantic:
                     current_sentence_tokens = 0
 
                     for sentence in sentences:
-                        sentence_tokens = num_tokens(sentence)
+                        sentence_tokens = count_tokens(sentence)
 
                         # Handle single sentence exceeding limit
                         if sentence_tokens > chunk_token_num:
@@ -232,9 +317,9 @@ class Semantic:
                             words = sentence.split(" ")
                             temp_chunk = ""
                             temp_tokens = 0
-                            space_tokens_val = num_tokens(" ")
+                            space_tokens_val = count_tokens(" ")
                             for word in words:
-                                word_tokens = num_tokens(word)
+                                word_tokens = count_tokens(word)
                                 space_tokens = space_tokens_val if temp_chunk else 0
                                 if temp_tokens + word_tokens + space_tokens > chunk_token_num and temp_chunk:
                                     result.append(temp_chunk)
@@ -248,7 +333,7 @@ class Semantic:
                                 result.append(temp_chunk)
                             continue
 
-                        space_tokens = num_tokens(" ") if current_sentence_group else 0
+                        space_tokens = count_tokens(" ") if current_sentence_group else 0
 
                         if current_sentence_tokens + sentence_tokens + space_tokens > chunk_token_num and current_sentence_group:
                             result.append(current_sentence_group)
@@ -264,7 +349,7 @@ class Semantic:
                     return result if result else [para]
 
                 for para in paragraphs:
-                    para_tokens = num_tokens(para)
+                    para_tokens = count_tokens(para)
 
                     # Handle oversized paragraphs
                     if para_tokens > chunk_token_num:
@@ -277,7 +362,7 @@ class Semantic:
                         # Split the large paragraph
                         para_pieces = split_large_paragraph(para)
                         for piece in para_pieces:
-                            piece_tokens = num_tokens(piece)
+                            piece_tokens = count_tokens(piece)
                             if piece_tokens <= chunk_token_num:
                                 chunks.append(SemanticChunk(text=piece.strip(), header_path=header_path, metadata={"tokens": piece_tokens}))
                             else:
@@ -297,7 +382,7 @@ class Semantic:
                             # Take last portion of current_chunk by rebuilding from end
                             # Optimized O(n) approach: compute count once and subtract
                             overlap_text = current_chunk
-                            overlap_count = num_tokens(overlap_text)
+                            overlap_count = count_tokens(overlap_text)
 
                             while overlap_count > overlap_tokens and len(overlap_text) > 0:
                                 # Remove from start until we're within overlap_tokens
@@ -306,7 +391,7 @@ class Semantic:
                                     break
 
                                 removed_piece = overlap_text[: first_space + 1]
-                                overlap_count -= num_tokens(removed_piece)
+                                overlap_count -= count_tokens(removed_piece)
                                 overlap_text = overlap_text[first_space + 1 :]
 
                             current_chunk = overlap_text + "\n\n" + para if overlap_text else para
@@ -328,11 +413,13 @@ class Semantic:
                 # Emit final chunk
                 if current_chunk.strip():
                     final_text = current_chunk.strip()
-                    chunks.append(SemanticChunk(text=final_text, header_path=header_path, metadata={"tokens": num_tokens(final_text)}))
+                    chunks.append(SemanticChunk(text=final_text, header_path=header_path, metadata={"tokens": count_tokens(final_text)}))
 
         for line in lines:
             # Track code blocks (don't parse headers inside them)
-            if line.lstrip().startswith("```"):
+            # Support both backtick (```) and tilde (~~~) fenced code blocks per CommonMark spec
+            stripped = line.lstrip()
+            if stripped.startswith("```") or stripped.startswith("~~~"):
                 code_block = not code_block
                 current_section += line + "\n"
                 continue

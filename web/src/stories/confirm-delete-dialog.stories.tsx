@@ -28,6 +28,7 @@ ConfirmDeleteDialog is a dialog component for confirming delete operations with 
     hidden: { control: 'boolean' },
     onOk: { action: 'onOk' },
     onCancel: { action: 'onCancel' },
+    tooltip: { control: 'text' },
   },
   // Use `fn` to spy on the onClick arg, which will appear in the actions panel once invoked: https://storybook.js.org/docs/essentials/actions#action-args
   args: { onOk: fn(), onCancel: fn() },
@@ -71,5 +72,13 @@ export const WithCustomTitle: Story = {
   args: {
     title: 'Are you sure you want to delete this file?',
     children: <Button variant="destructive">Delete File</Button>,
+  },
+};
+
+export const WithTooltip: Story = {
+  args: {
+    title: 'Confirm Delete',
+    children: <Button variant="destructive">Delete Item</Button>,
+    tooltip: 'Click to delete this item',
   },
 };

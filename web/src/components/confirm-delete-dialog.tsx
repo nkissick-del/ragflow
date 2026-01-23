@@ -14,6 +14,11 @@ import { DialogProps } from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { RAGFlowAvatar } from './ragflow-avatar';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { Separator } from './ui/separator';
 
 interface IProps {
@@ -27,6 +32,7 @@ interface IProps {
   };
   okButtonText?: string;
   cancelButtonText?: string;
+  tooltip?: string;
 }
 
 export function ConfirmDeleteDialog({
@@ -41,6 +47,7 @@ export function ConfirmDeleteDialog({
   content,
   okButtonText,
   cancelButtonText,
+  tooltip,
 }: IProps & DialogProps) {
   const { t } = useTranslation();
 
@@ -48,13 +55,24 @@ export function ConfirmDeleteDialog({
     return children || <></>;
   }
 
+  const trigger = children && (
+    <AlertDialogTrigger asChild>{children}</AlertDialogTrigger>
+  );
+
   return (
     <AlertDialog
       onOpenChange={onOpenChange}
       open={open}
       defaultOpen={defaultOpen}
     >
-      {children && <AlertDialogTrigger asChild>{children}</AlertDialogTrigger>}
+      {trigger && tooltip ? (
+        <Tooltip>
+          <TooltipTrigger asChild>{trigger}</TooltipTrigger>
+          <TooltipContent>{tooltip}</TooltipContent>
+        </Tooltip>
+      ) : (
+        trigger
+      )}
       <AlertDialogOverlay
         onClick={(e) => {
           e.stopPropagation();

@@ -191,18 +191,20 @@ class Semantic:
                 def split_large_paragraph(para: str) -> List[str]:
                     """Split a large paragraph at sentence boundaries."""
                     sentences = []
+                    sentences = []
                     try:
                         import nltk
 
+                        # Check availability without downloading
                         try:
+                            nltk.data.find("tokenizers/punkt")
+                            if nltk.__version__ >= "3.8":
+                                nltk.data.find("tokenizers/punkt_tab")
                             sentences = nltk.sent_tokenize(para)
                         except LookupError:
-                            # Attempt to download punkt if missing
-                            logging.warning("[Semantic] 'punkt' not found. Attempting to download...")
-                            nltk.download("punkt")
-                            sentences = nltk.sent_tokenize(para)
-                    except (ImportError, LookupError) as e:
-                        logging.warning(f"[Semantic] NLTK/punkt not available ({e}). Falling back to regex splitting.")
+                            logging.warning("[Semantic] NLTK 'punkt' or 'punkt_tab' resource not found. Falling back to regex splitting.")
+                            raise
+                    except (ImportError, LookupError):
                         # Fallback to regex splitting
                         sentences = re.split(r"(?<=[.!?])\s+", para)
 
@@ -230,9 +232,10 @@ class Semantic:
                             words = sentence.split(" ")
                             temp_chunk = ""
                             temp_tokens = 0
+                            space_tokens_val = num_tokens(" ")
                             for word in words:
                                 word_tokens = num_tokens(word)
-                                space_tokens = num_tokens(" ") if temp_chunk else 0
+                                space_tokens = space_tokens_val if temp_chunk else 0
                                 if temp_tokens + word_tokens + space_tokens > chunk_token_num and temp_chunk:
                                     result.append(temp_chunk)
                                     temp_chunk = word

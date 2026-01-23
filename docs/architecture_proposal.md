@@ -115,14 +115,14 @@ Currently, the `General` template acts as a "Blender":
 ### 4.4 Error Handling & Resilience
 | Layer | Failure Mode | Responsibility & Strategy |
 |-------|--------------|---------------------------|
-| **Parsers** | API timeout, 429, Malformed PDF | **Retry/Backoff:** Implement exponential backoff. <br> **Fallback:** If Docling fails, fall back to MinerU/DeepDOC. <br> **Output:** Emit explicit error object (not crash). |
+| **Parsers** | API timeout, 429, Malformed PDF | **Retry/Backoff:** Exponential backoff (max_attempts=3, total_deadline=30s, initial_delay=1s, multiplier=2x, max_delay=5s). <br> **Fallback:** Fallback to MinerU/DeepDOC after N retries or immediately on "Malformed IR" validation failure/5xx errors. <br> **Output:** Emit explicit error object (not crash). |
 | **Orchestration** | Invalid IR, Empty Output | **Validation:** Validate parser output against schema. <br> **Sanitization:** Strip corrupted chars. <br> **Partial Success:** Log warnings but proceed if partial content exists. |
 | **Templates** | Missing Headers, Text-only | **Defensive Logic:** Default to "General" chunking if structure missing. <br> **Recovery:** Graceful degradation (don't crash on flat text). |
 
 **Observability:**
-- **Centralized Logging:** All layers log to standard ELK/Loki stack with `correlation_id`.
-- **User Notification:** "Parsing partially failed - some formatting may be lost" (vs generic "Error").
-- **Retry Policy:** Automatic retry for transient errors (Network/503); fail-fast for 400s.
+- **Centralized Logging:** All layers log to standard ELK/Loki stack with `correlation_id` (propagated from API request).
+- **User Notification:** UI Toast + Dashboard Alert: "Parsing partially failed - some formatting may be lost" (emitted by Orchestration layer).
+- **Retry Policy:** Automatic retry for transient errors (Network/503/Timeout); fail-fast for 400s (Client Error).
 
 ---
 
@@ -153,7 +153,8 @@ class StandardizedDocument:
     metadata: Dict[str, Any] = field(default_factory=dict)
     
     # 3. CACHED ELEMENTS: Internal storage for lazy parsing
-    _elements: Optional[List[DocumentElement]] = None
+    # Marked as init=False/repr=False to prevent serialization and direct instantiation
+    _elements: Optional[List[DocumentElement]] = field(default=None, init=False, repr=False, metadata={'serialize': False})
 
     @property
     def elements(self) -> List[DocumentElement]:
@@ -166,8 +167,24 @@ class StandardizedDocument:
             self._elements = self._parse_elements(self.content)
         return self._elements
 
+    def populate_elements(self, elements: List[DocumentElement]) -> None:
+        """
+        Validated population method for adapters to forcefully set elements.
+        Replaces direct access to _elements.
+        """
+        # (Optional) Schema validation here
+        self._elements = elements
+
+    @content.setter
+    def content(self, value: str):
+        """Reset cached elements when content changes to ensure consistency."""
+        self._content = value
+        self._elements = None  # Invalidate cache
+
     def _parse_elements(self, content: str) -> List[DocumentElement]:
         # Implementation of on-demand parsing logic
+        # NOTE: See LlamaIndex MarkdownNodeParser (Section 10) for parsing algorithm.
+        # This is non-trivial and must validate/normalize info before caching.
         ...
 ```
 
@@ -211,20 +228,24 @@ All parsers (via their adapters) must produce this format. All templates consume
 
 > [!NOTE]
 > We are standardizing `header_path` as an **ordered array** to support precise hierarchy matching.
+> **Store:** `metadata` JSONB column in `document` table (managed by `rag/utils/ob_conn.py`).
 
 | Key | Type | Description | Example |
 |-----|------|-------------|---------|
-| `header_path` | `List[str]` | Ordered array of header strings | `["Introduction", "Background"]` |
+| `header_path` | `List[str]` | Ordered array of header strings. Depth 0 is root. | `["Introduction", "Background"]` (H1->H2) |
 | `header_path_schema_version` | `str` | Schema version indicator | `"v1"` |
 
 **Conflict Handling & Migration:**
-1.  **Read:** If `header_path` is a scalar string (Legacy), treat as `[legacy_string]`.
+1.  **Read (Legacy Compat):** If `header_path` is a scalar string (e.g., `"/A/B"`), split on legacy delimiter (e.g., `/`): `"/A/B".strip("/").split("/")` -> `["A", "B"]`. Filter empty segments.
 2.  **Write:** Always write `header_path` as a JSON array and set `"header_path_schema_version": "v1"`.
-3.  **Migration:** Background job can convert scalar `"header_path": "/H1/H2"` → `["H1", "H2"]`.
+3.  **Migration Job:** Background task iterates `document` table, updates scalar `header_path` to array format, adds version.
+    - **Timeline:** Non-blocking. Can run alongside active traffic.
+    - **Performance:** Batch size 1000. Estimated throughput: ~10k docs/min.
+    - **Mixed State:** Readers must support both array and scalar formats during migration (read-time normalization).
 
-**Query Pattern (JSON Containment):**
--   **Starts With "Introduction":** match where `header_path[0] == "Introduction"`
--   **Exact Path:** match where `header_path == ["Introduction", "Subsection"]`
+**Query Pattern (Database Appropriate):**
+-   **Postgres (JSONB):** `metadata->'header_path' @> '["Introduction"]'` (Containment) or `metadata->'header_path'->>0 = 'Introduction'` (Root match).
+-   **Elasticsearch:** `term` query on `header_path.keyword` (exact match) or `nested` query for complex path logic.
 
 ---
 
@@ -259,14 +280,14 @@ All parsers (via their adapters) must produce this format. All templates consume
 ### Phase 5: Migration & Rollout (Deployment)
 | Goal | Safe transition from Legacy to Semantic pipeline |
 |------|--------------------------------------------------|
-| **Backwards Compatibility** | New `DoclingAdapter` outputs standard IR; Legacy pipeline still supported via `DoclingAdapter` (dual-mode) or separate route. |
-| **Routing** | Update `rag/app/orchestrator.py`: Add `DoclingAdapter` entry. |
-| **Reprocessing Strategy** | **Lazy Migration:** On-read? No. **Full Reprocess:** Background job to re-parse high-value docs. Recommended: **Feature Flag** based rollout. |
-| **Rollout Plan** | 1. Enable for 1% of users (Feature Flag). <br> 2. Monitor error rates/latency. <br> 3. Expand to 10%, 50%, 100%. |
-| **Rollback** | If error rate spikes > 1%, revert feature flag to disable Semantic pipeline. |
-| **DB Evolution** | New fields `header_path`, `header_path_schema_version` added to existing metadata JSON (no schema migration needed). |
-| **Validation** | **Performance Gates:** <br> - Latency < 2s/page <br> - Memory < 1GB/job <br> - Throughput > 100 pages/min |
-| **Targets** | `rag/app/templates/semantic.py`, `rag/app/format_parsers.py`
+| **Backwards Compatibility** | **Separate Route:** Do NOT use dual-mode DoclingAdapter. Implement a distinct semantic route. Legacy route remains untouched until deprecation. |
+| **Routing** | Update `rag/app/orchestrator.py` to route traffic to `DoclingAdapter`/`semantic` template based on config/flag. |
+| **Reprocessing Strategy** | **Lazy Consideration:** No lazy migration on-read. **Explicit Reprocessing Rules:** <br> - Docs with >10 queries in 30d <br> - Uploads after [Date] <br> - Specific MIME types (e.g. Contracts) |
+| **Rollout Plan** | 1. **Feature Flag:** Enabled for 1% of uploads. <br> 2. **Observation:** 48h soak time. Monitor: Parser failure rate, Chunk validation failures, Query-time errors. <br> 3. **Expand:** 10% -> 48h -> 50% -> 48h -> 100%. |
+| **Rollback** | If error rate > 1% (threshold), strictly revert feature flag. |
+| **Monitoring** | **baselines:** Latency must be within +10% of legacy; Memory within +20%. |
+| **Targets** | `rag/app/orchestrator.py`, `rag/app/templates/semantic.py`, `rag/app/format_parsers.py`, `db_migration_scripts`, `rag/config` (Feature Flags). |
+
 
 ---
 
@@ -526,17 +547,17 @@ When Phase 3 is complete, the following new template(s) should be exposed in the
 
 | Category | Testing Approach & Acceptance Criteria |
 |----------|----------------------------------------|
-| **Phase 1** | **Unit test:** Verify `docling_parser.py` returns structured Markdown (not `splitlines()`). <br> **Success:** Output contains headers/tables/lists. |
+| **Phase 1** | **Unit test:** Verify `docling_parser.py` structure. <br> - Assert: H1-H6 detection, header level metadata, code blocks (```) don't parse inner headers, HTML tables -> Markdown. <br> - **Fixture:** `test/fixtures/semantic_test_corpus/sample.pdf` (5+ pages, 3 levels, 1 table, 1 code block). <br> -> **Tasks:** Create `test/benchmark/`, `test/resilience/` and seed fixtures. |
 | **Phase 2** | **Unit test:** Verify `DoclingAdapter` converts Docling output → Standardized IR. <br> **Success:** IR matches schema. |
-| **Phase 3** | **Integration test:** End-to-end test with sample PDF. <br> **Success:** Chunks in DB have correct `header_path` metadata. |
-| **Phase 4** | **Integration test:** Verify routing logic for Docling jobs. <br> **Success:** Semantic template selected automatically. |
+| **Phase 3** | **Integration test:** End-to-end test with sample PDF. <br> **Success:** Chunks in DB have correct `header_path` metadata. <br> **Lazy Loading:** Verify `_elements` caching behavior. |
+| **Phase 4** | **Integration test:** Verify routing logic. <br> **Success:** Semantic template selected automatically. <br> **Context:** Verify `correlation_id` propagation. |
 | **E2E Validation** | **Manual test:** Upload structured PDF via UI. <br> **Success:** Database chunks preserve hierarchy. |
-| **Performance** | **Benchmark:** Measure throughput (pages/sec) and memory usage per concurrent job. <br> **Success:** >5 pages/sec, <500MB RAM per job. |
-| **Regression** | **Comparator:** Run legacy vs new pipeline on standard corpus. <br> **Success:** No loss in retrieval recall; 100% pass on existing tests. |
-| **Error Resilience** | **Fuzzing:** Test with malformed PDFs, incomplete parser output, missing metadata. <br> **Success:** Graceful failure with logs (no crashes). |
-| **Load Testing** | **Stress Test:** Simulate concurrent document uploads (e.g., 20 files). <br> **Success:** System stable, no timeouts or race conditions. |
-| **Backward Compat** | **Read Test:** Query chunks generated by old pipeline. <br> **Success:** Old chunks still retrievable and display correctly. |
+| **Performance** | **Benchmark:** Measure throughput/memory. <br> **Target:** 3 pages/sec (Unified), <500MB RAM/job. |
+| **Regression** | **Comparator:** Legacy vs Semantic on `test/fixtures/regression_corpus/` (>=50 docs, >=500 pages, 20% distribution tech/legal/tables/plain). <br> **Success:** 100% pass on existing tests. |
+| **Error Resilience** | **Fuzzing:** Test with malformed PDFs, incomplete parser output. <br> **Success:** Graceful failure with logs (no crashes). |
+| **Load Testing** | **Stress Test:** Simulate 100 concurrent uploads (Target 500 for 5mins). <br> **Success:** Stability, no timeouts. |
+| **Backward Compat** | **Read Test:** Metadata migration (Legacy -> v1). <br> **Feature Flag:** Verify toggle behavior. |
 
 **Test Locations:**
-- **Functional:** `test/integration/test_docling_integration.py` (extend for pipeline tests)
-- **Non-Functional:** Create new suites in `test/benchmark/` (performance/load) and `test/resilience/` (error/fuzzing).
+- **Functional:** `test/integration/test_docling_integration.py`
+- **Non-Functional:** `test/benchmark/`, `test/resilience/`

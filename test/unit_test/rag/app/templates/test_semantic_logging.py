@@ -46,9 +46,24 @@ class TestSemanticLogging(unittest.TestCase):
 
                 # Check if specific message was logged
                 # We expect something mentioning "num_tokens", "tiktoken", "fallback"
-                found = any(any("tiktoken" in str(arg) and "num_tokens" in str(arg) for arg in call.args + tuple(call.kwargs.values())) for call in mock_log.call_args_list)
+                found = False
+                debug_details = []
 
-                self.assertTrue(found, "Did not find expected log message about tiktoken fallback in logging.warning calls")
+                for i, call in enumerate(mock_log.call_args_list):
+                    args_str = [str(arg) for arg in call.args]
+                    kwargs_str = [str(v) for v in call.kwargs.values()]
+                    all_args = args_str + kwargs_str
+
+                    has_tiktoken = any("tiktoken" in arg for arg in all_args)
+                    has_num_tokens = any("num_tokens" in arg for arg in all_args)
+
+                    debug_details.append(f"Call {i}: tiktoken={has_tiktoken}, num_tokens={has_num_tokens}, args={all_args}")
+
+                    if has_tiktoken and has_num_tokens:
+                        found = True
+                        break
+
+                self.assertTrue(found, f"Did not find expected log message about tiktoken fallback. Details: {debug_details}")
 
 
 if __name__ == "__main__":

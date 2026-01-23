@@ -146,8 +146,9 @@ class DocumentElement:
 class StandardizedDocument:
     """The contract between parsers and templates."""
     
-    # 1. PRIMARY STORAGE: The full structured content
-    content: str
+    # 1. PRIMARY STORAGE: The full structured content (backing field)
+    # Excluded from init to allow property setter to handle invalidation
+    _content: str = field(default="", metadata={'serialize': True}) 
     
     # 2. METADATA: About the document
     metadata: Dict[str, Any] = field(default_factory=dict)
@@ -157,14 +158,24 @@ class StandardizedDocument:
     _elements: Optional[List[DocumentElement]] = field(default=None, init=False, repr=False, metadata={'serialize': False})
 
     @property
+    def content(self) -> str:
+        return self._content
+
+    @content.setter
+    def content(self, value: str):
+        """Reset cached elements when content changes to ensure consistency."""
+        self._content = value
+        self._elements = None  # Invalidate cache
+
+    @property
     def elements(self) -> List[DocumentElement]:
         """
         Lazy derivation strategy:
         - If elements have been supplied (e.g. by adapter), return them.
-        - If not, parse `self.content` on demand and cache the result.
+        - If not, parse `self._content` on demand and cache the result.
         """
         if self._elements is None:
-            self._elements = self._parse_elements(self.content)
+            self._elements = self._parse_elements(self._content)
         return self._elements
 
     def populate_elements(self, elements: List[DocumentElement]) -> None:
@@ -236,12 +247,14 @@ All parsers (via their adapters) must produce this format. All templates consume
 | `header_path_schema_version` | `str` | Schema version indicator | `"v1"` |
 
 **Conflict Handling & Migration:**
-1.  **Read (Legacy Compat):** If `header_path` is a scalar string (e.g., `"/A/B"`), split on legacy delimiter (e.g., `/`): `"/A/B".strip("/").split("/")` -> `["A", "B"]`. Filter empty segments.
+1.  **Read (Legacy Compat):** If `header_path` is a scalar string (e.g., `"/A/B"`), split on legacy delimiter (e.g., `/`): `"/A/B".strip("/").split("/")` -> `["A", "B"]`. 
+    *   **Limitation:** Fails if headers contain `"/"`. 
+    *   **Mitigation:** Mitigation: Define escape scheme (e.g. `\/`) or use alternate delimiter if possible. Read-time normalization MUST handle both escaped legacy scalars and new JSON arrays (check `header_path_schema_version`).
 2.  **Write:** Always write `header_path` as a JSON array and set `"header_path_schema_version": "v1"`.
 3.  **Migration Job:** Background task iterates `document` table, updates scalar `header_path` to array format, adds version.
-    - **Timeline:** Non-blocking. Can run alongside active traffic.
-    - **Performance:** Batch size 1000. Estimated throughput: ~10k docs/min.
-    - **Mixed State:** Readers must support both array and scalar formats during migration (read-time normalization).
+    *   **Timeline:** Non-blocking. Can run alongside active traffic.
+    *   **Performance:** Batch size 1000. **Validate with DB-specific benchmarks** (JSONB update costs, index write amplification). Performance varies by DB load and metadata size.
+    *   **Mixed State:** Readers must support both array and scalar formats during migration (read-time normalization).
 
 **Query Pattern (Database Appropriate):**
 -   **Postgres (JSONB):** `metadata->'header_path' @> '["Introduction"]'` (Containment) or `metadata->'header_path'->>0 = 'Introduction'` (Root match).
@@ -282,11 +295,11 @@ All parsers (via their adapters) must produce this format. All templates consume
 |------|--------------------------------------------------|
 | **Backwards Compatibility** | **Separate Route:** Do NOT use dual-mode DoclingAdapter. Implement a distinct semantic route. Legacy route remains untouched until deprecation. |
 | **Routing** | Update `rag/app/orchestrator.py` to route traffic to `DoclingAdapter`/`semantic` template based on config/flag. |
-| **Reprocessing Strategy** | **Lazy Consideration:** No lazy migration on-read. **Explicit Reprocessing Rules:** <br> - Docs with >10 queries in 30d <br> - Uploads after [Date] <br> - Specific MIME types (e.g. Contracts) |
-| **Rollout Plan** | 1. **Feature Flag:** Enabled for 1% of uploads. <br> 2. **Observation:** 48h soak time. Monitor: Parser failure rate, Chunk validation failures, Query-time errors. <br> 3. **Expand:** 10% -> 48h -> 50% -> 48h -> 100%. |
-| **Rollback** | If error rate > 1% (threshold), strictly revert feature flag. |
-| **Monitoring** | **baselines:** Latency must be within +10% of legacy; Memory within +20%. |
-| **Targets** | `rag/app/orchestrator.py`, `rag/app/templates/semantic.py`, `rag/app/format_parsers.py`, `db_migration_scripts`, `rag/config` (Feature Flags). |
+| **Reprocessing Strategy** | **Lazy Consideration:** No lazy migration on-read. **Explicit Reprocessing Rules:** <br> - Docs with >10 queries in 30d (Track via new `document_query_metrics` table/service) <br> - Uploads after [Date] <br> - Specific MIME types (e.g. Contracts) |
+| **Rollout Plan** | 1. **Prerequisite:** Verify RAGFlow telemetry supports per-document metrics (or implement before Phase 4). <br> 2. **Feature Flag:** Enabled for 1% of uploads. <br> 3. **Observation:** 48h soak time. Monitor: Parser failure rate, Chunk validation failures, Query-time errors. <br> 4. **Expand:** 10% -> 48h -> 50% -> 48h -> 100%. |
+| **Rollback** | **Typed Thresholds:** <br> - Parsing Failures > 1% <br> - Chunk Validation Failures > 1% <br> - Query-time Errors > 1% <br> - **Data Corruption > 0.1% (Critical)** |
+| **Monitoring** | **Baselines:** Est. 1 week before rollout. <br> **Window:** 7-day rolling average. <br> **Metrics:** Latency (p50/p95/p99), Parser Latency, Memory RSS. |
+| **Targets** | `rag/app/orchestrator.py` (emit query events), `rag/app/templates/semantic.py`, `rag/app/format_parsers.py`, `db_migration_scripts`, `rag/config` (Feature Flags). |
 
 
 ---
@@ -555,7 +568,8 @@ When Phase 3 is complete, the following new template(s) should be exposed in the
 | **Performance** | **Benchmark:** Measure throughput/memory. <br> **Target:** 3 pages/sec (Unified), <500MB RAM/job. |
 | **Regression** | **Comparator:** Legacy vs Semantic on `test/fixtures/regression_corpus/` (>=50 docs, >=500 pages, 20% distribution tech/legal/tables/plain). <br> **Success:** 100% pass on existing tests. |
 | **Error Resilience** | **Fuzzing:** Test with malformed PDFs, incomplete parser output. <br> **Success:** Graceful failure with logs (no crashes). |
-| **Load Testing** | **Stress Test:** Simulate 100 concurrent uploads (Target 500 for 5mins). <br> **Success:** Stability, no timeouts. |
+| **Load Testing** | **Stress Test:** Simulate 100 concurrent uploads for 5 mins (500 total uploads). <br> **Stretch Goal:** Sustain 500 concurrent uploads. <br> **Success:** Stability, no timeouts. |
+| **Security** | **Adversarial Test:** Malicious PDFs (zip bombs, deeply nested structures, JS injection). <br> **Metadata Injection:** Test SQL/NoSQL injection via header_path. <br> **Success:** Parser fails safely, no code execution, appropriate logs. |
 | **Backward Compat** | **Read Test:** Metadata migration (Legacy -> v1). <br> **Feature Flag:** Verify toggle behavior. |
 
 **Test Locations:**

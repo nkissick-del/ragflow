@@ -23,6 +23,17 @@ import numpy as np
 from rag.nlp import rag_tokenizer
 from common.file_utils import get_project_base_directory
 
+PATT_SPECIAL_CHARS = re.compile(r"[~—\t @#%!<>,\.\?\":;'\{\}\[\]_=\(\)\|，。？》•●○↓《；‘’：“”【¥ 】…￥！、·（）×`&\\/「」\\]")
+PATT_NUM_END = re.compile(r"[0-9]$")
+PATT_ONE_TERM = re.compile(r"[0-9a-z]{1,2}$")
+PATT_ALPHANUM = re.compile(r"[0-9a-zA-Z]")
+PATT_WHITESPACE = re.compile(r"[ \t]+")
+PATT_ALPHA_END = re.compile(r".*[a-zA-Z]$")
+PATT_NUM_MULTI = re.compile(r"[0-9,.]{2,}$")
+PATT_SHORT_LETTER = re.compile(r"[a-z]{1,2}$")
+PATT_NUM_SPACE = re.compile(r"[0-9. -]{2,}$")
+PATT_LETTER = re.compile(r"[a-z. -]+$")
+PATT_NUM_HYPHEN = re.compile(r"[0-9-]+")
 
 class Dealer:
     def __init__(self):
@@ -90,24 +101,16 @@ class Dealer:
             logging.warning("Load term.freq FAIL!")
 
     def pretoken(self, txt, num=False, stpwd=True):
-        patt = [
-            r"[~—\t @#%!<>,\.\?\":;'\{\}\[\]_=\(\)\|，。？》•●○↓《；‘’：“”【¥ 】…￥！、·（）×`&\\/「」\\]"
-        ]
-        rewt = [
-        ]
-        for p, r in rewt:
-            txt = re.sub(p, r, txt)
-
         res = []
         for t in rag_tokenizer.tokenize(txt).split():
             tk = t
             if (stpwd and tk in self.stop_words) or (
-                    re.match(r"[0-9]$", tk) and not num):
+                    PATT_NUM_END.match(tk) and not num):
                 continue
-            for p in patt:
-                if re.match(p, t):
-                    tk = "#"
-                    break
+
+            if PATT_SPECIAL_CHARS.match(t):
+                tk = "#"
+
             # tk = re.sub(r"([\+\\-])", r"\\\1", tk)
             if tk != "#" and tk:
                 res.append(tk)
@@ -115,13 +118,13 @@ class Dealer:
 
     def token_merge(self, tks):
         def one_term(t):
-            return len(t) == 1 or re.match(r"[0-9a-z]{1,2}$", t)
+            return len(t) == 1 or PATT_ONE_TERM.match(t)
 
         res, i = [], 0
         while i < len(tks):
             j = i
             if i == 0 and one_term(tks[i]) and len(
-                    tks) > 1 and (len(tks[i + 1]) > 1 and not re.match(r"[0-9a-zA-Z]", tks[i + 1])):  # 多 工位
+                    tks) > 1 and (len(tks[i + 1]) > 1 and not PATT_ALPHANUM.match(tks[i + 1])):  # 多 工位
                 res.append(" ".join(tks[0:2]))
                 i = 2
                 continue
@@ -151,9 +154,9 @@ class Dealer:
 
     def split(self, txt):
         tks = []
-        for t in re.sub(r"[ \t]+", " ", txt).split():
-            if tks and re.match(r".*[a-zA-Z]$", tks[-1]) and \
-                    re.match(r".*[a-zA-Z]$", t) and tks and \
+        for t in PATT_WHITESPACE.sub(" ", txt).split():
+            if tks and PATT_ALPHA_END.match(tks[-1]) and \
+                    PATT_ALPHA_END.match(t) and tks and \
                     self.ne.get(t, "") != "func" and self.ne.get(tks[-1], "") != "func":
                 tks[-1] = tks[-1] + " " + t
             else:
@@ -161,15 +164,10 @@ class Dealer:
         return tks
 
     def weights(self, tks, preprocess=True):
-        num_pattern = re.compile(r"[0-9,.]{2,}$")
-        short_letter_pattern = re.compile(r"[a-z]{1,2}$")
-        num_space_pattern = re.compile(r"[0-9. -]{2,}$")
-        letter_pattern = re.compile(r"[a-z. -]+$")
-
         def ner(t):
-            if num_pattern.match(t):
+            if PATT_NUM_MULTI.match(t):
                 return 2
-            if short_letter_pattern.match(t):
+            if PATT_SHORT_LETTER.match(t):
                 return 0.01
             if not self.ne or t not in self.ne:
                 return 1
@@ -185,15 +183,15 @@ class Dealer:
                 return 3
             if t in set(["n"]):
                 return 2
-            if re.match(r"[0-9-]+", t):
+            if PATT_NUM_HYPHEN.match(t):
                 return 2
             return 1
 
         def freq(t):
-            if num_space_pattern.match(t):
+            if PATT_NUM_SPACE.match(t):
                 return 3
             s = rag_tokenizer.freq(t)
-            if not s and letter_pattern.match(t):
+            if not s and PATT_LETTER.match(t):
                 return 300
             if not s:
                 s = 0
@@ -208,11 +206,11 @@ class Dealer:
             return max(s, 10)
 
         def df(t):
-            if num_space_pattern.match(t):
+            if PATT_NUM_SPACE.match(t):
                 return 5
             if t in self.df:
                 return self.df[t] + 3
-            elif letter_pattern.match(t):
+            elif PATT_LETTER.match(t):
                 return 300
             elif len(t) >= 4:
                 s = [tt for tt in rag_tokenizer.fine_grained_tokenize(t).split() if len(tt) > 1]

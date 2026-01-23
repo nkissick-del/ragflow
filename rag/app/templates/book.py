@@ -164,6 +164,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
             callback(0.8, "Finish parsing.")
         else:
             callback(0.9, "Finish parsing. No content found.")
+            return []
 
     else:
         raise NotImplementedError("file type not supported yet(doc, docx, pdf, txt, html, htm supported)")
@@ -194,10 +195,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
 if __name__ == "__main__":
     import sys
 
-    def dummy(prog=None, msg=""):
-        pass
-
     if len(sys.argv) < 2:
         print("Usage: python book.py <filename>")
         sys.exit(1)
-    chunk(sys.argv[1], from_page=1, to_page=10, callback=dummy)
+    chunk(sys.argv[1], from_page=1, to_page=10, callback=_noop_callback)

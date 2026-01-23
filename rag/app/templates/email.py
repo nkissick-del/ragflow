@@ -104,17 +104,18 @@ def chunk(
     main_res.extend(tokenize_chunks(chunks, doc, eng, None))
     logging.debug("naive_merge({}): {}".format(filename, timer() - st))
     # get the attachment info
+    parent_filename = filename  # Preserve parent email filename before loop
     for part in msg.iter_attachments():
         content_disposition = part.get("Content-Disposition")
         if content_disposition:
             dispositions = content_disposition.strip().split(";")
             if dispositions[0].lower() == "attachment":
-                filename = part.get_filename()
+                attachment_filename = part.get_filename()
                 payload = part.get_payload(decode=True)
                 try:
-                    attachment_res.extend(naive_chunk(filename, payload, callback=callback, **kwargs))
+                    attachment_res.extend(naive_chunk(attachment_filename, payload, callback=callback, **kwargs))
                 except Exception as e:
-                    logging.error(f"Failed to process attachment {filename}: {e}")
+                    logging.error(f"Failed to process attachment '{attachment_filename}' in email '{parent_filename}': {e}")
 
     return main_res + attachment_res
 

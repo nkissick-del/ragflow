@@ -31,7 +31,6 @@ class Pdf(PdfParser):
         from timeit import default_timer as timer
 
         if callback is None:
-
             def callback(*args, **kwargs):
                 pass
 

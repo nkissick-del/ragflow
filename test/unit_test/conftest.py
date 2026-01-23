@@ -4,8 +4,8 @@ import warnings
 import types
 from pathlib import Path
 
-# Suppress warnings
-warnings.filterwarnings("ignore")
+# Suppress FutureWarning from google packages (protobuf deprecation warnings)
+warnings.filterwarnings("ignore", category=FutureWarning, module=r"google\..*")
 
 
 # =============================================================================
@@ -31,10 +31,7 @@ def _setup_project_path():
             return repo_root
 
     # Fallback: couldn't find repo root
-    raise RuntimeError(
-        f"Could not find repository root from {__file__}. "
-        f"Looked for: {', '.join(repo_markers)}"
-    )
+    raise RuntimeError(f"Could not find repository root from {__file__}. Looked for: {', '.join(repo_markers)}")
 
 
 # Set up project path before any imports
@@ -46,6 +43,73 @@ _setup_project_path()
 #
 # IMPORTANT: We must mock submodules BEFORE importing parent packages
 # =============================================================================
+
+# 0. Mock beartype FIRST (type checking library used by deepdoc)
+# This must happen before deepdoc is imported
+mock_beartype = types.ModuleType("beartype")
+mock_beartype_claw = types.ModuleType("beartype.claw")
+mock_beartype_claw.beartype_this_package = lambda: None
+mock_beartype.claw = mock_beartype_claw
+sys.modules["beartype"] = mock_beartype
+sys.modules["beartype.claw"] = mock_beartype_claw
+
+# 0a. Mock deepdoc.vision package FIRST (prevents heavy CV/OCR imports)
+# The deepdoc.vision module has many heavy dependencies (cv2, onnxruntime, etc.)
+mock_deepdoc_vision = MagicMock()
+sys.modules["deepdoc.vision"] = mock_deepdoc_vision
+
+# 0b. Mock shapely (geometry library used by deepdoc vision)
+sys.modules["shapely"] = MagicMock()
+sys.modules["shapely.geometry"] = MagicMock()
+
+# 0b2. Mock pyclipper (geometry clipping library used by deepdoc vision)
+sys.modules["pyclipper"] = MagicMock()
+
+# 0c. Mock sklearn (machine learning library used by deepdoc pdf_parser)
+mock_sklearn = MagicMock()
+sys.modules["sklearn"] = mock_sklearn
+sys.modules["sklearn.cluster"] = MagicMock()
+sys.modules["sklearn.metrics"] = MagicMock()
+
+# 0c. Mock cv2 (OpenCV library used by deepdoc vision)
+sys.modules["cv2"] = MagicMock()
+
+# 0d. Mock onnxruntime (used by deepdoc vision)
+sys.modules["onnxruntime"] = MagicMock()
+
+# 0e. Mock pdfplumber (heavy PDF library used by deepdoc)
+sys.modules["pdfplumber"] = MagicMock()
+
+# 0f. Mock openpyxl (Excel library used by deepdoc)
+mock_openpyxl = types.ModuleType("openpyxl")
+mock_openpyxl.Workbook = MagicMock()
+mock_openpyxl.load_workbook = MagicMock()
+sys.modules["openpyxl"] = mock_openpyxl
+
+# 0g. Mock docx (Word doc library)
+mock_docx = types.ModuleType("docx")
+mock_docx.Document = MagicMock()
+sys.modules["docx"] = mock_docx
+
+# 0h. Mock PIL (image library) - need ImageFont for pptx
+mock_pil = types.ModuleType("PIL")
+mock_pil.Image = MagicMock()
+mock_pil.ImageFont = MagicMock()
+mock_pil.__version__ = "10.0.0"  # pypdf checks this at import time
+sys.modules["PIL"] = mock_pil
+sys.modules["PIL.Image"] = mock_pil.Image
+sys.modules["PIL.ImageFont"] = mock_pil.ImageFont
+
+# 0i. Mock markdown library
+sys.modules["markdown"] = MagicMock()
+
+# 0j. Mock deepdoc.parser submodules to prevent heavy imports
+# These are imported by deepdoc.parser.__init__ and have heavy dependencies
+sys.modules["deepdoc.parser.pdf_parser"] = MagicMock()
+sys.modules["deepdoc.parser.ppt_parser"] = MagicMock()
+sys.modules["deepdoc.parser.docx_parser"] = MagicMock()
+sys.modules["deepdoc.parser.excel_parser"] = MagicMock()
+sys.modules["deepdoc.parser.html_parser"] = MagicMock()
 
 # 1. Mock opendal FIRST (Rust-based storage library, hard to install on Mac)
 # This must happen before common.settings is imported
@@ -134,7 +198,35 @@ mock_config_utils.get_base_config.side_effect = side_effect_get_base
 
 
 def side_effect_decrypt(name=None):
-    return {"host": "127.0.0.1", "port": 3306, "name": "mock_db", "user": "mock_user", "password": "mock_password"}
+    """Return different DB configs based on the name parameter."""
+    configs = {
+        "mysql": {
+            "host": "127.0.0.1",
+            "port": 3306,
+            "name": "ragflow",
+            "user": "root",
+            "password": "mock_password",
+            "engine": "mysql",
+        },
+        "postgres": {
+            "host": "127.0.0.1",
+            "port": 5432,
+            "name": "ragflow",
+            "user": "postgres",
+            "password": "mock_password",
+            "engine": "postgres",
+        },
+    }
+    # Return specific config if name matches, otherwise return default (mysql-like)
+    if name and name.lower() in configs:
+        return configs[name.lower()]
+    return {
+        "host": "127.0.0.1",
+        "port": 3306,
+        "name": "mock_db",
+        "user": "mock_user",
+        "password": "mock_password",
+    }
 
 
 mock_config_utils.decrypt_database_config.side_effect = side_effect_decrypt

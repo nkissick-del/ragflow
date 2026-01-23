@@ -204,7 +204,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
             logging.warning(f"tika.parser got empty content from {filename}.")
             return []
     else:
-        raise NotImplementedError("file type not supported yet(doc, docx, pdf, txt, md, markdown, mdx, htm, html supported)")
+        raise NotImplementedError("file type not supported yet (supported: pdf, docx, txt, md, markdown, mdx, htm, html; .doc requires Apache Tika)")
 
     # Remove 'Contents' part
     remove_contents_table(sections, eng)

@@ -94,8 +94,12 @@ class PostgresConfig(MetaConfig):
         if "extra" not in result:
             result["extra"] = dict()
         extra_dict = result["extra"].copy()
-        extra_dict["username"] = self.username
-        extra_dict["password"] = self.password
+        # Only add credentials if they are not None (PostgreSQL supports auth
+        # methods like trust/peer/ident where credentials are not required)
+        if self.username is not None:
+            extra_dict["username"] = self.username
+        if self.password is not None:
+            extra_dict["password"] = self.password
         result["extra"] = extra_dict
         return result
 
@@ -383,6 +387,12 @@ def load_configurations(config_path: str) -> list[BaseConfig]:
                     port: int = parsed.port or int(v.get("port") or 9200)
                 except (ValueError, TypeError):
                     port = 9200
+
+                # Validate host is non-empty before creating config
+                if not host or not host.strip():
+                    logging.warning(f"Skipping OpenSearch config: empty host (id={id_count}, name={name}, uri={url})")
+                    continue
+
                 username: str = v.get("username")
                 password: str = v.get("password")
                 config = ElasticsearchConfig(

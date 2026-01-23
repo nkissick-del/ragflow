@@ -52,7 +52,6 @@ class TestDoclingIntegration(unittest.TestCase):
         mock_session.get.side_effect = side_effect_get
 
         # Setup Parser
-        # Setup Parser
         with patch.dict(os.environ, {"DOCLING_BASE_URL": "http://mock-docling"}):
             parser = DoclingParser()
             # Mock create_retry_session to return our mock_session

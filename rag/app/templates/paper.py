@@ -239,9 +239,6 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         attach_media_context(res, table_ctx, image_ctx)
     return res
 
-    # Removed dead code block
-
-
 if __name__ == "__main__":
     import sys
 

@@ -55,10 +55,8 @@ def load_from_xml_v2(baseURI, rels_item_xml):
     return srels
 
 
-# Patching _SerializedRelationships.load_from_xml
-# This was done inside Chunk in naive.py, but it makes more sense to do it globally or in the module that uses it.
-# However, to be safe and match behavior, we can do it when Docx is used or here at module level.
-_SerializedRelationships.load_from_xml = load_from_xml_v2
+# NOTE: Patching of _SerializedRelationships.load_from_xml is now done lazily in Docx.__call__
+# to avoid global side effects at import time.
 
 
 class Docx(DocxParser):
@@ -215,119 +213,126 @@ class Docx(DocxParser):
         return ""
 
     def __call__(self, filename, binary=None, from_page=0, to_page=100000):
-        self.doc = Document(filename) if not binary else Document(BytesIO(binary))
-        pn = 0
-        lines = []
-        last_image = None
-        table_idx = 0
+        # Apply monkey-patch lazily, saving the original method to restore after processing
+        _orig_load_from_xml = _SerializedRelationships.load_from_xml
+        _SerializedRelationships.load_from_xml = load_from_xml_v2
+        try:
+            self.doc = Document(filename) if not binary else Document(BytesIO(binary))
+            pn = 0
+            lines = []
+            last_image = None
+            table_idx = 0
 
-        def flush_last_image():
-            nonlocal last_image, lines
-            if last_image is not None:
-                lines.append({"text": "", "image": last_image, "table": None, "style": "Image"})
-                last_image = None
+            def flush_last_image():
+                nonlocal last_image, lines
+                if last_image is not None:
+                    lines.append({"text": "", "image": last_image, "table": None, "style": "Image"})
+                    last_image = None
 
-        for block in self.doc._element.body:
-            if pn > to_page:
-                break
+            for block in self.doc._element.body:
+                if pn > to_page:
+                    break
 
-            if block.tag.endswith("p"):
-                p = Paragraph(block, self.doc)
+                if block.tag.endswith("p"):
+                    p = Paragraph(block, self.doc)
 
-                if from_page <= pn < to_page:
-                    text = p.text.strip()
-                    style_name = p.style.name if p.style else ""
+                    if from_page <= pn < to_page:
+                        text = p.text.strip()
+                        style_name = p.style.name if p.style else ""
 
-                    if text:
-                        if style_name == "Caption":
-                            former_image = None
+                        if text:
+                            if style_name == "Caption":
+                                former_image = None
 
-                            if lines and lines[-1].get("image") and lines[-1].get("style") != "Caption":
-                                former_image = lines[-1].get("image")
-                                lines.pop()
+                                if lines and lines[-1].get("image") and lines[-1].get("style") != "Caption":
+                                    former_image = lines[-1].get("image")
+                                    lines.pop()
 
-                            elif last_image is not None:
-                                former_image = last_image
-                                last_image = None
+                                elif last_image is not None:
+                                    former_image = last_image
+                                    last_image = None
 
-                            lines.append(
-                                {
-                                    "text": self.__clean(text),
-                                    "image": former_image if former_image else None,
-                                    "table": None,
-                                }
-                            )
-
-                        else:
-                            flush_last_image()
-                            lines.append(
-                                {
-                                    "text": self.__clean(text),
-                                    "image": None,
-                                    "table": None,
-                                }
-                            )
-
-                            current_image = self.get_picture(self.doc, p)
-                            if current_image is not None:
                                 lines.append(
                                     {
-                                        "text": "",
-                                        "image": current_image,
+                                        "text": self.__clean(text),
+                                        "image": former_image if former_image else None,
                                         "table": None,
                                     }
                                 )
 
-                    else:
-                        current_image = self.get_picture(self.doc, p)
-                        if current_image is not None:
-                            last_image = current_image
+                            else:
+                                flush_last_image()
+                                lines.append(
+                                    {
+                                        "text": self.__clean(text),
+                                        "image": None,
+                                        "table": None,
+                                    }
+                                )
 
-                for run in p.runs:
-                    xml = run._element.xml
-                    if "lastRenderedPageBreak" in xml:
-                        pn += 1
+                                current_image = self.get_picture(self.doc, p)
+                                if current_image is not None:
+                                    lines.append(
+                                        {
+                                            "text": "",
+                                            "image": current_image,
+                                            "table": None,
+                                        }
+                                    )
+
+                        else:
+                            current_image = self.get_picture(self.doc, p)
+                            if current_image is not None:
+                                last_image = current_image
+
+                    for run in p.runs:
+                        xml = run._element.xml
+                        if "lastRenderedPageBreak" in xml:
+                            pn += 1
+                            continue
+                        if "w:br" in xml and 'type="page"' in xml:
+                            pn += 1
+
+                elif block.tag.endswith("tbl"):
+                    if pn < from_page or pn > to_page:
+                        table_idx += 1
                         continue
-                    if "w:br" in xml and 'type="page"' in xml:
-                        pn += 1
 
-            elif block.tag.endswith("tbl"):
-                if pn < from_page or pn > to_page:
+                    flush_last_image()
+                    tb = DocxTable(block, self.doc)
+                    title = self.__get_nearest_title(table_idx, filename)
+                    html = "<table>"
+                    if title:
+                        html += f"<caption>Table Location: {title}</caption>"
+                    for r in tb.rows:
+                        html += "<tr>"
+                        col_idx = 0
+                        try:
+                            while col_idx < len(r.cells):
+                                span = 1
+                                c = r.cells[col_idx]
+                                for j in range(col_idx + 1, len(r.cells)):
+                                    if c.text == r.cells[j].text:
+                                        span += 1
+                                        col_idx = j
+                                    else:
+                                        break
+                                col_idx += 1
+                                html += f"<td>{c.text}</td>" if span == 1 else f"<td colspan='{span}'>{c.text}</td>"
+                        except Exception as e:
+                            logging.warning(f"Error parsing table, ignore: {e}")
+                        html += "</tr>"
+                    html += "</table>"
+                    lines.append({"text": "", "image": None, "table": html})
                     table_idx += 1
-                    continue
 
-                flush_last_image()
-                tb = DocxTable(block, self.doc)
-                title = self.__get_nearest_title(table_idx, filename)
-                html = "<table>"
-                if title:
-                    html += f"<caption>Table Location: {title}</caption>"
-                for r in tb.rows:
-                    html += "<tr>"
-                    col_idx = 0
-                    try:
-                        while col_idx < len(r.cells):
-                            span = 1
-                            c = r.cells[col_idx]
-                            for j in range(col_idx + 1, len(r.cells)):
-                                if c.text == r.cells[j].text:
-                                    span += 1
-                                    col_idx = j
-                                else:
-                                    break
-                            col_idx += 1
-                            html += f"<td>{c.text}</td>" if span == 1 else f"<td colspan='{span}'>{c.text}</td>"
-                    except Exception as e:
-                        logging.warning(f"Error parsing table, ignore: {e}")
-                    html += "</tr>"
-                html += "</table>"
-                lines.append({"text": "", "image": None, "table": html})
-                table_idx += 1
+            flush_last_image()
+            new_line = [(line.get("text"), line.get("image"), line.get("table")) for line in lines]
 
-        flush_last_image()
-        new_line = [(line.get("text"), line.get("image"), line.get("table")) for line in lines]
-
-        return new_line
+            return new_line
+        finally:
+            # Restore the original method to avoid global side effects
+            _SerializedRelationships.load_from_xml = _orig_load_from_xml
 
 
 class Pdf(PdfParser):
@@ -477,8 +482,11 @@ class Markdown(MarkdownParser):
             encoding = find_codec(binary)
             txt = binary.decode(encoding, errors="ignore")
         else:
-            with open(filename, "r") as f:
-                txt = f.read()
+            # Determine encoding using find_codec by reading the file as binary first
+            with open(filename, "rb") as f:
+                raw_bytes = f.read()
+            encoding = find_codec(raw_bytes) or "utf-8"
+            txt = raw_bytes.decode(encoding, errors="ignore")
 
         remainder, tables = self.extract_tables_and_remainder(f"{txt}\n", separate_tables=separate_tables)
         # To eliminate duplicate tables in chunking result, uncomment code below and set separate_tables to True in line 410.
@@ -540,7 +548,7 @@ def by_mineru(
     tenant_id: str | None = None,
     **kwargs,
 ):
-    pdf_parser = None
+    mineru_parser = None
     if tenant_id:
         if not mineru_llm_name:
             try:
@@ -558,8 +566,8 @@ def by_mineru(
         if mineru_llm_name:
             try:
                 ocr_model = LLMBundle(tenant_id=tenant_id, llm_type=LLMType.OCR, llm_name=mineru_llm_name, lang=lang)
-                pdf_parser = ocr_model.mdl
-                sections, tables = pdf_parser.parse_pdf(
+                mineru_parser = ocr_model.mdl
+                sections, tables = mineru_parser.parse_pdf(
                     filepath=filename,
                     binary=binary,
                     callback=callback,
@@ -567,13 +575,13 @@ def by_mineru(
                     lang=lang,
                     **kwargs,
                 )
-                return sections, tables, pdf_parser
+                return sections, tables, mineru_parser
             except Exception as e:
                 logging.error(f"Failed to parse pdf via LLMBundle MinerU ({mineru_llm_name}): {e}")
 
     if callback:
         callback(-1, "MinerU not found.")
-    return None, None, None
+    return None, None, mineru_parser
 
 
 def by_docling(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, pdf_cls=None, **kwargs):
@@ -621,7 +629,7 @@ def by_paddleocr(
     tenant_id: str | None = None,
     **kwargs,
 ):
-    pdf_parser = None
+    paddle_parser = None
     if tenant_id:
         if not paddleocr_llm_name:
             try:
@@ -639,24 +647,24 @@ def by_paddleocr(
         if paddleocr_llm_name:
             try:
                 ocr_model = LLMBundle(tenant_id=tenant_id, llm_type=LLMType.OCR, llm_name=paddleocr_llm_name, lang=lang)
-                pdf_parser = ocr_model.mdl
-                sections, tables = pdf_parser.parse_pdf(
+                paddle_parser = ocr_model.mdl
+                sections, tables = paddle_parser.parse_pdf(
                     filepath=filename,
                     binary=binary,
                     callback=callback,
                     parse_method=parse_method,
                     **kwargs,
                 )
-                return sections, tables, pdf_parser
+                return sections, tables, paddle_parser
             except Exception as e:
                 logging.error(f"Failed to parse pdf via LLMBundle PaddleOCR ({paddleocr_llm_name}): {e}")
                 if callback and callable(callback):
                     callback(-1, f"PaddleOCR parsing failed: {e}")
-                return None, None, None
+                return None, None, paddle_parser
 
     if callback and callable(callback):
         callback(-1, "PaddleOCR not found.")
-    return None, None, None
+    return None, None, paddle_parser
 
 
 def by_plaintext(filename, binary=None, from_page=0, to_page=100000, callback=None, **kwargs):

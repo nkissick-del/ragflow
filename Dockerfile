@@ -155,7 +155,9 @@ RUN --mount=type=cache,id=ragflow_uv,target=/root/.cache/uv,sharing=locked \
     sed -i 's|pypi.tuna.tsinghua.edu.cn|pypi.org|g' uv.lock; \
     fi; \
     uv sync --python 3.12 --frozen && \
-    uv pip install pip
+    # Install pip for runtime use by entrypoint.sh ensure_pip_dependency() function
+    # which installs optional dependencies (e.g., docling) at container startup
+    uv pip install pip==24.3.1
 
 COPY web web
 COPY docs docs

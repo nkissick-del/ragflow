@@ -288,10 +288,39 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
                 return ""
             return "@@{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}##".format(pn, left, right, top, bottom)
 
+        def _section_sort_key(section):
+            """Extract sort key from section, with defensive checks for malformed positions.
+
+            Returns (page_number, y_position, x_position) for sorting, or
+            (inf, 0, 0) fallback if the position data is missing or malformed.
+            """
+            fallback = (float("inf"), 0, 0)
+            try:
+                poss = section[-1]
+                # Check positions exists and is a non-empty sequence
+                if not poss or not hasattr(poss, "__getitem__") or not hasattr(poss, "__len__"):
+                    return fallback
+                if len(poss) == 0:
+                    return fallback
+                first_pos = poss[0]
+                # Check first position is indexable with at least 4 elements
+                if not hasattr(first_pos, "__getitem__") or not hasattr(first_pos, "__len__"):
+                    return fallback
+                if len(first_pos) < 4:
+                    return fallback
+                # Extract indices, verifying they are numeric
+                pn, y, x = first_pos[0], first_pos[3], first_pos[1]
+                # Verify numeric types (int or float)
+                if not isinstance(pn, (int, float)) or not isinstance(y, (int, float)) or not isinstance(x, (int, float)):
+                    return fallback
+                return (pn, y, x)
+            except (IndexError, TypeError, KeyError):
+                return fallback
+
         chunks = []
         last_sid = -2
         tk_cnt = 0
-        for txt, sec_id, poss in sorted(sections, key=lambda x: (x[-1][0][0], x[-1][0][3], x[-1][0][1]) if x[-1] else (float("inf"), 0, 0)):
+        for txt, sec_id, poss in sorted(sections, key=_section_sort_key):
             poss = "\t".join([tag(*pos) for pos in poss])
             if tk_cnt < 32 or (tk_cnt < 1024 and (sec_id == last_sid or sec_id == -1)):
                 if chunks:

@@ -18,7 +18,9 @@ import logging
 import base64
 import datetime
 import json
+import os
 import re
+import time
 import pandas as pd
 import requests
 from api.db.services.knowledgebase_service import KnowledgebaseService
@@ -27,23 +29,30 @@ from deepdoc.parser.resume import refactor
 from deepdoc.parser.resume import step_one, step_two
 from common.string_utils import remove_redundant_spaces
 
+# Resume parser configuration from environment variables
+RESUME_PARSER_ENDPOINT = os.environ.get("RESUME_PARSER_ENDPOINT", "http://127.0.0.1:61670/tog")
+RESUME_PARSER_UID = int(os.environ.get("RESUME_PARSER_UID", "1"))
+RESUME_PARSER_USER = os.environ.get("RESUME_PARSER_USER", "default_user")
+
+# Minimum number of fields required for a valid parsed resume
+MIN_REQUIRED_RESUME_FIELDS = 7
+
 forbidden_select_fields4resume = ["name_pinyin_kwd", "edu_first_fea_kwd", "degree_kwd", "sch_rank_kwd", "edu_fea_kwd"]
 
 
 def remote_call(filename, binary):
     q = {
-        "header": {"uid": 1, "user": "kevinhu", "log_id": filename},
+        "header": {"uid": RESUME_PARSER_UID, "user": RESUME_PARSER_USER, "log_id": filename},
         "request": {
             "p": {"request_id": "1", "encrypt_type": "base64", "filename": filename, "langtype": "", "fileori": base64.b64encode(binary).decode("utf-8")},
             "c": "resume_parse_module",
             "m": "resume_parse",
         },
     }
-    import time
 
     for i in range(3):
         try:
-            resume = requests.post("http://127.0.0.1:61670/tog", data=json.dumps(q), timeout=5)
+            resume = requests.post(RESUME_PARSER_ENDPOINT, data=json.dumps(q), timeout=5)
             resume = resume.json()["response"]["results"]
             resume = refactor(resume)
             for k in ["education", "work", "project", "training", "skill", "certificate", "language"]:
@@ -76,7 +85,7 @@ def chunk(filename, binary=None, callback=None, **kwargs):
     if callback:
         callback(0.2, "Resume parsing is going on...")
     resume = remote_call(filename, binary)
-    if len(resume.keys()) < 7:
+    if len(resume.keys()) < MIN_REQUIRED_RESUME_FIELDS:
         if callback:
             callback(-1, "Resume is not successfully parsed.")
         raise Exception("Resume parser remote call fail!")

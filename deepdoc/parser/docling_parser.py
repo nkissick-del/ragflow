@@ -18,13 +18,15 @@ from __future__ import annotations
 import logging
 import os
 import re
+import time
+from io import BytesIO
+from os import PathLike
+from pathlib import Path
+from typing import Callable, Optional
+
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
-from pathlib import Path
-from io import BytesIO
-from typing import Callable, Optional
-from os import PathLike
 
 try:
     from deepdoc.parser.pdf_parser import RAGFlowPdfParser
@@ -35,11 +37,16 @@ except Exception:
 
 
 class DoclingParser(RAGFlowPdfParser):
+    """
+    Docling parser that communicates with a remote Docling API server.
+
+    This parser creates fresh HTTP sessions for each request to avoid connection
+    pooling issues and ensure clean state for long-running operations.
+    """
     def __init__(self):
         self.logger = logging.getLogger(self.__class__.__name__)
         self.base_url = os.environ.get("DOCLING_BASE_URL", "http://localhost:5001")
         self.auth_token = os.environ.get("DOCLING_AUTH_TOKEN")
-        self.session = self._create_retry_session()
 
     def _create_retry_session(self, retries=5, backoff_factor=0.5, status_forcelist=(429, 500, 502, 503, 504)):
         session = requests.Session()
@@ -57,15 +64,24 @@ class DoclingParser(RAGFlowPdfParser):
         return session
 
     def check_installation(self) -> bool:
-        """Checks if the Docling server is reachable."""
+        """
+        Checks if the Docling server is reachable.
+
+        Creates a fresh session for this health check to avoid stale connections.
+
+        Returns:
+            True if the server is reachable and healthy, False otherwise.
+        """
         if not self.base_url:
             self.logger.warning("[Docling] DOCLING_BASE_URL not set.")
             return False
 
+        # Create fresh session for health check
+        session = self._create_retry_session()
         try:
             # Use the /health endpoint which is designed for health checks
             health_url = f"{self.base_url.rstrip('/')}/health"
-            response = self.session.get(health_url, timeout=5)
+            response = session.get(health_url, timeout=5)
             if response.status_code == 200:
                 return True
             else:
@@ -74,6 +90,8 @@ class DoclingParser(RAGFlowPdfParser):
         except requests.exceptions.RequestException as e:
             self.logger.warning(f"[Docling] Service unreachable at {self.base_url}: {e}")
             return False
+        finally:
+            session.close()
 
     def parse_pdf(
         self,
@@ -82,13 +100,36 @@ class DoclingParser(RAGFlowPdfParser):
         callback: Optional[Callable] = None,
         *,
         output_dir: Optional[str] = None,
-        lang: Optional[str] = None,
-        method: str = "auto",
         delete_output: bool = True,
         parse_method: str = "raw",
         **kwargs,
     ):
-        """Parse PDF using Docling async API (submit -> poll -> fetch)."""
+        """
+        Parse PDF using Docling async API (submit -> poll -> fetch).
+
+        Creates a fresh HTTP session for this request to avoid connection pooling
+        issues during long-running operations. The session is closed in the finally
+        block to ensure proper resource cleanup.
+
+        Args:
+            filepath: Path to the PDF file
+            binary: Binary content (alternative to filepath)
+            callback: Progress callback function
+            output_dir: Reserved for interface compatibility with other parsers (unused)
+            delete_output: Reserved for interface compatibility with other parsers (unused)
+            parse_method: Reserved for interface compatibility with other parsers (unused)
+            **kwargs: Additional arguments including use_semantic_chunking flag
+
+        Returns:
+            Tuple of (sections, tables) where sections is either list[str] or str
+            depending on use_semantic_chunking flag.
+
+        Note:
+            The parameters output_dir, delete_output, and parse_method are accepted
+            for API compatibility with MinerUParser and other PDF parsers but are not
+            used by the Docling implementation, which handles all processing remotely
+            via the Docling API server.
+        """
         if callback:
             callback(0.1, "[Docling] Starting API conversion...")
 
@@ -146,19 +187,26 @@ class DoclingParser(RAGFlowPdfParser):
             if callback:
                 callback(0.2, f"[Docling] Job submitted (task: {task_id[:8]}...)")
 
-            # Step 2: Poll for completion
+            # Step 2: Poll for completion using wall-clock timeout
             poll_url = f"{self.base_url.rstrip('/')}/v1/status/poll/{task_id}"
-            max_polls = 360  # 30 minutes max (5s per poll)
-            poll_count = 0
-
-            import time
+            total_timeout = 30 * 60  # 30 minutes max wall-clock time
+            start_time = time.monotonic()
+            deadline = start_time + total_timeout
+            poll_interval = 5.0  # Expected time between polls in seconds
+            # Per-request timeout should be >= poll_interval to allow server-side long-polling
+            # but with buffer for network latency
+            per_request_timeout = 15.0
 
             status = "timeout"
             status_data = {}
 
-            while poll_count < max_polls:
+            while time.monotonic() < deadline:
+                # Measure time spent in HTTP request
+                poll_start = time.time()
+                elapsed_total = time.monotonic() - start_time
+
                 try:
-                    poll_response = session.get(poll_url, timeout=15, headers={"Connection": "close"})
+                    poll_response = session.get(poll_url, timeout=per_request_timeout, headers={"Connection": "close"})
                     if poll_response.status_code == 404:
                         self.logger.warning(f"[Docling] Polling returned 404 for task {task_id}. Attempting to fetch result directly.")
                         status = "success"  # Set success so validation passes and we attempt fetch
@@ -168,8 +216,8 @@ class DoclingParser(RAGFlowPdfParser):
 
                     status_data = poll_response.json()
 
-                    # Log full response for debugging (first few polls only)
-                    if poll_count < 3:
+                    # Log full response for debugging (first few seconds only)
+                    if elapsed_total < 15:
                         self.logger.info(f"[Docling] Poll response: {status_data}")
 
                     # Try multiple possible status field names
@@ -179,14 +227,13 @@ class DoclingParser(RAGFlowPdfParser):
                     if isinstance(status, str):
                         status = status.lower()
 
-                    poll_count += 1
-                    # Progress from 0.2 to 0.8 during polling
-                    progress = 0.2 + (0.6 * min(poll_count / 60, 1.0))
+                    # Progress from 0.2 to 0.8 during polling (based on wall-clock time)
+                    progress = 0.2 + (0.6 * min(elapsed_total / total_timeout, 1.0))
 
                     if callback:
                         callback(progress, f"[Docling] Processing... ({status})")
 
-                    self.logger.debug(f"[Docling] Poll {poll_count}: status={status}")
+                    self.logger.debug(f"[Docling] Poll at {elapsed_total:.1f}s: status={status}")
 
                     if status in ("success", "completed", "done", "finished"):
                         break
@@ -194,12 +241,18 @@ class DoclingParser(RAGFlowPdfParser):
                         error_msg = status_data.get("error") or status_data.get("message") or "Unknown error"
                         raise RuntimeError(f"[Docling] Job failed: {error_msg}")
 
-                    # Add sleep as fallback in case wait parameter isn't honored
-                    time.sleep(2)
+                    # Calculate elapsed time for this poll and sleep only for the remainder
+                    # This avoids adding delay when the server already honored long-polling
+                    poll_elapsed = time.time() - poll_start
+                    sleep_time = max(0, poll_interval - poll_elapsed)
+                    if sleep_time > 0:
+                        time.sleep(sleep_time)
 
                 except requests.exceptions.Timeout:
                     # Timeout is expected with long polling, just continue
-                    poll_count += 1
+                    # Check if we've exceeded the overall deadline
+                    if time.monotonic() >= deadline:
+                        break
                     continue
 
             # Step 2b: Validate status after polling
@@ -220,17 +273,33 @@ class DoclingParser(RAGFlowPdfParser):
 
             # Parse response
             content_type = result_response.headers.get("Content-Type", "")
-            result_text = ""
+            result_text = None
 
             if "application/json" in content_type:
                 resp_json = result_response.json()
-                # Try various fields where content might be
-                result_text = resp_json.get("markdown") or resp_json.get("content") or resp_json.get("document", {}).get("md_content", "") or ""
+
+                # Try various fields where content might be, checking for None explicitly
+                # to preserve empty strings as valid values
+                result_text = resp_json.get("markdown")
+                if result_text is None:
+                    result_text = resp_json.get("content")
+                if result_text is None:
+                    result_text = resp_json.get("text")
+
                 # Handle nested document structure
-                if not result_text and "document" in resp_json:
-                    doc = resp_json["document"]
+                if result_text is None and "document" in resp_json:
+                    doc = resp_json.get("document")
                     if isinstance(doc, dict):
-                        result_text = doc.get("export_to_markdown", "") or doc.get("md_content", "")
+                        # Check standard Docling API fields
+                        result_text = doc.get("markdown")
+                        if result_text is None:
+                            result_text = doc.get("md_content")
+                        if result_text is None:
+                            result_text = doc.get("content")
+
+                # If still None, default to empty string
+                if result_text is None:
+                    result_text = ""
             else:
                 result_text = result_response.text
 

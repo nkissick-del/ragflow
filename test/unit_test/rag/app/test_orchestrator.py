@@ -68,7 +68,7 @@ class TestOrchestrator(unittest.TestCase):
             mock_router.route.return_value = ([], [], [], None, False, [])
             mock_general.chunk.return_value = []
 
-            res = orchestrator.chunk("root.docx", b"root_content")
+            orchestrator.chunk("root.docx", b"root_content")
 
             # Verify extract called
             mock_extract.assert_called_once()
@@ -148,7 +148,7 @@ class TestSemanticRouting(unittest.TestCase):
         parser_config = {"layout_recognizer": "Docling", "use_semantic_chunking": True}
 
         # os.environ patch removed as requested
-        res = orchestrator.chunk("test.pdf", b"content", parser_config=parser_config)
+        orchestrator.chunk("test.pdf", b"content", parser_config=parser_config)
 
         # Should use General because sections is a list, not string
         mock_general.chunk.assert_called_once()

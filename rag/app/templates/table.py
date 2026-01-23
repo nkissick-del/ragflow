@@ -122,8 +122,7 @@ class Excel(ExcelParser):
                     ],
                 )
             )
-        if callback:
-            callback(0.3, ("Extract records: {}~{}".format(from_page + 1, min(to_page, from_page + rn)) + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
+        callback(0.3, ("Extract records: {}~{}".format(from_page + 1, min(to_page, from_page + rn)) + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
         return res, tables
 
     def _parse_headers(self, ws, rows):
@@ -310,7 +309,6 @@ def trans_datatime(s):
         return datetime_parse(s.strip()).strftime("%Y-%m-%d %H:%M:%S")
     except Exception as e:
         logging.warning(f"Failed to parse date from {s}, error: {e}")
-        pass
 
 
 def trans_bool(s):
@@ -321,7 +319,7 @@ def trans_bool(s):
     return None
 
 
-def column_data_type(arr):
+def column_data_type(arr, column_name=None):
     arr = list(arr)
     counts = {"int": 0, "float": 0, "text": 0, "datetime": 0, "bool": 0}
     trans = {t: f for f, t in [(int, "int"), (float, "float"), (trans_datatime, "datetime"), (trans_bool, "bool"), (str, "text")]}
@@ -337,7 +335,7 @@ def column_data_type(arr):
                 break
         elif re.match(r"^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$", cleaned) and not cleaned.startswith("0"):
             counts["float"] += 1
-        elif re.match(r"(true|yes|是|\*|✓|✔|☑|✅|√|false|no|否|⍻|×)$", str(a), flags=re.IGNORECASE):
+        elif re.match(r"(true|yes|是|\*|✓|✔|☑|✅|√|false|no|否|⍻|×)$", cleaned, flags=re.IGNORECASE):
             counts["bool"] += 1
         elif trans_datatime(str(a)):
             counts["datetime"] += 1
@@ -348,6 +346,7 @@ def column_data_type(arr):
     else:
         counts = sorted(counts.items(), key=lambda x: x[1] * -1)
         ty = counts[0][0]
+    col_label = column_name if column_name else "unknown"
     for i in range(len(arr)):
         if arr[i] is None:
             continue
@@ -355,7 +354,7 @@ def column_data_type(arr):
             arr[i] = trans[ty](str(arr[i]).replace("%%", ""))
         except Exception as e:
             arr[i] = None
-            logging.warning(f"Column {i}: {e}")
+            logging.warning(f"Column '{col_label}', row {i}: {e}")
     # if ty == "text":
     #    if len(arr) > 128 and uni / len(arr) < 0.1:
     #        ty = "keyword"
@@ -405,7 +404,7 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
                 continue
             rows.append(row)
 
-        callback(0.3, ("Extract records: {}~{}".format(from_page, min(len(lines), to_page)) + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
+        callback(0.3, ("Extract records: {}~{}".format(from_page, from_page + len(rows)) + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
 
         dfs = [pd.DataFrame(np.array(rows), columns=headers)]
     elif re.search(r"\.csv$", filename, re.IGNORECASE):
@@ -452,7 +451,7 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
         py_clmns = [PY.get_pinyins(re.sub(r"(/.*|（[^（）]+?）|\([^()]+?\))", "", str(n)), "_")[0] for n in clmns]
         clmn_tys = []
         for j in range(len(clmns)):
-            cln, ty = column_data_type(df[clmns[j]])
+            cln, ty = column_data_type(df[clmns[j]], column_name=str(clmns[j]))
             clmn_tys.append(ty)
             df[clmns[j]] = cln
             if ty == "text":
@@ -482,7 +481,7 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
             res.extend(tokenize_table(tbls, doc, is_english))
         kb_id = kwargs.get("kb_id")
         if kb_id:
-            KnowledgebaseService.update_parser_config(kb_id, {"field_map": {k: v for k, v in clmns_map}})
+            KnowledgebaseService.update_parser_config(kb_id, {"field_map": dict(clmns_map)})
     callback(0.35, "")
 
     return res

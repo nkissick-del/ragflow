@@ -93,10 +93,7 @@ try:
     # Validate environment variable at module load
     is_valid, error_msg = _validate_tokenizer_model(_tokenizer_model)
     if not is_valid:
-        logging.warning(
-            f"[Semantic] Falling back to default model '{_DEFAULT_TOKENIZER_MODEL}' due to invalid "
-            f"SEMANTIC_TOKENIZER_MODEL='{_tokenizer_model}'"
-        )
+        logging.warning(f"[Semantic] Falling back to default model '{_DEFAULT_TOKENIZER_MODEL}' due to invalid SEMANTIC_TOKENIZER_MODEL='{_tokenizer_model}'")
         _tokenizer_model = _DEFAULT_TOKENIZER_MODEL
         # Re-validate the default (should always succeed)
         is_valid, error_msg = _validate_tokenizer_model(_tokenizer_model)
@@ -160,10 +157,7 @@ try:
                     _enc = encoding_for_model(_tokenizer_model)
                     logging.info(f"[Semantic] Initialized tiktoken encoder for model: {_tokenizer_model}")
                 except Exception as e:
-                    error_msg = (
-                        f"Failed to initialize tiktoken encoder for model '{_tokenizer_model}': {e}. "
-                        f"This should not happen if validation succeeded. Please report this issue."
-                    )
+                    error_msg = f"Failed to initialize tiktoken encoder for model '{_tokenizer_model}': {e}. This should not happen if validation succeeded. Please report this issue."
                     logging.error(f"[Semantic] {error_msg}")
                     raise RuntimeError(error_msg) from e
             return _enc
@@ -329,7 +323,8 @@ class Semantic:
             return []
 
         # Create language-aware token counter for consistent estimation throughout parsing
-        count_tokens = lambda text: num_tokens(text, is_english=is_english)
+        def count_tokens(text: str) -> int:
+            return num_tokens(text, is_english=is_english)
 
         lines = content.split("\n")
 
@@ -365,14 +360,16 @@ class Semantic:
                 def split_large_paragraph(para: str) -> List[str]:
                     """Split a large paragraph at sentence boundaries."""
                     sentences = []
-                    sentences = []
                     try:
                         import nltk
+                        from packaging.version import parse as parse_version
 
                         # Check availability without downloading
                         try:
                             nltk.data.find("tokenizers/punkt")
-                            if nltk.__version__ >= "3.8":
+                            # Use proper version comparison (not string comparison)
+                            # String comparison fails for versions like "3.10" < "3.8" lexicographically
+                            if parse_version(nltk.__version__) >= parse_version("3.8"):
                                 nltk.data.find("tokenizers/punkt_tab")
                             sentences = nltk.sent_tokenize(para)
                         except LookupError:

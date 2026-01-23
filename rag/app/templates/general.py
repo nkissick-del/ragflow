@@ -28,6 +28,22 @@ from rag.nlp import (
 )
 
 
+def _get_chunk_token_num(parser_config: dict, default: int = 128) -> int:
+    """Extract and sanitize chunk_token_num from parser_config.
+
+    Args:
+        parser_config: Configuration dictionary containing chunk_token_num.
+        default: Default value if chunk_token_num is not set (default: 128).
+
+    Returns:
+        A non-negative integer chunk token number.
+    """
+    value = parser_config.get("chunk_token_num")
+    if value is None:
+        return max(0, default)
+    return max(0, int(value))
+
+
 class General:
     @staticmethod
     def chunk(filename, sections, tables, section_images, pdf_parser, is_markdown, parser_config, doc, is_english, callback, **kwargs):
@@ -55,8 +71,7 @@ class General:
             table_context_size = max(0, int(parser_config.get("table_context_size", 0) or 0))
             image_context_size = max(0, int(parser_config.get("image_context_size", 0) or 0))
 
-            chunk_token_num = int(parser_config.get("chunk_token_num", 128) or 128)
-            chunk_token_num = max(0, chunk_token_num)
+            chunk_token_num = _get_chunk_token_num(parser_config)
             chunks, images = naive_merge_docx(sections, chunk_token_num, parser_config.get("delimiter", "\n!?。；！？"), table_context_size, image_context_size)
 
             vision_figure_parser_docx_wrapper_naive(chunks=chunks, idx_lst=images, callback=callback, **kwargs)
@@ -71,8 +86,7 @@ class General:
         if is_markdown:
             merged_chunks = []
             merged_images = []
-            chunk_limit = int(parser_config.get("chunk_token_num", 128) or 128)
-            chunk_limit = max(0, chunk_limit)
+            chunk_limit = _get_chunk_token_num(parser_config)
             overlapped_percent = int(parser_config.get("overlapped_percent", 0) or 0)
             overlapped_percent = max(0, min(100, overlapped_percent))
 
@@ -124,13 +138,11 @@ class General:
                     section_images = None
 
             if section_images:
-                chunk_token_num = int(parser_config.get("chunk_token_num", 128) or 128)
-                chunk_token_num = max(0, chunk_token_num)
+                chunk_token_num = _get_chunk_token_num(parser_config)
                 chunks, images = naive_merge_with_images(sections, section_images, chunk_token_num, parser_config.get("delimiter", "\n!?。；！？"))
                 res.extend(tokenize_chunks_with_images(chunks, doc, is_english, images, child_delimiters_pattern=child_deli))
             else:
-                chunk_token_num = int(parser_config.get("chunk_token_num", 128) or 128)
-                chunk_token_num = max(0, chunk_token_num)
+                chunk_token_num = _get_chunk_token_num(parser_config)
                 chunks = naive_merge(sections, chunk_token_num, parser_config.get("delimiter", "\n!?。；！？"))
                 res.extend(tokenize_chunks(chunks, doc, is_english, pdf_parser, child_delimiters_pattern=child_deli))
 

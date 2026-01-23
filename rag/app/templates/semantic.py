@@ -58,9 +58,8 @@ try:
     _tokenizer_model = os.environ.get("SEMANTIC_TOKENIZER_MODEL", _DEFAULT_TOKENIZER_MODEL)
     _enc = None  # Lazy-initialized on first use
     _tokenizer_lock = threading.Lock()  # Protects _tokenizer_model and _enc
-    _validation_error = None  # Stores validation error if model is invalid
 
-    def _validate_tokenizer_model(model_name: str) -> bool:
+    def _validate_tokenizer_model(model_name: str) -> tuple[bool, str | None]:
         """
         Validate that the tokenizer model is supported by tiktoken.
 
@@ -68,40 +67,40 @@ try:
             model_name: Model name to validate
 
         Returns:
-            True if valid, False otherwise (sets _validation_error)
+            Tuple of (is_valid, error_message). error_message is None if valid.
         """
-        global _validation_error
         try:
             # Try to create encoder to validate the model
             _ = encoding_for_model(model_name)
-            _validation_error = None
-            return True
+            return (True, None)
         except KeyError:
             # Model not found in tiktoken
-            _validation_error = (
+            error_msg = (
                 f"Invalid tokenizer model: '{model_name}'. "
                 f"This model is not supported by tiktoken. "
                 f"Common models include: 'gpt-4', 'gpt-4-32k', 'gpt-3.5-turbo', "
                 f"'text-embedding-ada-002', 'text-embedding-3-small', 'text-embedding-3-large'. "
                 f"See tiktoken documentation for full list."
             )
-            logging.error(f"[Semantic] {_validation_error}")
-            return False
+            logging.error(f"[Semantic] {error_msg}")
+            return (False, error_msg)
         except Exception as e:
             # Other errors (e.g., network issues if model list needs updating)
-            _validation_error = f"Error validating tokenizer model '{model_name}': {type(e).__name__}: {e}"
-            logging.error(f"[Semantic] {_validation_error}")
-            return False
+            error_msg = f"Error validating tokenizer model '{model_name}': {type(e).__name__}: {e}"
+            logging.error(f"[Semantic] {error_msg}")
+            return (False, error_msg)
 
     # Validate environment variable at module load
-    if not _validate_tokenizer_model(_tokenizer_model):
+    is_valid, error_msg = _validate_tokenizer_model(_tokenizer_model)
+    if not is_valid:
         logging.warning(
             f"[Semantic] Falling back to default model '{_DEFAULT_TOKENIZER_MODEL}' due to invalid "
             f"SEMANTIC_TOKENIZER_MODEL='{_tokenizer_model}'"
         )
         _tokenizer_model = _DEFAULT_TOKENIZER_MODEL
         # Re-validate the default (should always succeed)
-        if not _validate_tokenizer_model(_tokenizer_model):
+        is_valid, error_msg = _validate_tokenizer_model(_tokenizer_model)
+        if not is_valid:
             raise RuntimeError(f"[Semantic] Default tokenizer model '{_DEFAULT_TOKENIZER_MODEL}' is invalid. This should never happen.")
 
     def set_tokenizer_model(model_name: str):
@@ -135,8 +134,9 @@ try:
         global _tokenizer_model, _enc
 
         # Validate before acquiring lock (validation may be slow)
-        if not _validate_tokenizer_model(model_name):
-            raise ValueError(_validation_error)
+        is_valid, error_msg = _validate_tokenizer_model(model_name)
+        if not is_valid:
+            raise ValueError(error_msg)
 
         with _tokenizer_lock:
             _tokenizer_model = model_name

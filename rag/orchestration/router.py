@@ -18,6 +18,8 @@ import re
 import os
 import logging
 from io import BytesIO
+from typing import List, Any
+from dataclasses import dataclass, field
 
 from rag.parsers.deepdoc_client import DeepDocParser
 
@@ -33,13 +35,27 @@ from rag.parsers.tcadp_client import TCADPParser
 from rag.parsers import PlainParser
 
 from rag.parsers.docling_client import DoclingParser
-# PaddleOCRParser is used internally by by_paddleocr but imported there dynamically if needed or via LLM service logic match.
-# Actually we need it for by_paddleocr logic if we were importing it directly, but current logic uses LLMBundle.
-# Let's keep existing logic of by_paddleocr which uses LLMBundle or environment.
+# by_paddleocr uses LLMBundle for OCR capabilities.
 
 from common.parser_config_utils import normalize_layout_recognizer
 from rag.utils.file_utils import extract_links_from_pdf, extract_links_from_docx
 # Embedding extraction logic is handled in naive.py shim for now to avoid moving too much logic at once.
+
+
+@dataclass
+class ParseResult:
+    """Explicit container for parser results."""
+
+    sections: List[Any] = field(default_factory=list)
+    tables: List[Any] = field(default_factory=list)
+    section_images: List[Any] = field(default_factory=list)
+    pdf_parser: Any = None
+    is_markdown: bool = False
+    urls: set = field(default_factory=set)
+
+    def __post_init__(self):
+        if self.urls is None:
+            self.urls = set()
 
 
 class UniversalRouter:
@@ -49,27 +65,41 @@ class UniversalRouter:
         is_root = kwargs.get("is_root", True)
         urls = set()
 
+        # Helper for unified layout recognizer lookup
+        layout_recognizer_val = parser_config.get("layout_recognizer", parser_config.get("layout_recognize", "DeepDOC"))
+
         # 1. Docling Override (Universal for supported types)
-        # TODO: Unlock other types for Docling
-        if parser_config.get("layout_recognizer") == "Docling":
+        if layout_recognizer_val == "Docling":
             # Docling supports multiple formats. We route them all via by_docling.
             sections, tables, _ = by_docling(filename, binary, from_page=from_page, to_page=to_page, lang=lang, callback=callback, **kwargs)
             # Docling output is Markdown, so we set is_markdown=True
-            return sections, tables, None, None, True, urls
+            return ParseResult(sections=sections, tables=tables, is_markdown=True, urls=urls)
 
         # 2. Extension-based Routing
-        if re.search(r"\.docx$", filename, re.IGNORECASE):
+        if re.search(r"\.(htm|html)$", filename, re.IGNORECASE):
+            chunk_token_num = int(parser_config.get("chunk_token_num", 128))
+            sections = HtmlParser()(filename, binary, chunk_token_num)
+            sections = [(_, "") for _ in sections if _]
+            return ParseResult(sections=sections, urls=urls)
+
+        elif re.search(r"\.(json|jsonl|ldjson)$", filename, re.IGNORECASE):
+            chunk_token_num = int(parser_config.get("chunk_token_num", 128))
+            sections = JsonParser(chunk_token_num)(binary)
+            sections = [(_, "") for _ in sections if _]
+            return ParseResult(sections=sections, urls=urls)
+
+        elif re.search(r"\.docx$", filename, re.IGNORECASE):
             if parser_config.get("analyze_hyperlink", False) and is_root:
                 urls = extract_links_from_docx(binary)
 
             sections, _ = DeepDocParser().parse_docx(filename, binary)
-            return sections, None, None, None, False, urls
+            return ParseResult(sections=sections, urls=urls)
 
         elif re.search(r"\.pdf$", filename, re.IGNORECASE):
             if parser_config.get("analyze_hyperlink", False) and is_root:
                 urls = extract_links_from_pdf(binary)
 
-            layout_recognizer, parser_model_name = normalize_layout_recognizer(parser_config.get("layout_recognize", "DeepDOC"))
+            layout_recognizer, parser_model_name = normalize_layout_recognizer(layout_recognizer_val)
             if isinstance(layout_recognizer, bool):
                 layout_recognizer = "DeepDOC" if layout_recognizer else "Plain Text"
 
@@ -88,7 +118,7 @@ class UniversalRouter:
                 paddleocr_llm_name=parser_model_name,
                 **kwargs,
             )
-            return sections, tables, None, pdf_parser, False, urls
+            return ParseResult(sections=sections, tables=tables, pdf_parser=pdf_parser, urls=urls)
 
         elif re.search(r"\.(csv|xlsx?)$", filename, re.IGNORECASE):
             layout_recognizer_raw = parser_config.get("layout_recognizer", parser_config.get("layout_recognize", "DeepDOC"))
@@ -103,11 +133,11 @@ class UniversalRouter:
                 if not tcadp_parser.check_installation():
                     if callback:
                         callback(-1, "TCADP parser not available.")
-                    return [], [], None, None, False, urls
+                    return ParseResult(urls=urls)
 
                 file_type = "XLSX" if re.search(r"\.xlsx?$", filename, re.IGNORECASE) else "CSV"
                 sections, tables = tcadp_parser.parse_pdf(filepath=filename, binary=binary, callback=callback, output_dir=os.environ.get("TCADP_OUTPUT_DIR", ""), file_type=file_type)
-                return sections, tables, None, None, False, urls
+                return ParseResult(sections=sections, tables=tables, urls=urls)
             else:
                 excel_parser = ExcelParser()
                 # logic for html4excel
@@ -115,31 +145,25 @@ class UniversalRouter:
                     sections = [(_, "") for _ in excel_parser.html(binary, 12) if _]
                 else:
                     sections = [(_, "") for _ in excel_parser(binary) if _]
-                return sections, None, None, None, False, urls
+                return ParseResult(sections=sections, urls=urls)
 
         elif re.search(r"\.(txt|py|js|java|c|cpp|h|php|go|ts|sh|cs|kt|sql)$", filename, re.IGNORECASE):
             sections = TxtParser()(filename, binary, parser_config.get("chunk_token_num", 128), parser_config.get("delimiter", "\n!?;。；！？"))
-            return sections, None, None, None, False, urls
+            return ParseResult(sections=sections, urls=urls)
 
         elif re.search(r"\.(md|markdown|mdx)$", filename, re.IGNORECASE):
             sections, tables, section_images, hyperlink_urls = DeepDocParser().parse_markdown(
-                filename, binary, parser_config=parser_config, analyze_hyperlink=parser_config.get("hyperlink_urls", False) and is_root
+                filename, binary, parser_config=parser_config, analyze_hyperlink=parser_config.get("analyze_hyperlink", False) and is_root
             )
             urls.update(hyperlink_urls)
 
-            return sections, tables, section_images, None, True, urls
+            return ParseResult(sections=sections, tables=tables, section_images=section_images, is_markdown=True, urls=urls)
 
-        elif re.search(r"\.(htm|html)$", filename, re.IGNORECASE):
-            chunk_token_num = int(parser_config.get("chunk_token_num", 128))
-            sections = HtmlParser()(filename, binary, chunk_token_num)
             sections = [(_, "") for _ in sections if _]
-            return sections, None, None, None, False, urls
+            return ParseResult(sections=sections, urls=urls)
 
-        elif re.search(r"\.(json|jsonl|ldjson)$", filename, re.IGNORECASE):
-            chunk_token_num = int(parser_config.get("chunk_token_num", 128))
-            sections = JsonParser(chunk_token_num)(binary)
             sections = [(_, "") for _ in sections if _]
-            return sections, None, None, None, False, urls
+            return ParseResult(sections=sections, urls=urls)
 
         elif re.search(r"\.doc$", filename, re.IGNORECASE):
             try:
@@ -148,21 +172,20 @@ class UniversalRouter:
                 binary_io = BytesIO(binary)
                 doc_parsed = tika_parser.from_buffer(binary_io)
                 if doc_parsed.get("content", None) is not None:
-                    sections = doc_parsed["content"].split("\n")
-                    sections = [(_, "") for _ in sections if _]
-                    return sections, None, None, None, False, urls
+                    sections = [(_, "") for _ in doc_parsed["content"].split("\n") if _]
+                    return ParseResult(sections=sections, urls=urls)
                 else:
                     msg = f"tika.parser got empty content from {filename}."
                     if callback:
                         callback(0.8, msg)
                     logging.warning(msg)
-                    return [], None, None, None, False, urls
+                    return ParseResult(urls=urls)
             except Exception as e:
                 msg = f"tika not available: {e}"
                 if callback:
                     callback(0.8, msg)
                 logging.warning(msg)
-                return [], None, None, None, False, urls
+                return ParseResult(urls=urls)
 
         else:
             raise NotImplementedError(f"file type not supported yet: {filename}")
@@ -215,11 +238,16 @@ def by_mineru(
                     callback=callback,
                     parse_method=parse_method,
                     lang=lang,
+                    from_page=from_page,
+                    to_page=to_page,
                     **kwargs,
                 )
                 return sections, tables, mineru_parser
             except Exception as e:
                 logging.error(f"Failed to parse pdf via LLMBundle MinerU ({mineru_llm_name}): {e}")
+                if callback:
+                    callback(-1, f"MinerU ({mineru_llm_name}) found but failed to parse: {e}")
+                return None, None, mineru_parser
 
     if callback:
         callback(-1, "MinerU not found.")
@@ -239,8 +267,8 @@ def by_docling(filename, binary=None, from_page=0, to_page=100000, lang="Chinese
         filepath=filename,
         binary=binary,
         callback=callback,
-        output_dir=os.environ.get("MINERU_OUTPUT_DIR", ""),
-        delete_output=bool(int(os.environ.get("MINERU_DELETE_OUTPUT", 1))),
+        output_dir=os.environ.get("DOCLING_OUTPUT_DIR", ""),
+        delete_output=bool(int(os.environ.get("DOCLING_DELETE_OUTPUT", 1))),
         parse_method=parse_method,
     )
     return sections, tables, pdf_parser
@@ -254,7 +282,15 @@ def by_tcadp(filename, binary=None, from_page=0, to_page=100000, lang="Chinese",
             callback(-1, "TCADP parser not available. Please check Tencent Cloud API configuration.")
         return None, None, tcadp_parser
 
-    sections, tables = tcadp_parser.parse_pdf(filepath=filename, binary=binary, callback=callback, output_dir=os.environ.get("TCADP_OUTPUT_DIR", ""), file_type="PDF")
+    sections, tables = tcadp_parser.parse_pdf(
+        filepath=filename,
+        binary=binary,
+        callback=callback,
+        output_dir=os.environ.get("TCADP_OUTPUT_DIR", ""),
+        file_type="PDF",
+        file_start_page=from_page + 1,
+        file_end_page=to_page,
+    )
     return sections, tables, tcadp_parser
 
 
@@ -295,6 +331,8 @@ def by_paddleocr(
                     binary=binary,
                     callback=callback,
                     parse_method=parse_method,
+                    from_page=from_page,
+                    to_page=to_page,
                     **kwargs,
                 )
                 return sections, tables, paddle_parser

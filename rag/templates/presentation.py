@@ -38,7 +38,13 @@ class Ppt(PptParser):
         import aspose.pydrawing as drawing
 
         imgs = []
-        with slides.Presentation(BytesIO(fnm)) as presentation:
+
+        if isinstance(fnm, str):
+            presentation_stream = open(fnm, "rb")
+        else:
+            presentation_stream = BytesIO(fnm) if isinstance(fnm, bytes) else fnm
+
+        with slides.Presentation(presentation_stream) as presentation:
             for i, slide in enumerate(presentation.slides[from_page:to_page]):
                 try:
                     with BytesIO() as buffered:
@@ -47,7 +53,8 @@ class Ppt(PptParser):
                         imgs.append(Image.open(buffered).copy())
                 except RuntimeError as e:
                     raise RuntimeError(f"ppt parse error at page {i + 1}, original error: {str(e)}") from e
-        assert len(imgs) == len(txts), "Slides text and image do not match: {} vs. {}".format(len(imgs), len(txts))
+        if len(imgs) != len(txts):
+            raise ValueError("Slides text and image do not match: {} vs. {}".format(len(imgs), len(txts)))
         if callback:
             callback(0.9, "Image extraction finished")
         self.is_english = is_english(txts)
@@ -87,7 +94,7 @@ class Pdf(PdfParser):
         for b in self.boxes:
             # b["page_number"] is relative page number，must + from_page
             global_page_num = b["page_number"] + from_page
-            if not (from_page < global_page_num <= to_page + from_page):
+            if not (from_page <= global_page_num <= to_page + from_page):
                 continue
             page_items[global_page_num].append({"top": b["top"], "x0": b["x0"], "text": b["text"], "type": "text"})
 
@@ -111,10 +118,12 @@ class Pdf(PdfParser):
                 # pn_index in tbls is absolute page number
                 current_page_num = int(pn_index) + 1
             except Exception as e:
-                print(f"Error parsing position: {e}")
+                import logging
+
+                logging.getLogger(__name__).exception(f"Error parsing position: {e}")
                 continue
 
-            if not (from_page < current_page_num <= to_page + from_page):
+            if not (from_page <= current_page_num <= to_page + from_page):
                 continue
 
             top = positions[0][3]
@@ -206,6 +215,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
             return []
 
         if name in ["tcadp", "docling", "mineru", "paddleocr"]:
+            parser_config = copy.deepcopy(parser_config)
             parser_config["chunk_token_num"] = 0
 
         if callback:
@@ -233,4 +243,7 @@ if __name__ == "__main__":
     def dummy(a, b):
         pass
 
+    if len(sys.argv) < 2:
+        print("Usage: python presentation.py <filename>")
+        sys.exit(1)
     chunk(sys.argv[1], callback=dummy)

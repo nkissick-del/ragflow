@@ -14,17 +14,18 @@
 #  limitations under the License.
 #
 
+import argparse
 import logging
 import os
+import re
 import sys
+
+import numpy as np
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../")))
 
 from deepdoc.vision.seeit import draw_box
 from rag.parsers.deepdoc.vision import LayoutRecognizer, TableStructureRecognizer, OCR, init_in_out
-import argparse
-import re
-import numpy as np
 
 
 def main(args):
@@ -32,10 +33,12 @@ def main(args):
     if args.mode.lower() == "layout":
         detr = LayoutRecognizer("layout")
         layouts = detr.forward(images, thr=float(args.threshold))
-    if args.mode.lower() == "tsr":
+    elif args.mode.lower() == "tsr":
         detr = TableStructureRecognizer()
         ocr = OCR()
         layouts = detr(images, thr=float(args.threshold))
+    else:
+        raise NotImplementedError(f"Mode {args.mode} is not supported")
     for i, lyt in enumerate(layouts):
         if args.mode.lower() == "tsr":
             # lyt = [t for t in lyt if t["type"] == "table column"]
@@ -50,13 +53,14 @@ def main(args):
 
 def get_table_html(img, tb_cpns, ocr):
     boxes = ocr(np.array(img))
+    if not boxes:
+        return []
     boxes = LayoutRecognizer.sort_Y_firstly(
         [{"x0": b[0][0], "x1": b[1][0], "top": b[0][1], "text": t[0], "bottom": b[-1][1], "layout_type": "table", "page_number": 0} for b, t in boxes if b[0][0] <= b[1][0] and b[0][1] <= b[-1][1]],
         np.mean([b[-1][1] - b[0][1] for b, _ in boxes]) / 3,
     )
 
     def gather(kwd, fzy=10, ption=0.6):
-        nonlocal boxes
         eles = LayoutRecognizer.sort_Y_firstly([r for r in tb_cpns if re.match(kwd, r["label"])], fzy)
         eles = LayoutRecognizer.layouts_cleanup(boxes, eles, 5, ption)
         return LayoutRecognizer.sort_Y_firstly(eles, 0)
@@ -96,61 +100,12 @@ def get_table_html(img, tb_cpns, ocr):
             b["H_right"] = spans[ii]["x1"]
             b["SP"] = ii
 
-    html = """
-    <html>
-    <head>
-    <style>
-    ._table_1nkzy_11 {
-      margin: auto;
-      width: 70%%;
-      padding: 10px;
-    }
-    ._table_1nkzy_11 p {
-      margin-bottom: 50px;
-      border: 1px solid #e1e1e1;
-    }
+    template_path = os.path.join(os.path.dirname(__file__), "table_template.html")
+    with open(template_path, "r") as f:
+        html_template = f.read()
 
-    caption {
-      color: #6ac1ca;
-      font-size: 20px;
-      height: 50px;
-      line-height: 50px;
-      font-weight: 600;
-      margin-bottom: 10px;
-    }
-
-    ._table_1nkzy_11 table {
-      width: 100%%;
-      border-collapse: collapse;
-    }
-
-    th {
-      color: #fff;
-      background-color: #6ac1ca;
-    }
-
-    td:hover {
-      background: #c1e8e8;
-    }
-
-    tr:nth-child(even) {
-      background-color: #f2f2f2;
-    }
-
-    ._table_1nkzy_11 th,
-    ._table_1nkzy_11 td {
-      text-align: center;
-      border: 1px solid #ddd;
-      padding: 8px;
-    }
-    </style>
-    </head>
-    <body>
-    %s
-    </body>
-    </html>
-""" % TableStructureRecognizer.construct_table(boxes, html=True)
-    return html
+    table_content = TableStructureRecognizer.construct_table(boxes, html=True)
+    return html_template.replace("<!-- TABLE_CONTENT -->", table_content)
 
 
 if __name__ == "__main__":

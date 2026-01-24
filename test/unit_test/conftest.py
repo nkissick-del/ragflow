@@ -73,6 +73,9 @@ sys.modules["sklearn.metrics"] = MagicMock()
 
 # 0c. Mock cv2 (OpenCV library used by deepdoc vision)
 sys.modules["cv2"] = MagicMock()
+sys.modules["pptx"] = MagicMock()
+sys.modules["pptx.enum"] = MagicMock()
+sys.modules["pptx.enum.shapes"] = MagicMock()
 
 # 0d. Mock onnxruntime (used by deepdoc vision)
 sys.modules["onnxruntime"] = MagicMock()
@@ -85,11 +88,6 @@ mock_openpyxl = types.ModuleType("openpyxl")
 mock_openpyxl.Workbook = MagicMock()
 mock_openpyxl.load_workbook = MagicMock()
 sys.modules["openpyxl"] = mock_openpyxl
-
-# 0g. Mock docx (Word doc library) - REMOVED (installed in test env)
-# mock_docx = types.ModuleType("docx")
-# mock_docx.Document = MagicMock()
-# sys.modules["docx"] = mock_docx
 
 # 0h. Mock PIL (image library) - need ImageFont for pptx
 mock_pil = types.ModuleType("PIL")
@@ -180,7 +178,7 @@ mock_settings.docStoreConn = MagicMock()
 mock_settings.DATABASE = {
     "name": "ragflow",
     "user": "root",
-    "password": "",
+    "password": "mock_password",
     "host": "127.0.0.1",
     "port": 3306,
 }

@@ -1,6 +1,4 @@
 import logging
-import os
-from io import BytesIO
 from rag.parsers import PdfParser, DocxParser, MarkdownParser
 from rag.parsers.deepdoc.figure_parser import vision_figure_parser_pdf_wrapper
 

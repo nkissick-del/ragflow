@@ -23,8 +23,8 @@ objects, and all templates must consume them.
 Reference: architecture_proposal.md Section 5
 """
 
-from dataclasses import dataclass, field
-from typing import List, Optional, Dict, Any, Literal
+from dataclasses import dataclass, field, InitVar
+from typing import List, Optional, Dict, Any, Literal, Iterable
 
 
 @dataclass
@@ -60,14 +60,21 @@ class StandardizedDocument:
         - Modifying `content` automatically invalidates the `elements` cache
     """
 
+    # Public content parameter (not stored directly)
+    content_input: InitVar[str] = ""
+
     # Backing field for content (use property for access)
-    _content: str = field(default="", repr=True)
+    _content: str = field(default="", repr=False)
 
     # Document-level metadata
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     # Cached elements (not in __init__, not serialized)
     _elements: Optional[List[DocumentElement]] = field(default=None, init=False, repr=False)
+
+    def __post_init__(self, content_input: str):
+        if content_input and not self._content:
+            self._content = content_input
 
     @property
     def content(self) -> str:
@@ -86,40 +93,47 @@ class StandardizedDocument:
         Lazy derivation strategy:
         - If elements have been supplied (e.g. by adapter via populate_elements), return them.
         - If not, parse `self._content` on demand and cache the result.
+
+        Note: StandardizedDocument._parse_elements is a stub; full parsing must be
+        provided by templates or semantic._parse_with_headers.
         """
         if self._elements is None:
             self._elements = self._parse_elements(self._content)
         return self._elements
 
-    def populate_elements(self, elements: List[DocumentElement]) -> None:
+    def populate_elements(self, elements: Iterable[DocumentElement]) -> None:
         """
-        Validated population method for adapters to set elements directly.
+        Caches the provided elements without further parsing.
 
         Use this when the adapter has efficient access to structure and wants
         to avoid re-parsing content. The elements will be cached until content
         is modified.
 
         Args:
-            elements: List of DocumentElement objects to cache
+            elements: Iterable of DocumentElement objects to cache
         """
-        # Future: Add schema validation here if needed
-        self._elements = elements
+        if not isinstance(elements, Iterable):
+            raise TypeError(f"elements must be an Iterable, got {type(elements)}")
+
+        validated_elements = []
+        for i, el in enumerate(elements):
+            if not isinstance(el, DocumentElement):
+                raise TypeError(f"Item at index {i} is not a DocumentElement: {type(el)}")
+            validated_elements.append(el)
+
+        self._elements = validated_elements
 
     def _parse_elements(self, content: str) -> List[DocumentElement]:
         """
         Parse content into DocumentElement list.
 
-        This is a basic implementation. For full parsing, see the semantic
-        template which uses stack-based header tracking.
+        This is a stub. Full parsing is handled by specific logic in templates
+        (e.g., semantic.py's _parse_with_headers).
 
         Args:
             content: Markdown content to parse
 
-        Returns:
-            List of DocumentElement objects (currently returns empty list;
-            full parsing is done by semantic template)
+        Raises:
+            NotImplementedError: Templates must provide parsed elements or use semantic._parse_with_headers
         """
-        # NOTE: Full parsing is handled by semantic.py's _parse_with_headers.
-        # This stub exists for API completeness and future use cases where
-        # templates might want pre-parsed elements.
-        return []
+        raise NotImplementedError("Templates must provide parsed elements or use semantic._parse_with_headers")

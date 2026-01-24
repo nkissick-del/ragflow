@@ -22,6 +22,9 @@ import datetime
 import demjson3
 import traceback
 import signal
+import os
+import threading
+import ctypes
 import numpy as np
 from .entities import degrees, schools, corporations
 from rag.nlp import rag_tokenizer, surname
@@ -38,20 +41,43 @@ def time_limit(seconds):
     def signal_handler(signum, frame):
         raise TimeoutException("Timed out!")
 
-    signal.signal(signal.SIGALRM, signal_handler)
-    signal.alarm(seconds)
+    use_signal = os.name != "nt" and hasattr(signal, "SIGALRM") and threading.current_thread() is threading.main_thread()
+
+    old_handler = None
+    if use_signal:
+        try:
+            old_handler = signal.getsignal(signal.SIGALRM)
+            signal.signal(signal.SIGALRM, signal_handler)
+            signal.alarm(seconds)
+        except (ValueError, AttributeError):
+            use_signal = False
+
+    timer = None
+    if not use_signal:
+        target_thread = threading.current_thread().ident
+
+        def trigger_timeout():
+            ctypes.pythonapi.PyThreadState_SetAsyncExc(ctypes.c_long(target_thread), ctypes.py_object(TimeoutException))
+
+        timer = threading.Timer(seconds, trigger_timeout)
+        timer.start()
+
     try:
         yield
     finally:
-        signal.alarm(0)
+        if use_signal:
+            signal.alarm(0)
+            if old_handler:
+                signal.signal(signal.SIGALRM, old_handler)
+        if timer:
+            timer.cancel()
 
 
-ENV = None
 PY = Pinyin()
 
 
 def rmHtmlTag(line):
-    return re.sub(r"<[a-z0-9.\"=';,:\+_/ -]+>", " ", line, count=100000, flags=re.IGNORECASE)
+    return re.sub(r"<[^>]+>", " ", line, flags=re.IGNORECASE)
 
 
 def highest_degree(dg):
@@ -84,7 +110,7 @@ def forEdu(cv):
                 y, m, d = getYMD(dt)
                 ed_dt.append(str(y))
                 e["end_dt_kwd"] = str(y)
-            except Exception as e:
+            except Exception as exc:
                 pass
         if n.get("start_time"):
             try:
@@ -99,10 +125,12 @@ def forEdu(cv):
 
         r = schools.select(n.get("school_name", ""))
         if r:
-            if str(r.get("type", "")) == "1":
+            stype = str(r.get("type", ""))
+            if stype == "1":
                 fea.append("211")
-            if str(r.get("type", "")) == "2":
-                fea.append("211")
+            elif stype == "2":
+                fea.append("985")
+
             if str(r.get("is_abroad", "")) == "1":
                 fea.append("留学")
             if str(r.get("is_double_first", "")) == "1":
@@ -240,7 +268,6 @@ def forProj(cv):
             desc.append(str(n["achivement"]))
 
     if pro_nms:
-        # cv["pro_nms_tks"] = rag_tokenizer.tokenize(" ".join(pro_nms))
         cv["project_name_tks"] = rag_tokenizer.tokenize(pro_nms[0])
     if desc:
         cv["pro_desc_ltks"] = rag_tokenizer.tokenize(rmHtmlTag(" ".join(desc)))
@@ -304,7 +331,13 @@ def forWork(cv):
         y, m, d = getYMD(n.get("end_time"))
         if (not y or not m) and i > 0:
             continue
-        if not y or not m or int(y) > 2022:
+        current_year = datetime.datetime.now().year
+        try:
+            y_int = int(y) if y and str(y).isdigit() else 0
+        except (ValueError, TypeError):
+            y_int = 0
+
+        if not y or not m or y_int > current_year:
             y, m, d = getYMD(str(n.get("updated_at", "")))
         if not y or not m:
             continue
@@ -362,7 +395,7 @@ def forWork(cv):
         cv["resp_ltks"] = rag_tokenizer.tokenize(" ".join(fea["responsibilities"][1:]))
 
     if fea["subordinates_count"]:
-        fea["subordinates_count"] = [int(i) for i in fea["subordinates_count"] if re.match(r"[^0-9]+$", str(i))]
+        fea["subordinates_count"] = [int(i) for i in fea["subordinates_count"] if re.match(r"^\d+$", str(i))]
     if fea["subordinates_count"]:
         cv["max_sub_cnt_int"] = np.max(fea["subordinates_count"])
 
@@ -688,9 +721,13 @@ def parse(cv):
         if cv[k] <= 0:
             del cv[k]
 
-    cv["tob_resume_id"] = str(cv["tob_resume_id"])
-    cv["id"] = cv["tob_resume_id"]
-    logging.debug("CCCCCCCCCCCCCCC")
+    tr_id = cv.get("tob_resume_id")
+    if tr_id is not None:
+        cv["id"] = str(tr_id)
+        logging.debug(f"Handled resume ID: {tr_id}")
+    else:
+        cv["id"] = None
+        logging.warning("Missing 'tob_resume_id' in CV record")
 
     return dealWithInt64(cv)
 
@@ -699,10 +736,10 @@ def dealWithInt64(d):
     if isinstance(d, dict):
         for n, v in d.items():
             d[n] = dealWithInt64(v)
-
-    if isinstance(d, list):
+    elif isinstance(d, list):
         d = [dealWithInt64(t) for t in d]
-
-    if isinstance(d, np.integer):
+    elif isinstance(d, np.integer):
         d = int(d)
+    elif isinstance(d, np.floating):
+        d = float(d)
     return d

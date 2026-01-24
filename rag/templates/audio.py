@@ -28,7 +28,7 @@ def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
     doc["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(doc["title_tks"])
 
     # is it English
-    is_english = lang.lower() == "english"  # is_english(sections)
+    is_english = (lang or "").lower() == "english"
 
     tmp_path = ""
     try:
@@ -37,7 +37,7 @@ def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
             raise RuntimeError("No extension detected.")
 
         ext = ext.lower()
-        if ext not in {".wav", ".mp3", ".aac", ".flac", ".ogg", ".aiff", ".au", ".midi", ".wma", ".realaudio", ".vqf", ".oggvorbis", ".ape", ".dra"}:
+        if ext not in {".wav", ".mp3", ".aac", ".flac", ".ogg", ".aiff", ".au", ".midi", ".wma", ".ra", ".rm", ".vqf", ".ape", ".dra", ".m4a", ".webm"}:
             raise RuntimeError(f"Extension {ext} is not supported yet.")
 
         with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmpf:
@@ -50,9 +50,10 @@ def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
         seq2txt_mdl = LLMBundle(tenant_id, LLMType.SPEECH2TEXT, lang=lang)
         ans = seq2txt_mdl.transcription(tmp_path)
         if callback:
-            callback(0.8, "Sequence2Txt LLM respond: %s ..." % ans[:32])
+            callback(0.8, "Sequence2Txt LLM respond: %s ..." % (ans[:32] if ans else "No transcription"))
 
-        tokenize(doc, ans, is_english)
+        if ans:
+            tokenize(doc, ans, is_english)
         return [doc]
     except Exception as e:
         if callback:
@@ -62,6 +63,5 @@ def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
             try:
                 os.unlink(tmp_path)
             except Exception as e:
-                logging.exception(f"Failed to remove temporary file: {tmp_path}, exception: {e}")
-                pass
+                logging.exception(f"Failed to remove temporary file: {tmp_path}")
     return []

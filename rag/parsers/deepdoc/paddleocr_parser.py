@@ -335,7 +335,7 @@ class PaddleOCRParser:
 
         # Send request
         try:
-            resp = requests.post(config.api_url, json=payload, headers=headers, timeout=self.request_timeout)
+            resp = requests.post(config.api_url, json=payload, headers=headers, timeout=config.request_timeout or self.request_timeout)
             resp.raise_for_status()
         except Exception as exc:
             if callback:
@@ -402,8 +402,7 @@ class PaddleOCRParser:
         self.page_to = page_to
         try:
             with pdfplumber.open(fnm) if isinstance(fnm, (str, PathLike)) else pdfplumber.open(BytesIO(fnm)) as pdf:
-                self.pdf = pdf
-                self.page_images = [p.to_image(resolution=72, antialias=True).original for i, p in enumerate(self.pdf.pages[page_from:page_to])]
+                self.page_images = [p.to_image(resolution=72, antialias=True).original for p in pdf.pages[page_from:page_to]]
         except Exception as e:
             self.page_images = None
             self.logger.exception(e)
@@ -426,13 +425,13 @@ class PaddleOCRParser:
         if not poss:
             if need_position:
                 return None, None
-            return
+            return None
 
         if not getattr(self, "page_images", None):
             self.logger.warning("[PaddleOCR] crop called without page images; skipping image generation.")
             if need_position:
                 return None, None
-            return
+            return None
 
         page_count = len(self.page_images)
 
@@ -452,7 +451,7 @@ class PaddleOCRParser:
             self.logger.warning("[PaddleOCR] No valid positions after filtering; skip cropping.")
             if need_position:
                 return None, None
-            return
+            return None
 
         max_width = max(np.max([right - left for (_, left, right, _, _) in poss]), 6)
         GAP = 6
@@ -465,7 +464,7 @@ class PaddleOCRParser:
             self.logger.warning(f"[PaddleOCR] Last page index {last_page_idx} out of range for {page_count} pages; skipping crop.")
             if need_position:
                 return None, None
-            return
+            return None
         last_page_height = self.page_images[last_page_idx].size[1]
         poss.append(
             (
@@ -485,10 +484,10 @@ class PaddleOCRParser:
                 bottom = top + 2
 
             for pn in pns[1:]:
-                if 0 <= pn - 1 < page_count:
-                    bottom += self.page_images[pn - 1].size[1]
+                if 0 <= pn < page_count:
+                    bottom += self.page_images[pn].size[1]
                 else:
-                    self.logger.warning(f"[PaddleOCR] Page index {pn}-1 out of range for {page_count} pages during crop; skipping height accumulation.")
+                    self.logger.warning(f"[PaddleOCR] Page index {pn} out of range for {page_count} pages during crop; skipping height accumulation.")
 
             if not (0 <= pns[0] < page_count):
                 self.logger.warning(f"[PaddleOCR] Base page index {pns[0]} out of range for {page_count} pages during crop; skipping this segment.")
@@ -517,7 +516,7 @@ class PaddleOCRParser:
         if not imgs:
             if need_position:
                 return None, None
-            return
+            return None
 
         height = 0
         for img in imgs:

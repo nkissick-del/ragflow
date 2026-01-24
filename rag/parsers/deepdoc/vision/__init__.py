@@ -14,7 +14,7 @@
 #  limitations under the License.
 #
 import io
-import sys
+
 import threading
 
 import pdfplumber
@@ -25,9 +25,7 @@ from .layout_recognizer import AscendLayoutRecognizer
 from .layout_recognizer import LayoutRecognizer4YOLOv10 as LayoutRecognizer
 from .table_structure_recognizer import TableStructureRecognizer
 
-LOCK_KEY_pdfplumber = "global_shared_lock_pdfplumber"
-if LOCK_KEY_pdfplumber not in sys.modules:
-    sys.modules[LOCK_KEY_pdfplumber] = threading.Lock()
+_pdfplumber_lock = threading.Lock()
 
 
 def init_in_out(args):
@@ -42,17 +40,16 @@ def init_in_out(args):
     outputs = []
 
     if not os.path.exists(args.output_dir):
-        os.mkdir(args.output_dir)
+        os.makedirs(args.output_dir, exist_ok=True)
 
     def pdf_pages(fnm, zoomin=3):
         nonlocal outputs, images
-        with sys.modules[LOCK_KEY_pdfplumber]:
-            pdf = pdfplumber.open(fnm)
-            images = [p.to_image(resolution=72 * zoomin).annotated for i, p in enumerate(pdf.pages)]
+        with _pdfplumber_lock:
+            with pdfplumber.open(fnm) as pdf:
+                images = [p.to_image(resolution=72 * zoomin).annotated for p in pdf.pages]
 
         for i, page in enumerate(images):
             outputs.append(os.path.split(fnm)[-1] + f"_{i}.jpg")
-        pdf.close()
 
     def images_and_outputs(fnm):
         nonlocal outputs, images
@@ -60,9 +57,8 @@ def init_in_out(args):
             pdf_pages(fnm)
             return
         try:
-            fp = open(fnm, "rb")
-            binary = fp.read()
-            fp.close()
+            with open(fnm, "rb") as fp:
+                binary = fp.read()
             images.append(Image.open(io.BytesIO(binary)).convert("RGB"))
             outputs.append(os.path.split(fnm)[-1])
         except Exception:

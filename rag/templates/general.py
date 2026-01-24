@@ -25,6 +25,7 @@ from rag.nlp import (
     tokenize_chunks_with_images,
     doc_tokenize_chunks_with_images,
     tokenize_table,
+    rag_tokenizer,
 )
 
 
@@ -52,6 +53,7 @@ class General:
     def chunk(filename, sections, tables, section_images, pdf_parser, is_markdown, parser_config, doc, is_english, callback, **kwargs):
         res = []
         try:
+            # Decode children_delimiter: unescape unicode sequences (e.g. \\n -> \n)
             child_deli = (parser_config.get("children_delimiter") or "").encode("utf-8").decode("unicode_escape").encode("latin1").decode("utf-8")
         except Exception:
             child_deli = parser_config.get("children_delimiter") or ""
@@ -71,8 +73,14 @@ class General:
 
         if re.search(r"\.docx$", filename, re.IGNORECASE) and not kwargs.get("is_docling", False):
             # This logic mimics naive.py lines 812-820
-            table_context_size = max(0, int(parser_config.get("table_context_size", 0) or 0))
-            image_context_size = max(0, int(parser_config.get("image_context_size", 0) or 0))
+            try:
+                table_context_size = max(0, int(parser_config.get("table_context_size", 0) or 0))
+            except Exception:
+                table_context_size = 0
+            try:
+                image_context_size = max(0, int(parser_config.get("image_context_size", 0) or 0))
+            except Exception:
+                image_context_size = 0
 
             chunk_token_num = _get_chunk_token_num(parser_config)
             chunks, images = naive_merge_docx(sections, chunk_token_num, parser_config.get("delimiter", "\n!?。；！？"), table_context_size, image_context_size)
@@ -90,13 +98,17 @@ class General:
             merged_chunks = []
             merged_images = []
             chunk_limit = _get_chunk_token_num(parser_config)
-            overlapped_percent = int(parser_config.get("overlapped_percent", 0) or 0)
+            try:
+                overlapped_percent = int(parser_config.get("overlapped_percent", 0) or 0)
+            except Exception:
+                overlapped_percent = 0
             overlapped_percent = max(0, min(100, overlapped_percent))
 
             current_text = ""
             current_tokens = 0
             current_image = None
 
+            newline_tokens = num_tokens_from_string("\n")
             for idx, sec in enumerate(sections):
                 text = sec[0] if isinstance(sec, tuple) else sec
                 sec_tokens = num_tokens_from_string(text)
@@ -107,16 +119,17 @@ class General:
                     merged_images.append(current_image)
                     overlap_part = ""
                     if overlapped_percent > 0:
-                        overlap_len = int(len(current_text) * overlapped_percent / 100)
-                        if overlap_len > 0:
-                            overlap_part = current_text[-overlap_len:]
+                        tokens = rag_tokenizer.tokenize(current_text)
+                        overlap_tokens = int(len(tokens) * overlapped_percent / 100)
+                        if overlap_tokens > 0:
+                            overlap_part = "".join(tokens[-overlap_tokens:])
                     current_text = overlap_part
                     current_tokens = num_tokens_from_string(current_text)
                     current_image = current_image if overlap_part else None
 
                 if current_text:
                     current_text += "\n" + text
-                    current_tokens += sec_tokens + num_tokens_from_string("\n")
+                    current_tokens += sec_tokens + newline_tokens
                 else:
                     current_text = text
                     current_tokens += sec_tokens
@@ -140,12 +153,11 @@ class General:
                 if all(image is None for image in section_images):
                     section_images = None
 
+            chunk_token_num = _get_chunk_token_num(parser_config)
             if section_images:
-                chunk_token_num = _get_chunk_token_num(parser_config)
                 chunks, images = naive_merge_with_images(sections, section_images, chunk_token_num, parser_config.get("delimiter", "\n!?。；！？"))
                 res.extend(tokenize_chunks_with_images(chunks, doc, is_english, images, child_delimiters_pattern=child_deli))
             else:
-                chunk_token_num = _get_chunk_token_num(parser_config)
                 chunks = naive_merge(sections, chunk_token_num, parser_config.get("delimiter", "\n!?。；！？"))
                 res.extend(tokenize_chunks(chunks, doc, is_english, pdf_parser, child_delimiters_pattern=child_deli))
 

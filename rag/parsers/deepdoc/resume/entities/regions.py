@@ -758,14 +758,14 @@ TBL = {
     "7084": {"name": "天门市", "parent": "18"},
 }
 
-NM_SET = set([v["name"] for _, v in TBL.items()])
+NM_SET = {v["name"] for _, v in TBL.items()}
 
 
 def get_names(id):
     if not id or str(id).lower() == "none":
         return []
-    id = str(id)
-    if not re.match("[0-9]+$", id.strip()):
+    id = str(id).strip()
+    if not re.match(r"[0-9]+$", id):
         return [id]
     nms = []
     d = TBL.get(id)
@@ -778,12 +778,11 @@ def get_names(id):
     return nms
 
 
-
-def isName(nm):
+def is_name(nm):
     if nm in NM_SET:
         return True
     if nm + "市" in NM_SET:
         return True
-    if re.sub(r"(省|(回族|壮族|维吾尔)*自治区)$", "", nm) in NM_SET:
+    if re.sub(r"(省|.*自治区)$", "", nm) in NM_SET:
         return True
     return False

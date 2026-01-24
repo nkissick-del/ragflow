@@ -69,12 +69,12 @@ class Pdf(PdfParser):
         for b in self.boxes:
             b["text"] = re.sub(r"([\t 　]|\u3000){2,}", " ", b["text"].strip())
 
-        return [(b["text"], b.get("layoutno", ""), self.get_position(b, zoomin)) for i, b in enumerate(self.boxes)], tbls
+        return [(b["text"], b.get("layoutno", ""), self.get_position(b, zoomin)) for b in self.boxes], tbls
 
 
 class Docx(DocxParser):
     def __init__(self):
-        pass
+        super().__init__()
 
     def get_picture(self, document, paragraph):
         img = paragraph._element.xpath(".//pic:pic")
@@ -93,7 +93,8 @@ class Docx(DocxParser):
                 return image
             else:
                 return None
-        except Exception:
+        except Exception as e:
+            logging.exception(f"get_picture error: {e}")
             return None
 
     def concat_img(self, img1, img2):
@@ -109,6 +110,11 @@ class Docx(DocxParser):
         new_width = max(width1, width2)
         new_height = height1 + height2
         new_image = Image.new("RGB", (new_width, new_height))
+
+        if img1.mode != "RGB":
+            img1 = img1.convert("RGB")
+        if img2.mode != "RGB":
+            img2 = img2.convert("RGB")
 
         new_image.paste(img1, (0, 0))
         new_image.paste(img2, (0, height1))
@@ -162,16 +168,21 @@ class Docx(DocxParser):
                 html += "<tr>"
                 i = 0
                 while i < len(r.cells):
-                    span = 1
                     c = r.cells[i]
-                    for j in range(i + 1, len(r.cells)):
-                        if c.text == r.cells[j].text:
-                            span += 1
-                        else:
-                            break
                     tcPr = c._tc.tcPr
+                    if tcPr is not None and tcPr.vMerge is not None and tcPr.vMerge.val == "continue":
+                        i += 1
+                        continue
+
+                    span = 1
                     if tcPr is not None and tcPr.gridSpan is not None:
                         span = int(tcPr.gridSpan.val)
+                    else:
+                        for j in range(i + 1, len(r.cells)):
+                            if c.text == r.cells[j].text:
+                                span += 1
+                            else:
+                                break
                     i += span
                     html += f"<td>{c.text}</td>" if span == 1 else f"<td colspan='{span}'>{c.text}</td>"
                 html += "</tr>"
@@ -182,7 +193,14 @@ class Docx(DocxParser):
 
 def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, **kwargs):
     """
-    Only pdf is supported.
+    Supported file types: PDF and DOCX.
+    Parameters:
+    - filename: Name of the file.
+    - binary: Binary content of the file (optional).
+    - from_page: Start page number (default 0).
+    - to_page: End page number (default 100000).
+    - lang: Language (default "Chinese").
+    - callback: Progress callback function.
     """
     parser_config = kwargs.get("parser_config", {"chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC"})
     pdf_parser = None
@@ -257,9 +275,14 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
             levels = []
             for txt, _, _ in sections:
                 for t, lvl in pdf_parser.outlines:
-                    tks = set([t[i] + t[i + 1] for i in range(len(t) - 1)])
-                    tks_ = set([txt[i] + txt[i + 1] for i in range(min(len(t), len(txt) - 1))])
-                    if len(set(tks & tks_)) / max([len(tks), len(tks_), 1]) > 0.8:
+                    if len(t) < 2 or len(txt) < 2:
+                        if t == txt:
+                            levels.append(lvl)
+                            break
+                        continue
+                    tks = set([t[idx] + t[idx + 1] for idx in range(len(t) - 1)])
+                    tks_ = set([txt[idx] + txt[idx + 1] for idx in range(len(txt) - 1)])
+                    if len(tks & tks_) / max(len(tks), len(tks_), 1) > 0.8:
                         levels.append(lvl)
                         break
                 else:
@@ -269,7 +292,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
             bull = bullets_category([txt for txt, _, _ in sections])
             most_level, levels = title_frequency(bull, [(txt, lvl) for txt, lvl, _ in sections])
 
-        assert len(sections) == len(levels)
+        if len(sections) != len(levels):
+            raise ValueError(f"mismatched lengths: sections has {len(sections)} items, levels has {len(levels)} items")
         sec_ids = []
         sid = 0
         for i, lvl in enumerate(levels):
@@ -320,9 +344,11 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         chunks = []
         last_sid = -2
         tk_cnt = 0
+        MIN_TOKENS_FOR_SPLIT = parser_config.get("min_chunk_tokens", 32)
+        LARGE_SECTION_TOKEN_LIMIT = parser_config.get("large_section_token_limit", 1024)
         for txt, sec_id, poss in sorted(sections, key=_section_sort_key):
             poss = "\t".join([tag(*pos) for pos in poss])
-            if tk_cnt < 32 or (tk_cnt < 1024 and (sec_id == last_sid or sec_id == -1)):
+            if tk_cnt < MIN_TOKENS_FOR_SPLIT or (tk_cnt < LARGE_SECTION_TOKEN_LIMIT and (sec_id == last_sid or sec_id == -1)):
                 if chunks:
                     chunks[-1] += "\n" + txt + poss
                     tk_cnt += num_tokens_from_string(txt)
@@ -347,7 +373,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
 
     elif re.search(r"\.docx?$", filename, re.IGNORECASE):
         docx_parser = orchestrator.Docx()
-        ti_list, tbls = docx_parser(filename, binary, from_page=0, to_page=10000, callback=callback)
+        ti_list, tbls = docx_parser(filename, binary, from_page=from_page, to_page=to_page, callback=callback)
         tbls = vision_figure_parser_docx_wrapper(sections=ti_list, tbls=tbls, callback=callback, **kwargs)
         res = tokenize_table(tbls, doc, eng)
         for text, image in ti_list:
@@ -357,13 +383,15 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
                 d["doc_type_kwd"] = "image"
             tokenize(d, text, eng)
             res.append(d)
-        table_ctx = max(0, int(parser_config.get("table_context_size", 0) or 0))
-        image_ctx = max(0, int(parser_config.get("image_context_size", 0) or 0))
-        if table_ctx or image_ctx:
-            attach_media_context(res, table_ctx, image_ctx)
-        return res
+
     else:
         raise NotImplementedError("file type not supported yet(pdf and docx supported)")
+
+    table_ctx = max(0, int(parser_config.get("table_context_size", 0) or 0))
+    image_ctx = max(0, int(parser_config.get("image_context_size", 0) or 0))
+    if table_ctx or image_ctx:
+        attach_media_context(res, table_ctx, image_ctx)
+    return res
 
 
 if __name__ == "__main__":

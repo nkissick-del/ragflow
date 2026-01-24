@@ -18,6 +18,7 @@ import logging
 import re
 import csv
 import html
+import common
 from copy import deepcopy
 from io import BytesIO
 from timeit import default_timer as timer
@@ -30,6 +31,26 @@ from rag.parsers import PdfParser, ExcelParser, DocxParser
 from docx import Document
 from PIL import Image
 from markdown import markdown
+
+
+DEFAULT_TBL_TAG = "@@0\t0\t0\t0\t0##"
+get_float = common.float_utils.get_float
+
+
+def build_beAdoc(d, q, a, eng, image=None, poss=None, row_num=-1):
+    qprefix = "Question: " if eng else "问题："
+    aprefix = "Answer: " if eng else "回答："
+    d["content_with_weight"] = "\t".join([qprefix + rmPrefix(q), aprefix + rmPrefix(a)])
+    d["content_ltks"] = rag_tokenizer.tokenize(q)
+    d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
+    if image:
+        d["image"] = image
+        d["doc_type_kwd"] = "image"
+    if poss:
+        add_positions(d, poss)
+    if row_num >= 0:
+        d["top_int"] = [row_num]
+    return d
 
 
 class Excel(ExcelParser):
@@ -67,15 +88,11 @@ class Excel(ExcelParser):
         if callback:
             callback(0.6, ("Extract pairs: {}. ".format(len(res)) + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
         self.is_english = is_english([rmPrefix(q) for q, _ in random_choices(res, k=30) if len(q) > 1])
-        return res
+        return res, self.is_english
 
 
 class Pdf(PdfParser):
     def __call__(self, filename, binary=None, from_page=0, to_page=100000, zoomin=3, callback=None):
-        import common
-
-        get_float = common.float_utils.get_float
-
         start = timer()
         if callback:
             callback(msg="OCR started")
@@ -106,7 +123,8 @@ class Pdf(PdfParser):
         bull_x0_list = []
         q_bull, reg = qbullets_category(sections)
         if q_bull == -1:
-            raise ValueError("Unable to recognize Q&A structure.")
+            logging.warning("Unable to recognize Q&A structure.")
+            return [], []
         qai_list = []
         last_q, last_a, last_tag = "", "", ""
         last_index = -1
@@ -121,7 +139,7 @@ class Pdf(PdfParser):
         tbls.sort(key=sort_key)
         tbl_index = 0
         last_pn, last_bottom = 0, 0
-        tbl_pn, tbl_left, tbl_right, tbl_top, tbl_bottom, tbl_tag, tbl_text = 1, 0, 0, 0, 0, "@@0\t0\t0\t0\t0##", ""
+        tbl_pn, tbl_left, tbl_right, tbl_top, tbl_bottom, tbl_tag, tbl_text = 1, 0, 0, 0, 0, DEFAULT_TBL_TAG, ""
         for box in self.boxes:
             section, line_tag = box["text"], self._line_tag(box, zoomin)
             has_bull, index = has_qbullet(reg, box, last_box, last_index, last_bull, bull_x0_list)
@@ -170,7 +188,7 @@ class Pdf(PdfParser):
 
     def get_tbls_info(self, tbls, tbl_index):
         if tbl_index >= len(tbls):
-            return 1, 0, 0, 0, 0, "@@0\t0\t0\t0\t0##", ""
+            return 1, 0, 0, 0, 0, DEFAULT_TBL_TAG, ""
         tbl_pn = tbls[tbl_index][1][0][0] + 1
         tbl_left = tbls[tbl_index][1][0][1]
         tbl_right = tbls[tbl_index][1][0][2]
@@ -249,7 +267,7 @@ class Docx(DocxParser):
                     span = 1
                     c = r.cells[i]
                     for j in range(i + 1, len(r.cells)):
-                        if c.text == r.cells[j].text:
+                        if c._tc == r.cells[j]._tc:
                             span += 1
                             i = j
                     i += 1
@@ -266,46 +284,20 @@ def rmPrefix(txt):
 
 
 def beAdocPdf(d, q, a, eng, image, poss):
-    qprefix = "Question: " if eng else "问题："
-    aprefix = "Answer: " if eng else "回答："
-    d["content_with_weight"] = "\t".join([qprefix + rmPrefix(q), aprefix + rmPrefix(a)])
-    d["content_ltks"] = rag_tokenizer.tokenize(q)
-    d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
-    if image:
-        d["image"] = image
-        d["doc_type_kwd"] = "image"
-    add_positions(d, poss)
-    return d
+    return build_beAdoc(d, q, a, eng, image=image, poss=poss)
 
 
 def beAdocDocx(d, q, a, eng, image, row_num=-1):
-    qprefix = "Question: " if eng else "问题："
-    aprefix = "Answer: " if eng else "回答："
-    d["content_with_weight"] = "\t".join([qprefix + rmPrefix(q), aprefix + rmPrefix(a)])
-    d["content_ltks"] = rag_tokenizer.tokenize(q)
-    d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
-    if image:
-        d["image"] = image
-        d["doc_type_kwd"] = "image"
-    if row_num >= 0:
-        d["top_int"] = [row_num]
-    return d
+    return build_beAdoc(d, q, a, eng, image=image, row_num=row_num)
 
 
 def beAdoc(d, q, a, eng, row_num=-1):
-    qprefix = "Question: " if eng else "问题："
-    aprefix = "Answer: " if eng else "回答："
-    d["content_with_weight"] = "\t".join([qprefix + rmPrefix(q), aprefix + rmPrefix(a)])
-    d["content_ltks"] = rag_tokenizer.tokenize(q)
-    d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
-    if row_num >= 0:
-        d["top_int"] = [row_num]
-    return d
+    return build_beAdoc(d, q, a, eng, row_num=row_num)
 
 
 def mdQuestionLevel(s):
-    match = re.match(r"#*", s)
-    return (len(match.group(0)), s.lstrip("#").lstrip()) if match else (0, s)
+    match = re.match(r"^(#+)", s)
+    return (len(match.group(1)), s.lstrip("#").lstrip()) if match else (0, s)
 
 
 def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, **kwargs):
@@ -327,8 +319,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         if callback:
             callback(0.1, "Start to parse.")
         excel_parser = Excel()
-        for ii, (q, a) in enumerate(excel_parser(filename, binary, callback)):
-            res.append(beAdoc(deepcopy(doc), q, a, eng, ii))
+        parser_res, excel_parser_eng = excel_parser(filename, binary, callback)
+        for ii, (q, a) in enumerate(parser_res):
+            res.append(beAdoc(deepcopy(doc), q, a, excel_parser_eng, ii))
         return res
 
     elif re.search(r"\.(txt)$", filename, re.IGNORECASE):
@@ -346,6 +339,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
 
         fails = []
         question, answer = "", ""
+        question_row = -1
         i = 0
         while i < len(lines):
             arr = lines[i].split(delimiter)
@@ -356,14 +350,15 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
                     fails.append(str(i + 1))
             elif len(arr) == 2:
                 if question and answer:
-                    res.append(beAdoc(deepcopy(doc), question, answer, eng, i))
+                    res.append(beAdoc(deepcopy(doc), question, answer, eng, question_row))
                 question, answer = arr
+                question_row = i
             i += 1
-            if callback and len(res) % 999 == 0:
+            if callback and len(res) > 0 and len(res) % 999 == 0:
                 callback(len(res) * 0.6 / len(lines), ("Extract Q&A: {}".format(len(res)) + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
 
         if question:
-            res.append(beAdoc(deepcopy(doc), question, answer, eng, len(lines)))
+            res.append(beAdoc(deepcopy(doc), question, answer, eng, question_row if question_row >= 0 else 0))
 
         if callback:
             callback(0.6, ("Extract Q&A: {}".format(len(res)) + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
@@ -379,24 +374,26 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
 
         fails = []
         question, answer = "", ""
+        question_row = -1
         res = []
         reader = csv.reader(lines, delimiter=delimiter)
 
         for i, row in enumerate(reader):
             if len(row) != 2:
                 if question:
-                    answer += "\n" + lines[i]
+                    answer += "\n" + delimiter.join(row)
                 else:
                     fails.append(str(i + 1))
             elif len(row) == 2:
                 if question and answer:
-                    res.append(beAdoc(deepcopy(doc), question, answer, eng, i))
+                    res.append(beAdoc(deepcopy(doc), question, answer, eng, question_row))
                 question, answer = row
-            if callback and len(res) % 999 == 0:
+                question_row = i
+            if callback and len(res) > 0 and len(res) % 999 == 0:
                 callback(len(res) * 0.6 / len(lines), ("Extract Q&A: {}".format(len(res)) + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
 
         if question:
-            res.append(beAdoc(deepcopy(doc), question, answer, eng, i + 1))
+            res.append(beAdoc(deepcopy(doc), question, answer, eng, question_row if question_row >= 0 else 0))
 
         if callback:
             callback(0.6, ("Extract Q&A: {}".format(len(res)) + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
@@ -416,7 +413,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
             callback(0.1, "Start to parse.")
         txt = get_text(filename, binary)
         lines = txt.split("\n")
-        _last_question, last_answer = "", ""
+        last_answer = ""
         index = 0
         question_stack, level_stack = [], []
         code_block = False

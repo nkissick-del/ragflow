@@ -39,8 +39,9 @@ class TableStructureRecognizer(Recognizer):
 
     def __init__(self):
         try:
+            self._ascend_session = None
             super().__init__(self.labels, "tsr", os.path.join(get_project_base_directory(), "rag/res/deepdoc"))
-        except Exception:
+        except (FileNotFoundError, OSError, RuntimeError):
             super().__init__(
                 self.labels,
                 "tsr",
@@ -113,7 +114,7 @@ class TableStructureRecognizer(Recognizer):
     @staticmethod
     def is_caption(bx):
         patt = [r"[图表]+[ 0-9:：]{2,}"]
-        if any([re.match(p, bx["text"].strip()) for p in patt]) or bx.get("layout_type", "").find("caption") >= 0:
+        if any(re.match(p, bx["text"].strip()) for p in patt) or bx.get("layout_type", "").find("caption") >= 0:
             return True
         return False
 
@@ -150,6 +151,7 @@ class TableStructureRecognizer(Recognizer):
 
     @staticmethod
     def construct_table(boxes, is_english=False, html=True, **kwargs):
+        boxes = list(boxes)
         cap = ""
         i = 0
         while i < len(boxes):
@@ -245,7 +247,8 @@ class TableStructureRecognizer(Recognizer):
                     for i in range(len(tbl)):
                         if tbl[i][j + 1]:
                             right = min(right, np.min([a["x0"] - bx["x1"] for a in tbl[i][j + 1]]))
-                assert left < 100000 or right < 100000
+                if not (left < 100000 or right < 100000):
+                    raise ValueError(f"Column single relocation failed: left={left}, right={right}")
                 if left < right:
                     for jj in range(j, len(tbl[0])):
                         for i in range(len(tbl)):
@@ -270,7 +273,8 @@ class TableStructureRecognizer(Recognizer):
                     for i in range(len(tbl)):
                         tbl[i].pop(j)
                 cols.pop(j)
-        assert len(cols) == len(tbl[0]), "Column NO. miss matched: %d vs %d" % (len(cols), len(tbl[0]))
+        if len(cols) != len(tbl[0]):
+            raise ValueError("Column NO. miss matched: %d vs %d" % (len(cols), len(tbl[0])))
 
         if len(cols) >= 4:
             # remove single in row
@@ -304,7 +308,8 @@ class TableStructureRecognizer(Recognizer):
                     for j in range(len(tbl[i + 1])):
                         if tbl[i + 1][j]:
                             down = min(down, np.min([a["top"] - bx["bottom"] for a in tbl[i + 1][j]]))
-                assert up < 100000 or down < 100000
+                if not (up < 100000 or down < 100000):
+                    raise ValueError(f"Row single relocation failed: up={up}, down={down}")
                 if up < down:
                     for ii in range(i, len(tbl)):
                         for j in range(len(tbl[ii])):
@@ -340,7 +345,7 @@ class TableStructureRecognizer(Recognizer):
                     continue
                 if any([a.get("H") for a in arr]) or (max_type == "Nu" and arr[0]["btype"] != "Nu"):
                     h += 1
-            if h / cnt > 0.5:
+            if cnt > 0 and h / cnt > 0.5:
                 hdset.add(i)
 
         if html:
@@ -363,7 +368,6 @@ class TableStructureRecognizer(Recognizer):
                 if not arr:
                     row += "<td></td>" if i not in hdset else "<th></th>"
                     continue
-                txt = ""
                 if arr:
                     h = min(np.min([c["bottom"] - c["top"] for c in arr]) / 2, 10)
                     txt = " ".join([c["text"] for c in Recognizer.sort_Y_firstly(arr, h)])
@@ -379,10 +383,11 @@ class TableStructureRecognizer(Recognizer):
                     row += f"<td {sp} >" + txt + "</td>"
 
             if i in hdset:
-                if all([t in hdset for t in txts]):
+                seen_header_texts = set()
+                if all(t in seen_header_texts for t in txts):
                     continue
                 for t in txts:
-                    hdset.add(t)
+                    seen_header_texts.add(t)
 
             if row != "<tr>":
                 row += "</tr>"
@@ -394,7 +399,7 @@ class TableStructureRecognizer(Recognizer):
 
     @staticmethod
     def __desc_table(cap, hdr_rowno, tbl, is_english):
-        # get text of every colomn in header row to become header text
+        # get text of every column in header row to become header text
         clmno = len(tbl[0])
         rowno = len(tbl)
         headers = {}
@@ -494,7 +499,7 @@ class TableStructureRecognizer(Recognizer):
 
     @staticmethod
     def __cal_spans(boxes, rows, cols, tbl, html=True):
-        # caculate span
+        # calculate span
         clft = [np.mean([c.get("C_left", c["x0"]) for c in cln]) for cln in cols]
         crgt = [np.mean([c.get("C_right", c["x1"]) for c in cln]) for cln in cols]
         rtop = [np.mean([c.get("R_top", c["top"]) for c in row]) for row in rows]
@@ -579,19 +584,26 @@ class TableStructureRecognizer(Recognizer):
 
         from ais_bench.infer.interface import InferSession
 
-        model_dir = os.path.join(get_project_base_directory(), "rag/res/deepdoc")
-        model_file_path = os.path.join(model_dir, "tsr.om")
+        if self._ascend_session is None:
+            model_dir = os.path.join(get_project_base_directory(), "rag/res/deepdoc")
+            model_file_path = os.path.join(model_dir, "tsr.om")
 
-        if not os.path.exists(model_file_path):
-            raise ValueError(f"Model file not found: {model_file_path}")
+            if not os.path.exists(model_file_path):
+                raise ValueError(f"Model file not found: {model_file_path}")
 
-        device_id = int(os.getenv("ASCEND_LAYOUT_RECOGNIZER_DEVICE_ID", 0))
-        session = InferSession(device_id=device_id, model_path=model_file_path)
+            device_id = int(os.getenv("ASCEND_TABLE_STRUCTURE_DEVICE_ID", 0))
+            self._ascend_session = InferSession(device_id=device_id, model_path=model_file_path)
+
+        session = self._ascend_session
 
         images = [np.array(im) if not isinstance(im, np.ndarray) else im for im in image_list]
         results = []
 
-        conf_thr = max(thr, 0.08)
+        if thr < 0.08:
+            logging.warning("Threshold too low, setting to 0.08")
+            conf_thr = 0.08
+        else:
+            conf_thr = thr
 
         batch_loop_cnt = math.ceil(float(len(images)) / batch_size)
         for bi in range(batch_loop_cnt):

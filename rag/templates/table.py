@@ -25,7 +25,6 @@ import numpy as np
 import pandas as pd
 from collections import Counter
 
-# from openpyxl import load_workbook, Workbook
 from dateutil.parser import parse as datetime_parse
 
 from api.db.services.knowledgebase_service import KnowledgebaseService
@@ -45,10 +44,7 @@ class Excel(ExcelParser):
         # Ensure callback is never None to avoid checks everywhere
         callback = callback or (lambda *args, **kwargs: None)
 
-        total = 0
-        for sheet_name in wb.sheetnames:
-            total += len(list(wb[sheet_name].rows))
-        res, fails, done = [], [], 0
+        res, fails = [], []
         rn = 0
         flow_images = []
         pending_cell_images = []
@@ -58,14 +54,17 @@ class Excel(ExcelParser):
             images = Excel._extract_images_from_worksheet(ws, sheetname=sheet_name)
             if images:
                 image_descriptions = vision_figure_parser_figure_xlsx_wrapper(images=images, callback=callback, **kwargs)
-                if image_descriptions and len(image_descriptions) == len(images):
-                    for i, bf in enumerate(image_descriptions):
-                        images[i]["image_description"] = "\n".join(bf[0][1])
-                    for img in images:
-                        if img["span_type"] == "single_cell" and img.get("image_description"):
-                            pending_cell_images.append(img)
-                        else:
-                            flow_images.append(img)
+                if image_descriptions:
+                    if len(image_descriptions) != len(images):
+                        logging.warning(f"Image description count mismatch: {len(image_descriptions)} vs {len(images)}")
+                    for i in range(min(len(image_descriptions), len(images))):
+                        images[i]["image_description"] = "\n".join(image_descriptions[i][0][1])
+
+                for img in images:
+                    if img["span_type"] == "single_cell" and img.get("image_description"):
+                        pending_cell_images.append(img)
+                    else:
+                        flow_images.append(img)
 
             try:
                 rows = list(ws.rows)
@@ -84,14 +83,21 @@ class Excel(ExcelParser):
                     continue
                 if rn - 1 >= to_page:
                     break
-                row_data = self._extract_row_data(ws, r, header_rows + i, len(headers))
+            merged_ranges = list(ws.merged_cells.ranges)
+            for i, r in enumerate(rows[header_rows:]):
+                rn += 1
+                if rn - 1 < from_page:
+                    continue
+                if rn - 1 >= to_page:
+                    break
+                row_data = self._extract_row_data(ws, r, header_rows + i, len(headers), merged_ranges)
                 if row_data is None:
                     fails.append(str(i))
                     continue
                 if self._is_empty_row(row_data):
                     continue
                 data.append(row_data)
-                done += 1
+                data.append(row_data)
             if len(data) == 0:
                 continue
             df = pd.DataFrame(data, columns=headers)
@@ -168,14 +174,9 @@ class Excel(ExcelParser):
         if not rows:
             return [], 0
         header_row = rows[0]
-        headers = []
-        for cell in header_row:
-            if cell.value is not None:
-                header_value = str(cell.value).strip()
-                if header_value:
-                    headers.append(header_value)
-            else:
-                pass
+        if not rows:
+            return [], 0
+        header_row = rows[0]
         final_headers = []
         for i, cell in enumerate(header_row):
             if cell.value is not None:
@@ -274,9 +275,8 @@ class Excel(ExcelParser):
                 return ws.cell(merged_range.min_row, merged_range.min_col).value
         return None
 
-    def _extract_row_data(self, ws, row, absolute_row_idx, expected_cols):
+    def _extract_row_data(self, ws, row, absolute_row_idx, expected_cols, merged_ranges):
         row_data = []
-        merged_ranges = list(ws.merged_cells.ranges)
         actual_row_num = absolute_row_idx + 1
         for col_idx in range(expected_cols):
             cell_value = None
@@ -290,16 +290,12 @@ class Excel(ExcelParser):
                 merged_value = self._get_merged_cell_value(ws, actual_row_num, actual_col_num, merged_ranges)
                 if merged_value is not None:
                     cell_value = merged_value
+                if merged_value is not None:
+                    cell_value = merged_value
                 else:
-                    cell_value = self._get_inherited_value(ws, actual_row_num, actual_col_num, merged_ranges)
+                    cell_value = self._get_merged_cell_value(ws, actual_row_num, actual_col_num, merged_ranges)
             row_data.append(cell_value)
         return row_data
-
-    def _get_inherited_value(self, ws, row, col, merged_ranges):
-        for merged_range in merged_ranges:
-            if merged_range.min_row <= row <= merged_range.max_row and merged_range.min_col <= col <= merged_range.max_col:
-                return ws.cell(merged_range.min_row, merged_range.min_col).value
-        return None
 
     def _is_empty_row(self, row_data):
         for val in row_data:
@@ -439,7 +435,7 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
 
     res = []
     PY = Pinyin()
-    fieds_map = {"text": "_tks", "int": "_long", "keyword": "_kwd", "float": "_flt", "datetime": "_dt", "bool": "_kwd"}
+    fields_map = {"text": "_tks", "int": "_long", "keyword": "_kwd", "float": "_flt", "datetime": "_dt", "bool": "_kwd"}
     for df in dfs:
         for n in ["id", "_id", "index", "idx"]:
             if n in df.columns:
@@ -460,9 +456,9 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
             df[clmns[j]] = cln
             if ty == "text":
                 txts.extend([str(c) for c in cln if c])
-        clmns_map = [(py_clmns[i].lower() + fieds_map[clmn_tys[i]], str(clmns[i]).replace("_", " ")) for i in range(len(clmns))]
+        clmns_map = [(py_clmns[i].lower() + fields_map[clmn_tys[i]], str(clmns[i]).replace("_", " ")) for i in range(len(clmns))]
 
-        eng = lang.lower() == "english"  # is_english(txts)
+        # eng = lang.lower() == "english"  # is_english(txts)
         for ii, row in df.iterrows():
             d = {"docnm_kwd": filename, "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))}
             row_txt = []
@@ -478,14 +474,16 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
                 row_txt.append("{}:{}".format(clmns[j], row[clmns[j]]))
             if not row_txt:
                 continue
-            tokenize(d, "; ".join(row_txt), eng)
+            tokenize(d, "; ".join(row_txt), is_english)
             res.append(d)
-        if tbls:
-            doc = {"docnm_kwd": filename, "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))}
-            res.extend(tokenize_table(tbls, doc, is_english))
+
         kb_id = kwargs.get("kb_id")
         if kb_id:
             KnowledgebaseService.update_parser_config(kb_id, {"field_map": dict(clmns_map)})
+
+    if tbls:
+        doc = {"docnm_kwd": filename, "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))}
+        res.extend(tokenize_table(tbls, doc, is_english))
     callback(0.35, "")
 
     return res

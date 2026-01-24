@@ -20,20 +20,20 @@ import uuid
 import chardet
 from bs4 import BeautifulSoup, NavigableString, Tag, Comment
 import html
+import copy
+
 
 def get_encoding(file):
-    with open(file,'rb') as f:
+    with open(file, "rb") as f:
         tmp = chardet.detect(f.read())
-        return tmp['encoding']
+        encoding = tmp.get("encoding")
+        if not encoding:
+            return "utf-8"
+        return encoding.lower().replace("_", "-")
 
-BLOCK_TAGS = [
-    "h1", "h2", "h3", "h4", "h5", "h6",
-    "p", "div", "article", "section", "aside",
-    "ul", "ol", "li",
-    "table", "pre", "code", "blockquote",
-    "figure", "figcaption"
-]
-TITLE_TAGS = {"h1": "#", "h2": "##", "h3": "###", "h4": "#####", "h5": "#####", "h6": "######"}
+
+BLOCK_TAGS = ["h1", "h2", "h3", "h4", "h5", "h6", "p", "div", "article", "section", "aside", "ul", "ol", "li", "table", "pre", "code", "blockquote", "figure", "figcaption"]
+TITLE_TAGS = {"h1": "#", "h2": "##", "h3": "###", "h4": "####", "h5": "#####", "h6": "######"}
 
 
 class RAGFlowHtmlParser:
@@ -42,7 +42,7 @@ class RAGFlowHtmlParser:
             encoding = find_codec(binary)
             txt = binary.decode(encoding, errors="ignore")
         else:
-            with open(fnm, "r",encoding=get_encoding(fnm)) as f:
+            with open(fnm, "r", encoding=get_encoding(fnm)) as f:
                 txt = f.read()
         return self.parser_txt(txt, chunk_token_num)
 
@@ -56,20 +56,16 @@ class RAGFlowHtmlParser:
         # delete <style> tag
         for style_tag in soup.find_all(["style", "script"]):
             style_tag.decompose()
-        # delete <script> tag in <div>
-        for div_tag in soup.find_all("div"):
-            for script_tag in div_tag.find_all("script"):
-                script_tag.decompose()
         # delete inline style
         for tag in soup.find_all(True):
-            if 'style' in tag.attrs:
-                del tag.attrs['style']
+            if "style" in tag.attrs:
+                del tag.attrs["style"]
         # delete HTML comment
         for comment in soup.find_all(string=lambda text: isinstance(text, Comment)):
             comment.extract()
 
-        cls.read_text_recursively(soup.body, temp_sections, chunk_token_num=chunk_token_num)
-        block_txt_list, table_list = cls.merge_block_text(temp_sections)
+        cls.read_text_recursively(soup.body or soup, temp_sections, chunk_token_num=chunk_token_num)
+        block_txt_list, table_list = cls.merge_block_text(temp_sections, chunk_token_num=chunk_token_num)
         sections = cls.chunk_block(block_txt_list, chunk_token_num=chunk_token_num)
         for table in table_list:
             sections.append(table.get("content", ""))
@@ -98,7 +94,7 @@ class RAGFlowHtmlParser:
         for table_rows in tables:
             new_table = soup.new_tag("table")
             for row in table_rows:
-                new_table.append(row)
+                new_table.append(copy.copy(row))
             table_str_list.append(str(new_table))
 
         return table_str_list
@@ -107,19 +103,11 @@ class RAGFlowHtmlParser:
     def read_text_recursively(cls, element, parser_result, chunk_token_num=512, parent_name=None, block_id=None):
         if isinstance(element, NavigableString):
             content = element.strip()
-
-            def is_valid_html(content):
-                try:
-                    soup = BeautifulSoup(content, "html.parser")
-                    return bool(soup.find())
-                except Exception:
-                    return False
-
             return_info = []
             if content:
-                if is_valid_html(content):
-                    soup = BeautifulSoup(content, "html.parser")
-                    child_info = cls.read_text_recursively(soup, parser_result, chunk_token_num, element.name, block_id)
+                soup_inner = BeautifulSoup(content, "html.parser")
+                if bool(soup_inner.find()):
+                    child_info = cls.read_text_recursively(soup_inner, parser_result, chunk_token_num, parent_name, block_id)
                     parser_result.extend(child_info)
                 else:
                     info = {"content": element.strip(), "tag_name": "inner_text", "metadata": {"block_id": block_id}}
@@ -128,26 +116,19 @@ class RAGFlowHtmlParser:
                     return_info.append(info)
             return return_info
         elif isinstance(element, Tag):
-
             if str.lower(element.name) == "table":
-                table_info_list = []
                 table_id = str(uuid.uuid1())
-                table_list = [html.unescape(str(element))]
-                for t in table_list:
-                    table_info_list.append({"content": t, "tag_name": "table",
-                                            "metadata": {"table_id": table_id, "index": table_list.index(t)}})
-                return table_info_list
+                return [{"content": html.unescape(str(element)), "tag_name": "table", "metadata": {"table_id": table_id, "index": 0}}]
             else:
                 if str.lower(element.name) in BLOCK_TAGS:
                     block_id = str(uuid.uuid1())
                 for child in element.children:
-                    child_info = cls.read_text_recursively(child, parser_result, chunk_token_num, element.name,
-                                                           block_id)
+                    child_info = cls.read_text_recursively(child, parser_result, chunk_token_num, element.name, block_id)
                     parser_result.extend(child_info)
         return []
 
     @classmethod
-    def merge_block_text(cls, parser_result):
+    def merge_block_text(cls, parser_result, chunk_token_num=512):
         block_content = []
         current_content = ""
         table_info_list = []
@@ -169,7 +150,9 @@ class RAGFlowHtmlParser:
                     current_content += (" " if current_content else "") + content
             else:
                 if tag_name == "table":
-                    table_info_list.append(item)
+                    table_chunks = cls.split_table(content, chunk_token_num)
+                    for chunk in table_chunks:
+                        table_info_list.append({"content": chunk, "tag_name": "table", "metadata": item.get("metadata", {})})
                 else:
                     current_content += (" " if current_content else "") + content
         if current_content:
@@ -210,4 +193,3 @@ class RAGFlowHtmlParser:
             chunks.append(current_block)
 
         return chunks
-

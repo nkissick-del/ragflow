@@ -33,6 +33,7 @@ Usage:
 import importlib
 import logging
 import pkgutil
+import threading
 from typing import Dict, List, Optional, Any
 
 logger = logging.getLogger(__name__)
@@ -65,6 +66,7 @@ class TemplateRegistry:
     def __init__(self):
         self._templates: Dict[str, Any] = {}
         self._discovered = False
+        self._lock = threading.Lock()
 
     def discover(self) -> None:
         """
@@ -76,24 +78,28 @@ class TemplateRegistry:
         if self._discovered:
             return
 
-        # Import all modules in this package
-        package_path = __path__  # type: ignore
-        for importer, modname, ispkg in pkgutil.iter_modules(package_path):
-            if modname.startswith("_") or ispkg:
-                continue
+        with self._lock:
+            if self._discovered:
+                return
 
-            try:
-                module = importlib.import_module(f".{modname}", __name__)
-                if hasattr(module, "chunk") and callable(getattr(module, "chunk")):
-                    self._templates[modname] = module
-                    logger.debug(f"[TemplateRegistry] Discovered template: {modname}")
-                else:
-                    logger.debug(f"[TemplateRegistry] Skipped {modname} (no chunk function)")
-            except Exception as e:
-                logger.warning(f"[TemplateRegistry] Failed to import template {modname}: {e}")
+            # Import all modules in this package
+            package_path = __path__  # type: ignore
+            for importer, modname, ispkg in pkgutil.iter_modules(package_path):
+                if modname.startswith("_") or ispkg:
+                    continue
 
-        self._discovered = True
-        logger.info(f"[TemplateRegistry] Discovered {len(self._templates)} templates")
+                try:
+                    module = importlib.import_module(f".{modname}", __name__)
+                    if hasattr(module, "chunk") and callable(getattr(module, "chunk")):
+                        self._templates[modname] = module
+                        logger.debug(f"[TemplateRegistry] Discovered template: {modname}")
+                    else:
+                        logger.debug(f"[TemplateRegistry] Skipped {modname} (no chunk function)")
+                except Exception as e:
+                    logger.warning(f"[TemplateRegistry] Failed to import template {modname}: {e}")
+
+            self._discovered = True
+            logger.info(f"[TemplateRegistry] Discovered {len(self._templates)} templates")
 
     def get(self, name: str) -> Optional[Any]:
         """

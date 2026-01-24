@@ -232,7 +232,15 @@ async def build_chunks(task, progress_callback):
         set_progress(task["id"], prog=-1, msg="File size exceeds( <= %dMb )" % (int(settings.DOC_MAXIMUM_SIZE / 1024 / 1024)))
         return []
 
-    chunker = FACTORY[task["parser_id"].lower()]
+    parser_id = task.get("parser_id")
+    if not parser_id:
+        raise ValueError("Task parser_id is missing or empty")
+
+    key = parser_id.lower()
+    if key not in FACTORY:
+        raise ValueError(f"Unsupported parser_id: '{parser_id}'. Supported parsers: {list(FACTORY.keys())}")
+
+    chunker = FACTORY[key]
     try:
         st = timer()
         bucket, name = File2DocumentService.get_storage_address(doc_id=task["doc_id"])
@@ -264,6 +272,8 @@ async def build_chunks(task, progress_callback):
                 parser_config=task["parser_config"],
                 tenant_id=task["tenant_id"],
             )
+        if hasattr(chunker, "FIELD_MAP"):
+            KnowledgebaseService.update_parser_config(task["kb_id"], {"field_map": chunker.FIELD_MAP})
         logging.info("Chunking({}) {}/{} done".format(timer() - st, task["location"], task["name"]))
     except TaskCanceledException:
         raise

@@ -35,9 +35,7 @@ from PIL import Image
 from strenum import StrEnum
 
 
-LOCK_KEY_pdfplumber = "global_shared_lock_pdfplumber"
-if LOCK_KEY_pdfplumber not in sys.modules:
-    sys.modules[LOCK_KEY_pdfplumber] = threading.Lock()
+_pdfplumber_lock = threading.Lock()
 
 
 class MinerUContentType(StrEnum):
@@ -196,7 +194,8 @@ class MinerUParser:
         try:
             response = requests.head(url, timeout=timeout, allow_redirects=True)
             return response.status_code in [200, 301, 302, 307, 308]
-        except Exception:
+        except Exception as e:
+            logging.getLogger("MinerUParser").warning(f"[MinerU] HTTP endpoint check failed for {url} (timeout={timeout}): {e}")
             return False
 
     def check_installation(self, backend: str = "pipeline", server_url: Optional[str] = None) -> tuple[bool, str]:
@@ -234,8 +233,13 @@ class MinerUParser:
             try:
                 server_ok = self._is_http_endpoint_valid(resolved_server)
                 self.logger.info(f"[MinerU] vlm-http-client server check reachable={server_ok} url={resolved_server}")
+                if not server_ok:
+                    reason = f"[MinerU] vlm-http-client server unreachable: {resolved_server}"
+                    return False, reason
             except Exception as exc:
-                self.logger.warning(f"[MinerU] vlm-http-client server probe failed: {resolved_server}: {exc}")
+                reason = f"[MinerU] vlm-http-client server probe failed: {resolved_server}: {exc}"
+                self.logger.warning(reason)
+                return False, reason
 
         return True, reason
 
@@ -313,7 +317,7 @@ class MinerUParser:
                     else:
                         self.logger.warning(f"[MinerU] not zip returned from api: {content_type}")
         except Exception as e:
-            raise RuntimeError(f"[MinerU] api failed with exception {e}")
+            raise RuntimeError(f"[MinerU] api failed with exception {e}") from e
         self.logger.info("[MinerU] Api completed successfully.")
         return Path(output_path)
 
@@ -321,8 +325,9 @@ class MinerUParser:
         self.page_from = page_from
         self.page_to = page_to
         try:
-            with pdfplumber.open(fnm) if isinstance(fnm, (str, PathLike)) else pdfplumber.open(BytesIO(fnm)) as pdf:
-                self.pdf = pdf
+            with _pdfplumber_lock:
+                self.pdf = pdfplumber.open(fnm) if isinstance(fnm, (str, PathLike)) else pdfplumber.open(BytesIO(fnm))
+                self.total_page = len(self.pdf.pages)
                 self.page_images = [p.to_image(resolution=72 * zoomin, antialias=True).original for _, p in enumerate(self.pdf.pages[page_from:page_to])]
         except Exception as e:
             self.page_images = None
@@ -542,6 +547,8 @@ class MinerUParser:
                     section = "\n".join(output.get("list_items", []))
                 case MinerUContentType.DISCARDED:
                     continue  # Skip discarded blocks entirely
+                case _:
+                    continue  # Skip unknown types to avoid UnboundLocalError
 
             if section and parse_method == "manual":
                 sections.append((section, output["type"], self._line_tag(output)))
@@ -552,7 +559,11 @@ class MinerUParser:
         return sections
 
     def _transfer_to_tables(self, outputs: list[dict[str, Any]]):
-        return []
+        """Convert outputs into table rows.
+
+        TODO: implement _transfer_to_tables to convert outputs into table rows
+        """
+        raise NotImplementedError("TODO: implement _transfer_to_tables to convert outputs into table rows")
 
     def parse_pdf(
         self,
@@ -567,8 +578,6 @@ class MinerUParser:
         parse_method: str = "raw",
         **kwargs,
     ) -> tuple:
-        import shutil
-
         temp_pdf = None
         created_tmp_dir = False
 
@@ -595,8 +604,9 @@ class MinerUParser:
                 callback(0.15, f"[MinerU] Received binary PDF -> {temp_pdf}")
         else:
             if pdf_file_path_valid != filepath:
-                self.logger.info(f"[MinerU] Remove all space in file name: {pdf_file_path_valid}")
-                shutil.move(filepath, pdf_file_path_valid)
+                self.logger.info(f"[MinerU] Copy file and remove all space in name: {pdf_file_path_valid}")
+                shutil.copy2(filepath, pdf_file_path_valid)
+                temp_pdf = Path(pdf_file_path_valid)
             pdf = Path(pdf_file_path_valid)
             if not pdf.exists():
                 if callback:
@@ -637,8 +647,7 @@ class MinerUParser:
         finally:
             if temp_pdf and temp_pdf.exists():
                 try:
-                    temp_pdf.unlink()
-                    temp_pdf.parent.rmdir()
+                    shutil.rmtree(temp_pdf.parent)
                 except Exception:
                     pass
             if delete_output and created_tmp_dir and out_dir.exists():
@@ -649,12 +658,32 @@ class MinerUParser:
 
 
 if __name__ == "__main__":
-    parser = MinerUParser("mineru")
-    ok, reason = parser.check_installation()
-    print("MinerU available:", ok)
+    import argparse
 
-    filepath = ""
-    with open(filepath, "rb") as file:
-        outputs = parser.parse_pdf(filepath=filepath, binary=file.read())
-        for output in outputs:
-            print(output)
+    parser_arg = argparse.ArgumentParser(description="MinerU PDF Parser Example")
+    parser_arg.add_argument("filepath", type=str, help="Path to the PDF file", nargs="?")
+    args = parser_arg.parse_args()
+
+    if not args.filepath:
+        print("Usage: python mineru_client.py <pdf_filepath>")
+        sys.exit(1)
+
+    if not os.path.exists(args.filepath):
+        print(f"Error: File not found: {args.filepath}")
+        sys.exit(1)
+
+    mineru_parser = MinerUParser("mineru")
+    ok, reason = mineru_parser.check_installation()
+    print("MinerU available:", ok)
+    if not ok:
+        print("Reason:", reason)
+        sys.exit(1)
+
+    try:
+        with open(args.filepath, "rb") as file:
+            sections, tables = mineru_parser.parse_pdf(filepath=args.filepath, binary=file.read())
+            for section in sections:
+                print(section)
+    except Exception as e:
+        print(f"Error during parsing: {e}")
+        sys.exit(1)

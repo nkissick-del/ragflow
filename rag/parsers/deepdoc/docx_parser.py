@@ -42,7 +42,12 @@ def load_from_xml_v2(baseURI, rels_item_xml):
         for rel_elm in rels_elm.Relationship_lst:
             if rel_elm.target_ref in ("../NULL", "NULL") or rel_elm.target_ref.startswith("#"):
                 continue
-            srels._srels.append(_SerializedRelationship(baseURI, rel_elm))
+            if hasattr(srels, "add_relationship"):
+                srels.add_relationship(_SerializedRelationship(baseURI, rel_elm))
+            elif hasattr(srels, "_srels"):
+                srels._srels.append(_SerializedRelationship(baseURI, rel_elm))
+            else:
+                raise RuntimeError("Cannot add relationship: python-docx internals have changed. Expected 'add_relationship' method or '_srels' attribute.")
     return srels
 
 
@@ -86,8 +91,12 @@ class RAGFlowDocxParser:
 
         if len(df) < 2:
             return []
-        max_type = Counter([blockType(str(df.iloc[i, j])) for i in range(1, len(df)) for j in range(len(df.iloc[i, :]))])
-        max_type = max(max_type.items(), key=lambda x: x[1])[0]
+
+        counter = Counter([blockType(str(df.iloc[i, j])) for i in range(1, len(df)) for j in range(len(df.iloc[i, :]))])
+        if df.shape[1] > 0 and counter:
+            max_type = max(counter, key=counter.get)
+        else:
+            max_type = None
 
         colnm = len(df.iloc[0, :])
         hdrows = [0]  # header is not necessarily appear in the first line
@@ -102,14 +111,18 @@ class RAGFlowDocxParser:
         for i in range(1, len(df)):
             if i in hdrows:
                 continue
-            hr = [r - i for r in hdrows]
-            hr = [r for r in hr if r < 0]
-            t = len(hr) - 1
-            while t > 0:
-                if hr[t] - hr[t - 1] > 1:
-                    hr = hr[t:]
-                    break
-                t -= 1
+            if len(hdrows) > 0:
+                # Select the nearest consecutive block of header rows above the current:
+                # 1. Compute offsets from current row 'r' (negative means above)
+                hr = [r - i for r in hdrows]
+                # 2. Keep only rows strictly above
+                hr = [r for r in hr if r < 0]
+                t = 0
+                while t < len(hr) - 1:
+                    if hr[t] - hr[t + 1] > 1:
+                        break
+                    t += 1
+                hr = hr[: t + 1]
             headers = []
             for j in range(len(df.iloc[i, :])):
                 t = []
@@ -151,8 +164,13 @@ class RAGFlowDocxParser:
                 # wrap page break checker into a static method
                 if "lastRenderedPageBreak" in run._element.xml:
                     pn += 1
-
-            secs.append(("".join(runs_within_single_paragraph), p.style.name if hasattr(p.style, "name") else ""))  # then concat run.text as part of the paragraph
+            if "".join(runs_within_single_paragraph).strip():
+                secs.append(
+                    (
+                        "".join(runs_within_single_paragraph),
+                        p.style.name if p.style and p.style.name else "",
+                    )
+                )
 
         tbls = [self.__extract_table_content(tb) for tb in self.doc.tables]
         return secs, tbls

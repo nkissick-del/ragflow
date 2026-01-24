@@ -41,9 +41,9 @@ class Pdf(PdfParser):
         start = timer()
         callback = callback or _noop_callback
 
-        callback(msg="OCR started")
+        callback(0.0, "OCR started")
         self.__images__(filename if not binary else binary, zoomin, from_page, to_page, callback)
-        callback(msg="OCR finished ({:.2f}s)".format(timer() - start))
+        callback(0.1, "OCR finished ({:.2f}s)".format(timer() - start))
 
         start = timer()
         self._layouts_rec(zoomin)
@@ -66,12 +66,12 @@ class Pdf(PdfParser):
 
 
 def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, **kwargs):
-    callback = callback or _noop_callback
     """
     Supported file formats are docx, pdf, txt.
     Since a book is long and not all the parts are useful, if it's a PDF,
     please set up the page ranges for every book in order eliminate negative effects and save elapsed computing time.
     """
+    callback = callback or _noop_callback
     parser_config = kwargs.get("parser_config", {"chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC"})
     doc = {"docnm_kwd": filename, "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))}
     doc["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(doc["title_tks"])
@@ -151,11 +151,14 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
             logging.warning(f"tika not available: {e}. Unsupported .doc parsing for {filename}.")
             return []
 
-        if binary is None:
-            with open(filename, "rb") as f:
-                binary = f.read()
+        if isinstance(binary, (str, bytes, bytearray)):
+            if isinstance(binary, str) or binary is None:
+                with open(binary if binary else filename, "rb") as f:
+                    binary = f.read()
+            binary = BytesIO(binary)
+        elif hasattr(binary, "read"):
+            binary.seek(0)
 
-        binary = BytesIO(binary)
         doc_parsed = tika_parser.from_buffer(binary)
         if doc_parsed.get("content", None) is not None:
             sections = doc_parsed["content"].split("\n")
@@ -198,4 +201,4 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python book.py <filename>")
         sys.exit(1)
-    chunk(sys.argv[1], from_page=1, to_page=10, callback=_noop_callback)
+    print(chunk(sys.argv[1], from_page=1, to_page=10, callback=_noop_callback))

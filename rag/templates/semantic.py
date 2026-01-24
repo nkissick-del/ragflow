@@ -45,6 +45,14 @@ from dataclasses import dataclass
 from rag.orchestration.base import StandardizedDocument
 from rag.nlp import rag_tokenizer
 
+try:
+    import nltk
+    from packaging.version import parse as parse_version
+
+    _NLTK_AVAILABLE = True
+except ImportError:
+    _NLTK_AVAILABLE = False
+
 # Try to import token counting utility, fallback to simple estimation
 try:
     import os
@@ -358,22 +366,21 @@ class Semantic:
                 def split_large_paragraph(para: str) -> List[str]:
                     """Split a large paragraph at sentence boundaries."""
                     sentences = []
-                    try:
-                        import nltk
-                        from packaging.version import parse as parse_version
-
-                        # Check availability without downloading
+                    if _NLTK_AVAILABLE:
                         try:
-                            nltk.data.find("tokenizers/punkt")
-                            # Use proper version comparison (not string comparison)
-                            # String comparison fails for versions like "3.10" < "3.8" lexicographically
-                            if parse_version(nltk.__version__) >= parse_version("3.8"):
-                                nltk.data.find("tokenizers/punkt_tab")
-                            sentences = nltk.sent_tokenize(para)
-                        except LookupError:
-                            logging.warning("[Semantic] NLTK 'punkt' or 'punkt_tab' resource not found. Falling back to regex splitting.")
-                            raise
-                    except (ImportError, LookupError):
+                            # Check availability without downloading
+                            try:
+                                nltk.data.find("tokenizers/punkt")
+                                if parse_version(nltk.__version__) >= parse_version("3.8"):
+                                    nltk.data.find("tokenizers/punkt_tab")
+                                sentences = nltk.sent_tokenize(para)
+                            except LookupError:
+                                logging.warning("[Semantic] NLTK 'punkt' or 'punkt_tab' resource not found. Falling back to regex splitting.")
+                                sentences = re.split(r"(?<=[.!?])\s+", para)
+                        except Exception:
+                            sentences = re.split(r"(?<=[.!?])\s+", para)
+                    else:
+                        sentences = re.split(r"(?<=[.!?])\s+", para)
                         # Fallback to regex splitting
                         sentences = re.split(r"(?<=[.!?])\s+", para)
 
@@ -472,7 +479,11 @@ class Semantic:
                                 # Remove from start until we're within overlap_tokens
                                 first_space = overlap_text.find(" ")
                                 if first_space == -1:
-                                    break
+                                    # Fallback for CJK or text without spaces
+                                    removed_piece = overlap_text[0]
+                                    overlap_count -= count_tokens(removed_piece)
+                                    overlap_text = overlap_text[1:]
+                                    continue
 
                                 removed_piece = overlap_text[: first_space + 1]
                                 overlap_count -= count_tokens(removed_piece)
@@ -578,11 +589,11 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         callback: Progress callback function
         **kwargs: Additional arguments including parser_config, tenant_id, etc.
 
+    Returns:
         List of chunk dictionaries ready for storage/embedding
     """
     from rag.orchestration.router import by_docling, by_deepdoc
     from common.parser_config_utils import normalize_layout_recognizer
-    import re
 
     parser_config = kwargs.pop("parser_config", {"chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognizer": "Docling"})
     is_english = lang.lower() == "english"

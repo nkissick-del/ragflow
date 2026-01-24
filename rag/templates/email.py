@@ -70,7 +70,7 @@ def chunk(
                     try:
                         target_list.append(payload.decode(enc))
                         break
-                    except UnicodeDecodeError:
+                    except (UnicodeDecodeError, LookupError):
                         continue
                 else:
                     target_list.append(payload.decode("utf-8", errors="ignore"))
@@ -92,7 +92,9 @@ def chunk(
 
     _add_content(msg, msg.get_content_type())
 
-    sections = TxtParser.parser_txt("\n".join(text_txt)) + [(line, "") for line in HtmlParser.parser_txt("\n".join(html_txt), chunk_token_num=parser_config["chunk_token_num"]) if line]
+    txt_sections = TxtParser.parser_txt("\n".join(text_txt))
+    html_sections = [(line, "") for line in HtmlParser.parser_txt("\n".join(html_txt), chunk_token_num=parser_config.get("chunk_token_num", 512)) if line]
+    sections = txt_sections + html_sections
 
     st = timer()
     chunks = naive_merge(
@@ -104,7 +106,7 @@ def chunk(
     main_res.extend(tokenize_chunks(chunks, doc, eng, None))
     logging.debug("naive_merge({}): {}".format(filename, timer() - st))
     # get the attachment info
-    parent_filename = filename  # Preserve parent email filename before loop
+    # parent_filename = filename  # Preserve parent email filename before loop
     for part in msg.iter_attachments():
         content_disposition = part.get("Content-Disposition")
         if content_disposition:
@@ -117,7 +119,7 @@ def chunk(
                 try:
                     attachment_res.extend(naive_chunk(attachment_filename, payload, callback=callback, **kwargs))
                 except Exception as e:
-                    logging.error(f"Failed to process attachment '{attachment_filename}' in email '{parent_filename}': {e}")
+                    logging.error(f"Failed to process attachment '{attachment_filename}' in email '{filename}': {e}")
 
     return main_res + attachment_res
 

@@ -42,7 +42,7 @@ class RAGFlowExcelParser:
 
             try:
                 file_like_object.seek(0)
-                df = pd.read_csv(file_like_object, on_bad_lines='skip')
+                df = pd.read_csv(file_like_object, on_bad_lines="skip")
                 return RAGFlowExcelParser._dataframe_to_workbook(df)
 
             except Exception as e_csv:
@@ -60,8 +60,8 @@ class RAGFlowExcelParser:
                 except Exception as ex:
                     logging.info(f"pandas with default engine load error: {ex}, try calamine instead")
                     file_like_object.seek(0)
-                    df = pd.read_excel(file_like_object, engine="calamine")
-                    return RAGFlowExcelParser._dataframe_to_workbook(df)
+                    dfs = pd.read_excel(file_like_object, sheet_name=None, engine="calamine")
+                    return RAGFlowExcelParser._dataframe_to_workbook(dfs)
             except Exception as e_pandas:
                 raise Exception(f"pandas.read_excel error: {e_pandas}, original openpyxl error: {e}")
 
@@ -75,16 +75,7 @@ class RAGFlowExcelParser:
         return df.apply(lambda col: col.map(clean_string))
 
     @staticmethod
-    def _dataframe_to_workbook(df):
-        # if contains multiple sheets use _dataframes_to_workbook
-        if isinstance(df, dict) and len(df) > 1:
-            return RAGFlowExcelParser._dataframes_to_workbook(df)
-
-        df = RAGFlowExcelParser._clean_dataframe(df)
-        wb = Workbook()
-        ws = wb.active
-        ws.title = "Data"
-
+    def _populate_cells_from_dataframe(ws, df: pd.DataFrame):
         for col_num, column_name in enumerate(df.columns, 1):
             ws.cell(row=1, column=col_num, value=column_name)
 
@@ -92,22 +83,34 @@ class RAGFlowExcelParser:
             for col_num, value in enumerate(row, 1):
                 ws.cell(row=row_num, column=col_num, value=value)
 
+    @staticmethod
+    def _dataframe_to_workbook(df):
+        # if contains multiple sheets use _dataframes_to_workbook
+        if isinstance(df, dict):
+            if len(df) > 1:
+                return RAGFlowExcelParser._dataframes_to_workbook(df)
+            elif len(df) == 1:
+                df = next(iter(df.values()))
+
+        df = RAGFlowExcelParser._clean_dataframe(df)
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Data"
+
+        RAGFlowExcelParser._populate_cells_from_dataframe(ws, df)
+
         return wb
-    
+
     @staticmethod
     def _dataframes_to_workbook(dfs: dict):
         wb = Workbook()
         default_sheet = wb.active
         wb.remove(default_sheet)
-        
+
         for sheet_name, df in dfs.items():
             df = RAGFlowExcelParser._clean_dataframe(df)
             ws = wb.create_sheet(title=sheet_name)
-            for col_num, column_name in enumerate(df.columns, 1):
-                ws.cell(row=1, column=col_num, value=column_name)
-            for row_num, row in enumerate(df.values, 2):
-                for col_num, value in enumerate(row, 1):
-                    ws.cell(row=row_num, column=col_num, value=value)
+            RAGFlowExcelParser._populate_cells_from_dataframe(ws, df)
         return wb
 
     @staticmethod
@@ -153,6 +156,7 @@ class RAGFlowExcelParser:
                 }
                 raw_items.append(item)
             except Exception:
+                logging.debug(f"Failed to extract image from sheet '{sheetname or ws.title}'")
                 continue
         return raw_items
 
@@ -202,18 +206,23 @@ class RAGFlowExcelParser:
         return tb_chunks
 
     def markdown(self, fnm):
-        import pandas as pd
-
         file_like_object = BytesIO(fnm) if not isinstance(fnm, str) else fnm
         try:
             file_like_object.seek(0)
-            df = pd.read_excel(file_like_object)
+            dfs = pd.read_excel(file_like_object, sheet_name=None)
         except Exception as e:
             logging.warning(f"Parse spreadsheet error: {e}, trying to interpret as CSV file")
             file_like_object.seek(0)
-            df = pd.read_csv(file_like_object, on_bad_lines='skip')
-        df = df.replace(r"^\s*$", "", regex=True)
-        return df.to_markdown(index=False)
+            df = pd.read_csv(file_like_object, on_bad_lines="skip")
+            dfs = {"Data": df}
+
+        res = []
+        for sheetname, df in dfs.items():
+            df = df.replace(r"^\s*$", "", regex=True)
+            if len(dfs) > 1:
+                res.append(f"## {sheetname}\n")
+            res.append(df.to_markdown(index=False))
+        return "\n\n".join(res)
 
     def __call__(self, fnm):
         file_like_object = BytesIO(fnm) if not isinstance(fnm, str) else fnm
@@ -233,7 +242,7 @@ class RAGFlowExcelParser:
             for r in list(rows[1:]):
                 fields = []
                 for i, c in enumerate(r):
-                    if not c.value:
+                    if c.value is None or (isinstance(c.value, str) and not c.value.strip()):
                         continue
                     t = str(ti[i].value) if i < len(ti) else ""
                     t += ("：" if t else "") + str(c.value)
@@ -247,16 +256,17 @@ class RAGFlowExcelParser:
     @staticmethod
     def row_number(fnm, binary):
         if fnm.split(".")[-1].lower().find("xls") >= 0:
-            wb = RAGFlowExcelParser._load_excel_to_workbook(BytesIO(binary))
+            file_like_object = BytesIO(binary)
+            wb = RAGFlowExcelParser._load_excel_to_workbook(file_like_object)
             total = 0
-            
+
             for sheetname in wb.sheetnames:
-               try:
-                   ws = wb[sheetname]
-                   total += len(list(ws.rows))
-               except Exception as e:
-                   logging.warning(f"Skip sheet '{sheetname}' due to rows access error: {e}")
-                   continue
+                try:
+                    ws = wb[sheetname]
+                    total += len(list(ws.rows))
+                except Exception as e:
+                    logging.warning(f"Skip sheet '{sheetname}' due to rows access error: {e}")
+                    continue
             return total
 
         if fnm.split(".")[-1].lower() in ["csv", "txt"]:
@@ -264,7 +274,9 @@ class RAGFlowExcelParser:
             txt = binary.decode(encoding, errors="ignore")
             return len(txt.split("\n"))
 
+        return 0
+
 
 if __name__ == "__main__":
     psr = RAGFlowExcelParser()
-    psr(sys.argv[1])
+    print(psr(sys.argv[1]))

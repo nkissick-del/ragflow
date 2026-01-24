@@ -20,11 +20,10 @@ import PIL
 from PIL import ImageDraw
 
 
-def save_results(image_list, results, labels, output_dir='output/', threshold=0.5):
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-    for idx, im in enumerate(image_list):
-        im = draw_box(im, results[idx], labels, threshold=threshold)
+def save_results(image_list, results, labels, output_dir="output/", threshold=0.5):
+    os.makedirs(output_dir, exist_ok=True)
+    for idx, (im, res) in enumerate(zip(image_list, results)):
+        im = draw_box(im, res, labels, threshold=threshold)
 
         out_path = os.path.join(output_dir, f"{idx}.jpg")
         im.save(out_path, quality=95)
@@ -32,26 +31,21 @@ def save_results(image_list, results, labels, output_dir='output/', threshold=0.
 
 
 def draw_box(im, result, labels, threshold=0.5):
-    draw_thickness = min(im.size) // 320
+    draw_thickness = max(1, min(im.size) // 320)
     draw = ImageDraw.Draw(im)
     color_list = get_color_map_list(len(labels))
-    clsid2color = {n.lower():color_list[i] for i,n in enumerate(labels)}
+    clsid2color = {n.lower(): color_list[i] for i, n in enumerate(labels)}
     result = [r for r in result if r["score"] >= threshold]
 
     for dt in result:
-        color = tuple(clsid2color[dt["type"]])
+        color = tuple(clsid2color.get(dt["type"].lower(), (0, 0, 0)))
         xmin, ymin, xmax, ymax = dt["bbox"]
-        draw.line(
-            [(xmin, ymin), (xmin, ymax), (xmax, ymax), (xmax, ymin),
-             (xmin, ymin)],
-            width=draw_thickness,
-            fill=color)
+        draw.line([(xmin, ymin), (xmin, ymax), (xmax, ymax), (xmax, ymin), (xmin, ymin)], width=draw_thickness, fill=color)
 
         # draw label
         text = "{} {:.4f}".format(dt["type"], dt["score"])
         tw, th = imagedraw_textsize_c(draw, text)
-        draw.rectangle(
-            [(xmin + 1, ymin - th), (xmin + tw + 1, ymin)], fill=color)
+        draw.rectangle([(xmin + 1, ymin - th), (xmin + tw + 1, ymin)], fill=color)
         draw.text((xmin + 1, ymin - th), text, fill=(255, 255, 255))
     return im
 
@@ -68,17 +62,17 @@ def get_color_map_list(num_classes):
         j = 0
         lab = i
         while lab:
-            color_map[i * 3] |= (((lab >> 0) & 1) << (7 - j))
-            color_map[i * 3 + 1] |= (((lab >> 1) & 1) << (7 - j))
-            color_map[i * 3 + 2] |= (((lab >> 2) & 1) << (7 - j))
+            color_map[i * 3] |= ((lab >> 0) & 1) << (7 - j)
+            color_map[i * 3 + 1] |= ((lab >> 1) & 1) << (7 - j)
+            color_map[i * 3 + 2] |= ((lab >> 2) & 1) << (7 - j)
             j += 1
             lab >>= 3
-    color_map = [color_map[i:i + 3] for i in range(0, len(color_map), 3)]
+    color_map = [color_map[i : i + 3] for i in range(0, len(color_map), 3)]
     return color_map
 
 
 def imagedraw_textsize_c(draw, text):
-    if int(PIL.__version__.split('.')[0]) < 10:
+    if int(PIL.__version__.split(".")[0]) < 10:
         tw, th = draw.textsize(text)
     else:
         left, top, right, bottom = draw.textbbox((0, 0), text)

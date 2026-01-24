@@ -15,12 +15,13 @@
 #
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import logging
+import atexit
 
 from PIL import Image
 
 
-# need to delete before pr
 def vision_figure_parser_figure_data_wrapper(figures_data_without_positions):
+    """Wraps figure data without positions into a format suitable for VisionFigureParser."""
     if not figures_data_without_positions:
         return []
     return [
@@ -68,7 +69,8 @@ def vision_figure_parser_figure_xlsx_wrapper(images, callback=None, **kwargs):
         return []
     try:
         vision_model = LLMBundle(kwargs["tenant_id"], LLMType.IMAGE2TEXT)
-        callback(0.2, "Visual model detected. Attempting to enhance Excel image extraction...")
+        if callback:
+            callback(0.2, "Visual model detected. Attempting to enhance Excel image extraction...")
     except Exception:
         vision_model = None
     if vision_model:
@@ -86,11 +88,13 @@ def vision_figure_parser_figure_xlsx_wrapper(images, callback=None, **kwargs):
         ]
         try:
             parser = VisionFigureParser(vision_model=vision_model, figures_data=figures_data, **kwargs)
-            callback(0.22, "Parsing images...")
+            if callback:
+                callback(0.22, "Parsing images...")
             boosted_figures = parser(callback=callback)
             tbls.extend(boosted_figures)
         except Exception as e:
-            callback(0.25, f"Excel visual model error: {e}. Skipping vision enhancement.")
+            if callback:
+                callback(0.25, f"Excel visual model error: {e}. Skipping vision enhancement.")
     return tbls
 
 
@@ -108,7 +112,8 @@ def vision_figure_parser_pdf_wrapper(tbls, callback=None, **kwargs):
     context_size = max(0, int(parser_config.get("image_context_size", 0) or 0))
     try:
         vision_model = LLMBundle(kwargs["tenant_id"], LLMType.IMAGE2TEXT)
-        callback(0.7, "Visual model detected. Attempting to enhance figure extraction...")
+        if callback:
+            callback(0.7, "Visual model detected. Attempting to enhance figure extraction...")
     except Exception:
         vision_model = None
     if vision_model:
@@ -184,15 +189,18 @@ def vision_figure_parser_docx_wrapper_naive(chunks, idx_lst, callback=None, **kw
             )
             return idx, description_text
 
-        with ThreadPoolExecutor(max_workers=10) as executor:
-            futures = [executor.submit(worker, idx, chunks[idx]) for idx in idx_lst]
+        if vision_model:
+            with ThreadPoolExecutor(max_workers=10) as executor:
+                futures = [executor.submit(worker, idx, chunks[idx]) for idx in idx_lst]
 
-            for future in as_completed(futures):
-                idx, description = future.result()
-                chunks[idx]["text"] += description
+                for future in as_completed(futures):
+                    idx, description = future.result()
+                    chunks[idx]["text"] += description
+    return chunks
 
 
 shared_executor = ThreadPoolExecutor(max_workers=10)
+atexit.register(lambda: shared_executor.shutdown(wait=True))
 
 
 class VisionFigureParser:
@@ -201,8 +209,10 @@ class VisionFigureParser:
         self.figure_contexts = kwargs.get("figure_contexts") or []
         self.context_size = max(0, int(kwargs.get("context_size", 0) or 0))
         self._extract_figures_info(figures_data)
-        assert len(self.figures) == len(self.descriptions)
-        assert not self.positions or (len(self.figures) == len(self.positions))
+        if len(self.figures) != len(self.descriptions):
+            raise ValueError(f"Mismatch between number of figures ({len(self.figures)}) and descriptions ({len(self.descriptions)})")
+        if self.positions and (len(self.figures) != len(self.positions)):
+            raise ValueError(f"Mismatch between number of figures ({len(self.figures)}) and positions ({len(self.positions)})")
 
     def _extract_figures_info(self, figures_data):
         self.figures = []
@@ -211,16 +221,25 @@ class VisionFigureParser:
 
         for item in figures_data:
             # position
-            if len(item) == 2 and isinstance(item[0], tuple) and len(item[0]) == 2 and isinstance(item[1], list) and isinstance(item[1][0], tuple) and len(item[1][0]) == 5:
+            if self._is_positioned_figure(item):
                 img_desc = item[0]
-                assert len(img_desc) == 2 and isinstance(img_desc[0], Image.Image) and isinstance(img_desc[1], list), "Should be (figure, [description])"
+                if not (len(img_desc) == 2 and isinstance(img_desc[0], Image.Image) and isinstance(img_desc[1], list)):
+                    raise ValueError(f"Invalid figure data format inside positioned item: {img_desc}")
                 self.figures.append(img_desc[0])
                 self.descriptions.append(img_desc[1])
                 self.positions.append(item[1])
             else:
-                assert len(item) == 2 and isinstance(item[0], Image.Image) and isinstance(item[1], list), f"Unexpected form of figure data: get {len(item)=}, {item=}"
+                if not (len(item) == 2 and isinstance(item[0], Image.Image) and isinstance(item[1], list)):
+                    raise ValueError(f"Unexpected form of figure data: get {len(item)=}, {item=}")
                 self.figures.append(item[0])
                 self.descriptions.append(item[1])
+
+    def _is_positioned_figure(self, item):
+        """Check if item is in format ((Image, [desc]), [(pos_tuple)])"""
+        if len(item) != 2:
+            return False
+        img_desc, positions = item
+        return isinstance(img_desc, tuple) and len(img_desc) == 2 and isinstance(positions, list) and positions and isinstance(positions[0], tuple) and len(positions[0]) == 5
 
     def _assemble(self):
         self.assembled = []
@@ -280,9 +299,12 @@ class VisionFigureParser:
             futures.append(shared_executor.submit(process, idx, img_binary))
 
         for future in as_completed(futures):
-            figure_num, txt = future.result()
-            if txt:
-                self.descriptions[figure_num] = txt + "\n".join(self.descriptions[figure_num])
+            try:
+                figure_num, txt = future.result()
+                if txt:
+                    self.descriptions[figure_num] = [txt] + self.descriptions[figure_num]
+            except Exception as e:
+                logging.error(f"[VisionFigureParser] Error processing figure: {e}")
 
         self._assemble()
 

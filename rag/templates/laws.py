@@ -30,28 +30,11 @@ from common.parser_config_utils import normalize_layout_recognizer
 
 class Docx(DocxParser):
     def __init__(self):
-        pass
+        super().__init__()
 
     def __clean(self, line):
         line = re.sub(r"\u3000", " ", line).strip()
         return line
-
-    def old_call(self, filename, binary=None, from_page=0, to_page=100000):
-        self.doc = Document(filename) if not binary else Document(BytesIO(binary))
-        pn = 0
-        lines = []
-        for p in self.doc.paragraphs:
-            if pn > to_page:
-                break
-            if from_page <= pn < to_page and p.text.strip():
-                lines.append(self.__clean(p.text))
-            for run in p.runs:
-                if "lastRenderedPageBreak" in run._element.xml:
-                    pn += 1
-                    continue
-                if "w:br" in run._element.xml and 'type="page"' in run._element.xml:
-                    pn += 1
-        return [line for line in lines if line]
 
     def __call__(self, filename, binary=None, from_page=0, to_page=100000):
         self.doc = Document(filename) if not binary else Document(BytesIO(binary))
@@ -78,8 +61,14 @@ class Docx(DocxParser):
 
         sorted_levels = sorted(level_set)
 
-        h2_level = sorted_levels[1] if len(sorted_levels) > 1 else 1
-        h2_level = sorted_levels[-2] if h2_level == sorted_levels[-1] and len(sorted_levels) > 2 else h2_level
+        if not sorted_levels:
+            h2_level = 1
+        elif len(sorted_levels) > 1:
+            h2_level = sorted_levels[1]
+            if h2_level == sorted_levels[-1] and len(sorted_levels) > 2:
+                h2_level = sorted_levels[-2]
+        else:
+            h2_level = 1
 
         root = Node(level=0, depth=h2_level, texts=[])
         root.build_tree(lines)
@@ -89,7 +78,7 @@ class Docx(DocxParser):
 
 class Pdf(PdfParser):
     def __init__(self):
-        self.model_speciess = ParserType.LAWS.value
+        self.model_species = ParserType.LAWS.value
         super().__init__()
 
     def __call__(self, filename, binary=None, from_page=0, to_page=100000, zoomin=3, callback=None):
@@ -118,8 +107,10 @@ class Pdf(PdfParser):
 
 def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, **kwargs):
     """
-    Supported file formats are docx, pdf, txt.
+    Supported file formats are docx, doc, pdf, txt, md, markdown, mdx, htm, html. (Case-insensitive)
+    This function performs structural parsing and chunking for legal or regulatory documents.
     """
+    callback = callback or (lambda *a, **k: None)
     parser_config = kwargs.get("parser_config", {"chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC"})
     doc = {"docnm_kwd": filename, "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))}
     doc["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(doc["title_tks"])
@@ -190,8 +181,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
             logging.warning(f"tika not available: {e}. Unsupported .doc parsing for {filename}.")
             return []
 
-        if binary and isinstance(binary, bytes):
-            doc_parsed = tika_parser.from_buffer(BytesIO(binary))
+        if binary:
+            binary_bytes = binary.getvalue() if hasattr(binary, "getvalue") else binary
+            doc_parsed = tika_parser.from_buffer(binary_bytes)
         else:
             doc_parsed = tika_parser.from_file(filename)
 
@@ -217,9 +209,6 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         callback(0.99, "No chunk parsed out.")
 
     return tokenize_chunks(res, doc, eng, pdf_parser)
-
-    # chunks = hierarchical_merge(bull, sections, 5)
-    #     return tokenize_chunks(["\n".join(ck)for ck in chunks], doc, eng, pdf_parser)
 
 
 if __name__ == "__main__":

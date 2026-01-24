@@ -19,6 +19,7 @@ import logging
 import os
 import re
 import time
+import uuid
 from io import BytesIO
 from os import PathLike
 from pathlib import Path
@@ -50,7 +51,7 @@ class DoclingParser:
             connect=retries,
             backoff_factor=backoff_factor,
             status_forcelist=status_forcelist,
-            allowed_methods=None,  # Allow retries on all methods including POST
+            allowed_methods=["GET", "HEAD", "OPTIONS"],
         )
         adapter = HTTPAdapter(max_retries=retry)
         session.mount("http://", adapter)
@@ -134,6 +135,8 @@ class DoclingParser:
             if isinstance(binary, (bytes, bytearray)):
                 file_content = binary
             elif hasattr(binary, "read"):
+                if hasattr(binary, "seek"):
+                    binary.seek(0)
                 file_content = binary.read()
         elif filepath:
             try:
@@ -162,6 +165,8 @@ class DoclingParser:
                 "do_ocr": "true",
                 "do_table_structure": "true",
             }
+            # Add idempotency key to prevent duplicate jobs on retries (though retries are disabled for POST now)
+            headers["Idempotency-Key"] = str(uuid.uuid4())
 
             if callback:
                 callback(0.15, "[Docling] Submitting job...")
@@ -237,8 +242,6 @@ class DoclingParser:
                         error_msg = status_data.get("error") or status_data.get("message") or "Unknown error"
                         raise RuntimeError(f"[Docling] Job failed: {error_msg}")
 
-                    # Calculate elapsed time for this poll and sleep only for the remainder
-                    # This avoids adding delay when the server already honored long-polling
                     # Calculate elapsed time for this poll and sleep only for the remainder
                     # This avoids adding delay when the server already honored long-polling
                     poll_elapsed = time.monotonic() - poll_start
@@ -366,5 +369,12 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     parser = DoclingParser()
     # Test valid connection if you have a running server, else this might fail
-    # sections, tables = parser.parse_pdf("test.pdf", binary=b"%PDF-1.4...")
-    pass
+    logging.basicConfig(level=logging.INFO)
+    parser = DoclingParser()
+    try:
+        if parser.check_installation():
+            print("Docling server is reachable.")
+        else:
+            print("Docling server is NOT reachable.")
+    except Exception as e:
+        print(f"Error checking verification: {e}")

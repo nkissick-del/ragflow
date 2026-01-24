@@ -24,7 +24,7 @@ from rag.nlp import rag_tokenizer
 from common import settings
 
 
-def beAdoc(d, q, a, eng, row_num=-1):
+def beAdoc(d, q, a, row_num=-1):
     d["content_with_weight"] = q
     d["content_ltks"] = rag_tokenizer.tokenize(q)
     d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
@@ -46,18 +46,19 @@ def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
     All the deformed lines will be ignored.
     Every pair will be treated as a chunk.
     """
-    eng = lang.lower() == "english"
     res = []
     doc = {"docnm_kwd": filename, "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))}
     if re.search(r"\.xlsx?$", filename, re.IGNORECASE):
-        callback(0.1, "Start to parse.")
+        if callback:
+            callback(0.1, "Start to parse.")
         excel_parser = Excel()
         for ii, (q, a) in enumerate(excel_parser(filename, binary, callback)):
-            res.append(beAdoc(deepcopy(doc), q, a, eng, ii))
+            res.append(beAdoc(deepcopy(doc), q, a, ii))
         return res
 
     elif re.search(r"\.(txt)$", filename, re.IGNORECASE):
-        callback(0.1, "Start to parse.")
+        if callback:
+            callback(0.1, "Start to parse.")
         txt = get_text(filename, binary)
         lines = txt.split("\n")
         comma, tab = 0, 0
@@ -68,7 +69,6 @@ def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
                 tab += 1
         delimiter = "\t" if tab >= comma else ","
 
-        fails = []
         content = ""
         i = 0
         while i < len(lines):
@@ -77,38 +77,42 @@ def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
                 content += "\n" + lines[i]
             elif len(arr) == 2:
                 content += "\n" + arr[0]
-                res.append(beAdoc(deepcopy(doc), content, arr[1], eng, i))
+                res.append(beAdoc(deepcopy(doc), content, arr[1], i))
                 content = ""
             i += 1
-            if len(res) % 999 == 0:
-                callback(len(res) * 0.6 / len(lines), ("Extract Tags: {}".format(len(res)) + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
+            if callback and len(res) > 0 and len(res) % 999 == 0:
+                callback(len(res) * 0.6 / len(lines), "Extract Tags: {}".format(len(res)))
 
-        callback(0.6, ("Extract Tags: {}".format(len(res)) + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
+        if callback:
+            callback(0.6, "Extract Tags: {}".format(len(res)))
 
         return res
 
     elif re.search(r"\.(csv)$", filename, re.IGNORECASE):
-        callback(0.1, "Start to parse.")
+        if callback:
+            callback(0.1, "Start to parse.")
         txt = get_text(filename, binary)
         lines = txt.split("\n")
 
-        fails = []
         content = ""
         res = []
         reader = csv.reader(lines)
 
-        for i, row in enumerate(reader):
+        record_idx = 0
+        for row in reader:
             row = [r.strip() for r in row if r.strip()]
             if len(row) != 2:
-                content += "\n" + lines[i]
+                content += "\n" + "\n".join(row)
             elif len(row) == 2:
                 content += "\n" + row[0]
-                res.append(beAdoc(deepcopy(doc), content, row[1], eng, i))
+                res.append(beAdoc(deepcopy(doc), content, row[1], record_idx))
                 content = ""
-            if len(res) % 999 == 0:
-                callback(len(res) * 0.6 / len(lines), ("Extract Tags: {}".format(len(res)) + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
+                record_idx += 1
+            if callback and len(res) > 0 and len(res) % 999 == 0:
+                callback(len(res) * 0.6 / len(lines), "Extract Tags: {}".format(len(res)))
 
-        callback(0.6, ("Extract Tags: {}".format(len(res)) + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
+        if callback:
+            callback(0.6, "Extract Tags: {}".format(len(res)))
         return res
 
     raise NotImplementedError("Excel, csv(txt) format files are supported.")
@@ -124,16 +128,18 @@ def label_question(question, kbs):
         if kb.parser_config.get("tag_kb_ids"):
             tag_kb_ids.extend(kb.parser_config["tag_kb_ids"])
     if tag_kb_ids:
-        all_tags = get_tags_from_cache(tag_kb_ids)
-        if not all_tags:
-            all_tags = settings.retriever.all_tags_in_portion(kb.tenant_id, tag_kb_ids)
-            set_tags_to_cache(tags=all_tags, kb_ids=tag_kb_ids)
-        else:
-            all_tags = json.loads(all_tags)
         tag_kbs = KnowledgebaseService.get_by_ids(tag_kb_ids)
         if not tag_kbs:
             return tags
-        tags = settings.retriever.tag_query(question, list(set([kb.tenant_id for kb in tag_kbs])), tag_kb_ids, all_tags, kb.parser_config.get("topn_tags", 3))
+        tenant_ids = list(set(k.tenant_id for k in tag_kbs))
+        topn = tag_kbs[0].parser_config.get("topn_tags", 3)
+        all_tags = get_tags_from_cache(tag_kb_ids)
+        if not all_tags:
+            all_tags = settings.retriever.all_tags_in_portion(tenant_ids[0], tag_kb_ids)
+            set_tags_to_cache(tags=all_tags, kb_ids=tag_kb_ids)
+        else:
+            all_tags = json.loads(all_tags)
+        tags = settings.retriever.tag_query(question, tenant_ids, tag_kb_ids, all_tags, topn)
     return tags
 
 
@@ -143,4 +149,4 @@ if __name__ == "__main__":
     def dummy(prog=None, msg=""):
         pass
 
-    chunk(sys.argv[1], from_page=0, to_page=10, callback=dummy)
+    chunk(sys.argv[1], callback=dummy)

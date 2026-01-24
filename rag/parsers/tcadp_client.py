@@ -14,6 +14,8 @@
 #  limitations under the License.
 #
 import base64
+import html
+import io
 import json
 import logging
 import os
@@ -47,7 +49,6 @@ class TencentCloudAPIClient:
         self.secret_id = secret_id
         self.secret_key = secret_key
         self.region = region
-        self.outlines = []
 
         # Create credentials
         self.cred = credential.Credential(secret_id, secret_key)
@@ -176,11 +177,15 @@ class TencentCloudAPIClient:
             filename = f"tcadp_result_{timestamp}.zip"
             file_path = os.path.join(output_dir, filename)
 
-            with requests.get(download_url, stream=True) as response:
-                response.raise_for_status()
-                with open(file_path, "wb") as f:
-                    response.raw.decode_content = True
-                    shutil.copyfileobj(response.raw, f)
+            try:
+                with requests.get(download_url, stream=True, timeout=30) as response:
+                    response.raise_for_status()
+                    with open(file_path, "wb") as f:
+                        response.raw.decode_content = True
+                        shutil.copyfileobj(response.raw, f)
+            except (requests.exceptions.Timeout, requests.exceptions.RequestException) as e:
+                logging.error(f"[TCADP] HTTP error downloading result: {e}")
+                raise
 
             logging.info(f"[TCADP] Document parsing result downloaded to: {os.path.basename(file_path)}")
             return file_path
@@ -197,8 +202,6 @@ class TencentCloudAPIClient:
 
 class TCADPParser:
     def __init__(self, secret_id: str = None, secret_key: str = None, region: str = "ap-guangzhou", table_result_type: str = None, markdown_image_response_type: str = None):
-        super().__init__()
-
         # First initialize logger
         self.logger = logging.getLogger(self.__class__.__name__)
 
@@ -265,6 +268,8 @@ class TCADPParser:
 
         if binary:
             # If binary data is directly available, convert directly
+            if isinstance(binary, (io.BytesIO, io.BufferedIOBase)):
+                binary = binary.getvalue() if hasattr(binary, "getvalue") else binary.read()
             return base64.b64encode(binary).decode("utf-8")
         else:
             # Read from file path and convert
@@ -368,7 +373,8 @@ class TCADPParser:
                             table_html += "  <tr>\n"
                             for cell in row:
                                 tag = "th" if i == 0 else "td"
-                                table_html += f"    <{tag}>{cell}</{tag}>\n"
+                                escaped_cell = html.escape(str(cell), quote=True)
+                                table_html += f"    <{tag}>{escaped_cell}</{tag}>\n"
                             table_html += "  </tr>\n"
                         table_html += "</table>"
                         tables.append(table_html)
@@ -391,13 +397,18 @@ class TCADPParser:
         """Parse PDF document"""
 
         temp_file = None
+        out_dir = None
         created_tmp_dir = False
 
         try:
             # Handle input file
             if binary:
                 temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
-                temp_file.write(binary)
+                if isinstance(binary, (io.BytesIO, io.BufferedIOBase)):
+                    binary_bytes = binary.getvalue() if hasattr(binary, "getvalue") else binary.read()
+                else:
+                    binary_bytes = binary
+                temp_file.write(binary_bytes)
                 temp_file.close()
                 file_path = temp_file.name
                 self.logger.info(f"[TCADP] Received binary PDF -> {os.path.basename(file_path)}")
@@ -514,7 +525,7 @@ class TCADPParser:
                 except Exception:
                     pass
 
-            if delete_output and created_tmp_dir and out_dir.exists():
+            if delete_output and created_tmp_dir and out_dir is not None and out_dir.exists():
                 try:
                     shutil.rmtree(out_dir)
                 except Exception:

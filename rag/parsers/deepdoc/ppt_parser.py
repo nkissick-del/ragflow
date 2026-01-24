@@ -17,23 +17,24 @@
 import logging
 from io import BytesIO
 from pptx import Presentation
+from pptx.enum.shapes import MSO_SHAPE_TYPE
 
 
 class RAGFlowPptParser:
     def __init__(self):
-        super().__init__()
+        pass
 
     def __get_bulleted_text(self, paragraph):
         is_bulleted = bool(paragraph._p.xpath("./a:pPr/a:buChar")) or bool(paragraph._p.xpath("./a:pPr/a:buAutoNum")) or bool(paragraph._p.xpath("./a:pPr/a:buBlip"))
         if is_bulleted:
-            return f"{'  '* paragraph.level}.{paragraph.text}"
+            return f"{'  ' * paragraph.level}• {paragraph.text}"
         else:
             return paragraph.text
 
     def __extract(self, shape):
         try:
             # First try to get text content
-            if hasattr(shape, 'has_text_frame') and shape.has_text_frame:
+            if hasattr(shape, "has_text_frame") and shape.has_text_frame:
                 text_frame = shape.text_frame
                 texts = []
                 for paragraph in text_frame.paragraphs:
@@ -46,21 +47,26 @@ class RAGFlowPptParser:
                 shape_type = shape.shape_type
             except NotImplementedError:
                 # If shape_type is not available, try to get text content
-                if hasattr(shape, 'text'):
+                if hasattr(shape, "text"):
                     return shape.text.strip()
                 return ""
 
             # Handle table
-            if shape_type == 19:
+            if shape_type == MSO_SHAPE_TYPE.TABLE:
                 tb = shape.table
                 rows = []
                 for i in range(1, len(tb.rows)):
-                    rows.append("; ".join([tb.cell(
-                        0, j).text + ": " + tb.cell(i, j).text for j in range(len(tb.columns)) if tb.cell(i, j)]))
+                    row_cells = []
+                    for j in range(len(tb.columns)):
+                        cell = tb.cell(i, j)
+                        if cell.text.strip():
+                            row_cells.append(tb.cell(0, j).text + ": " + cell.text)
+                    if row_cells:
+                        rows.append("; ".join(row_cells))
                 return "\n".join(rows)
 
             # Handle group shape
-            if shape_type == 6:
+            if shape_type == MSO_SHAPE_TYPE.GROUP:
                 texts = []
                 for p in sorted(shape.shapes, key=lambda x: (x.top // 10, x.left)):
                     t = self.__extract(p)
@@ -74,20 +80,16 @@ class RAGFlowPptParser:
             logging.error(f"Error processing shape: {str(e)}")
             return ""
 
-    def __call__(self, fnm, from_page, to_page, callback=None):
-        ppt = Presentation(fnm) if isinstance(
-            fnm, str) else Presentation(
-            BytesIO(fnm))
+    def __call__(self, fnm, from_page, to_page):
+        ppt = Presentation(fnm) if isinstance(fnm, str) else Presentation(BytesIO(fnm))
         txts = []
-        self.total_page = len(ppt.slides)
         for i, slide in enumerate(ppt.slides):
             if i < from_page:
                 continue
             if i >= to_page:
                 break
             texts = []
-            for shape in sorted(
-                    slide.shapes, key=lambda x: ((x.top if x.top is not None else 0) // 10, x.left if x.left is not None else 0)):
+            for shape in sorted(slide.shapes, key=lambda x: ((x.top if x.top is not None else 0) // 10, x.left if x.left is not None else 0)):
                 txt = self.__extract(shape)
                 if txt:
                     texts.append(txt)

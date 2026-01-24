@@ -82,15 +82,25 @@ class TestStandardizedDocument(unittest.TestCase):
 
     def test_cache_invalidation_on_content_change(self):
         """Test that modifying content invalidates elements cache."""
-        doc = StandardizedDocument(_content="# Test")
 
-        # Access elements to populate cache
-        _ = doc.elements
+        class ConcreteDocument(StandardizedDocument):
+            def _parse_elements(self):
+                return []
+
+        doc = ConcreteDocument(_content="# Test")
+
+        # Manually populate elements to simulate a parsed state
+        elements = [DocumentElement(type="heading", content="Test", level=1)]
+        doc.populate_elements(elements)
+
+        # Verify elements are present
+        self.assertEqual(len(doc.elements), 1)
 
         # Modify content
         doc.content = "# New Content"
 
         # Elements should be re-derived (empty in our stub implementation)
+        # This confirms that the cache (self._elements) was cleared/invalidated
         self.assertEqual(doc.elements, [])
 
     def test_populate_elements_method(self):

@@ -695,14 +695,20 @@ TBL = {
 }
 
 
-def get_names(id):
+def get_names(id, visited=None):
+    if visited is None:
+        visited = set()
     id = str(id)
+    if id in visited:
+        return []
+    visited.add(id)
+
     nms = []
     d = TBL.get(id)
     if not d:
         return []
     nms.append(d["name"])
-    p = get_names(d["parent"])
+    p = get_names(d["parent"], visited)
     if p:
         nms.extend(p)
     return nms

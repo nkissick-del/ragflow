@@ -17,9 +17,7 @@
 import logging
 import re
 from timeit import default_timer as timer
-from rag.orchestration.router import PARSERS, by_deepdoc, by_mineru, by_docling, by_tcadp, by_paddleocr, by_plaintext
-
-from .router import UniversalRouter
+from rag.orchestration.router import PARSERS, by_deepdoc, by_mineru, by_docling, by_tcadp, by_paddleocr, by_plaintext, UniversalRouter
 from rag.templates.general import General
 from .base import StandardizedDocument
 from rag.utils.file_utils import extract_embed_file, extract_html
@@ -41,7 +39,17 @@ __all__ = [
     "chunk",
     "adapt_docling_output",
     "StandardizedDocument",
+    "ParsingError",
 ]
+
+
+class ParsingError(Exception):
+    """Raised when document parsing fails and fallbacks are exhausted."""
+
+    def __init__(self, message, original_exception=None, retry_exception=None):
+        super().__init__(message)
+        self.original_exception = original_exception
+        self.retry_exception = retry_exception
 
 
 def adapt_docling_output(sections, tables, parser_config) -> StandardizedDocument:
@@ -67,7 +75,7 @@ def adapt_docling_output(sections, tables, parser_config) -> StandardizedDocumen
         content = "\n".join(sections) if sections else ""
 
     return StandardizedDocument(
-        _content=content,
+        content_input=content,
         metadata={
             "parser": "docling",
             "layout_recognizer": parser_config.get("layout_recognizer", "Docling"),
@@ -109,10 +117,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
             except Exception as e:
                 logging.warning(f"Failed to extract embeds: {e}")
         else:
-            # raise Exception("Embedding extraction from file path is not supported.")
-            pass  # Matching original behavior which raised exception only if binary is None?
-            # Original: if binary is not None: embeds = ... else: raise ...
-            # We should keep it safe.
+            # No binary content available, skip embedding extraction
             pass
 
         for embed_filename, embed_bytes in embeds:
@@ -130,7 +135,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
     # Pass configuration to Router
     try:
         parsed = UniversalRouter.route(filename, binary, from_page, to_page, lang, callback, **kwargs)
-        sections, tables, section_images, pdf_parser, is_markdown, urls = parsed
+        sections, tables, section_images, pdf_parser, is_markdown, urls = (parsed.sections, parsed.tables, parsed.section_images, parsed.pdf_parser, parsed.is_markdown, parsed.urls)
     except Exception as e:
         # Fallback Strategy for Docling
         if parser_config.get("layout_recognizer") == "Docling":
@@ -148,10 +153,10 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
                 sections, tables, section_images, pdf_parser, is_markdown, urls = parsed
             except Exception as retry_e:
                 logging.error(f"Fallback parsing (DeepDOC) also failed: {retry_e}")
-                return []
+                raise ParsingError(f"Parsing and fallback failed for {filename}", original_exception=e, retry_exception=retry_e)
         else:
             logging.error(f"Routing/Parsing failed: {e}")
-            return []
+            raise ParsingError(f"Routing/Parsing failed for {filename}", original_exception=e)
 
     # 4. URL Recursion
     url_res = []
@@ -164,7 +169,11 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
                 sub_url_res = chunk(url, html_bytes, callback=callback, lang=lang, is_root=False, **kwargs)
             except Exception as e:
                 logging.info(f"Failed to chunk url in registered file type {url}: {e}")
-                sub_url_res = chunk(f"{index}.html", html_bytes, callback=callback, lang=lang, is_root=False, **kwargs)
+                try:
+                    sub_url_res = chunk(f"{index}.html", html_bytes, callback=callback, lang=lang, is_root=False, **kwargs)
+                except Exception as fallback_e:
+                    logging.error(f"Failed to chunk url with fallback {index}.html: {fallback_e}")
+                    sub_url_res = []
             url_res.extend(sub_url_res)
 
     # 5. Template Processing
@@ -174,7 +183,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
     # Remove parser_config from kwargs if present to avoid multiple values error for 'parser_config'
     kwargs.pop("parser_config", None)
 
-    if is_docling and use_semantic and isinstance(sections, str):
+    if is_docling and use_semantic and is_markdown:
         # NEW PATH: Docling with semantic chunking enabled
         # Route to semantic template for structure-aware processing
         from rag.templates.semantic import Semantic
@@ -186,7 +195,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         # LEGACY PATH: DeepDOC, or Docling without semantic flag
         res = General.chunk(filename, sections, tables, section_images, pdf_parser, is_markdown, parser_config, doc, is_english, callback, is_docling=is_docling, **kwargs)
 
-    logging.info("naive_merge({}): {}".format(filename, timer() - st))
+    logging.info("chunk({}): {}".format(filename, timer() - st))
 
     # 6. Merge Results
     if embed_res:

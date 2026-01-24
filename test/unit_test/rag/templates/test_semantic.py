@@ -24,30 +24,31 @@ https://github.com/run-llama/llama_index/blob/main/llama-index-core/llama_index/
 import unittest
 from unittest.mock import patch
 
-# Import the semantic template components
-from rag.templates.semantic import Semantic, SemanticChunk
 from rag.orchestration.base import StandardizedDocument
 
 
-class TestSemanticChunkDataclass(unittest.TestCase):
-    """Unit tests for SemanticChunk dataclass."""
+class SemanticTestBase(unittest.TestCase):
+    """Base class for Semantic template tests handling module reloading."""
 
     def setUp(self):
         import sys
 
         # Remove modules from sys.modules to force re-import
-        if "rag.nlp" in sys.modules:
-            del sys.modules["rag.nlp"]
         if "rag.templates.semantic" in sys.modules:
             del sys.modules["rag.templates.semantic"]
 
         # Now import to ensure fresh state
-        import rag.nlp
         import rag.templates.semantic
 
         # Bind fresh classes to self for use in tests
         self.SemanticChunk = rag.templates.semantic.SemanticChunk
         self.Semantic = rag.templates.semantic.Semantic
+
+
+class TestSemanticChunkDataclass(SemanticTestBase):
+    """Unit tests for SemanticChunk dataclass."""
+
+    # Inherits setUp from SemanticTestBase
 
     def test_create_chunk(self):
         """Test creating a semantic chunk."""
@@ -57,20 +58,10 @@ class TestSemanticChunkDataclass(unittest.TestCase):
         self.assertEqual(chunk.metadata["tokens"], 10)
 
 
-class TestSemanticParseWithHeaders(unittest.TestCase):
+class TestSemanticParseWithHeaders(SemanticTestBase):
     """Unit tests for the _parse_with_headers algorithm."""
 
-    def setUp(self):
-        import sys
-
-        if "rag.nlp" in sys.modules:
-            del sys.modules["rag.nlp"]
-        if "rag.templates.semantic" in sys.modules:
-            del sys.modules["rag.templates.semantic"]
-        import rag.templates.semantic
-
-        self.Semantic = rag.templates.semantic.Semantic
-
+    # Inherits setUp from SemanticTestBase
     def test_single_header(self):
         """Test parsing content with a single header."""
         content = """# Introduction
@@ -240,24 +231,20 @@ Another paragraph.
             self.assertEqual(chunk.header_path, ["Header"])
 
 
-class TestSemanticChunkMethod(unittest.TestCase):
+class TestSemanticChunkMethod(SemanticTestBase):
     """Tests for the self.Semantic.chunk() public method."""
 
-    def setUp(self):
-        import sys
+    # Inherits setUp from SemanticTestBase
 
-        if "rag.nlp" in sys.modules:
-            del sys.modules["rag.nlp"]
-        if "rag.templates.semantic" in sys.modules:
-            del sys.modules["rag.templates.semantic"]
+    def test_chunk_produces_ragflow_format(self):
+        """Test that chunk() produces dicts with required RAGFlow fields."""
+        # Mock tokenizer manually to allow side_effect control
+        from unittest.mock import MagicMock
         import rag.templates.semantic
 
-        self.Semantic = rag.templates.semantic.Semantic
+        mock_tokenizer = MagicMock()
+        rag.templates.semantic.rag_tokenizer = mock_tokenizer
 
-    @patch("rag.templates.semantic.rag_tokenizer")
-    def test_chunk_produces_ragflow_format(self, mock_tokenizer):
-        """Test that chunk() produces dicts with required RAGFlow fields."""
-        # Mock tokenizer
         mock_tokenizer.tokenize.return_value = "tokenized content"
         mock_tokenizer.fine_grained_tokenize.return_value = "fine grained"
 
@@ -277,6 +264,10 @@ class TestSemanticChunkMethod(unittest.TestCase):
         self.assertIn("content_sm_ltks", chunk)
         self.assertIn("header_path", chunk)
         self.assertIn("docnm_kwd", chunk)
+
+        # Verify tokenizer was called
+        mock_tokenizer.tokenize.assert_called()
+        mock_tokenizer.fine_grained_tokenize.assert_called()
 
     @patch("rag.templates.semantic.rag_tokenizer")
     def test_chunk_preserves_header_path(self, mock_tokenizer):

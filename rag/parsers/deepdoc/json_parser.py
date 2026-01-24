@@ -20,6 +20,7 @@
 
 import json
 from typing import Any
+import logging
 
 from rag.nlp import find_codec
 
@@ -134,6 +135,7 @@ class RAGFlowJsonParser:
             chunks = self.split_json(json_data, True)
             sections = [json.dumps(line, ensure_ascii=False) for line in chunks if line]
         except json.JSONDecodeError:
+            logging.error("Failed to parse JSON content.")
             pass
         return sections
 
@@ -162,16 +164,17 @@ class RAGFlowJsonParser:
         except json.JSONDecodeError:
             pass
 
-        sample_limit = min(len(lines), sample_limit)
-        sample_lines = lines[:sample_limit]
-        valid_lines = sum(1 for line in sample_lines if self._is_valid_json(line))
+        sample_count = min(len(lines), sample_limit)
+        sample_lines = lines[:sample_count]
+        valid_json_count = sum(1 for line in sample_lines if self._is_valid_json(line))
 
-        if not valid_lines:
+        if not valid_json_count:
             return False
 
-        return (valid_lines / len(sample_lines)) >= threshold
+        return (valid_json_count / len(sample_lines)) >= threshold
 
-    def _is_valid_json(self, line: str) -> bool:
+    @staticmethod
+    def _is_valid_json(line: str) -> bool:
         try:
             json.loads(line)
             return True

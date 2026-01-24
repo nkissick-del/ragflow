@@ -17,6 +17,8 @@
 import re
 
 from .utils import get_text
+from common.token_utils import num_tokens_from_string
+import codecs
 
 
 class RAGFlowTxtParser:
@@ -28,18 +30,16 @@ class RAGFlowTxtParser:
     def parser_txt(cls, txt, chunk_token_num=128, delimiter="\n!?;。；！？"):
         if not isinstance(txt, str):
             raise TypeError("txt type should be str!")
-        import common
-
-        num_tokens_from_string = common.token_utils.num_tokens_from_string
 
         cks = [""]
         tk_nums = [0]
-        delimiter = delimiter.encode("utf-8").decode("unicode_escape").encode("latin1").decode("utf-8")
+        if isinstance(delimiter, str):
+            delimiter = codecs.decode(delimiter, "unicode_escape")
 
         def add_chunk(t):
             nonlocal cks, tk_nums, delimiter
             tnum = num_tokens_from_string(t)
-            if tk_nums[-1] > chunk_token_num:
+            if (tk_nums[-1] > 0) and (tk_nums[-1] + tnum > chunk_token_num):
                 cks.append(t)
                 tk_nums.append(tnum)
             else:
@@ -56,11 +56,13 @@ class RAGFlowTxtParser:
         if s < len(delimiter):
             dels.extend(list(delimiter[s:]))
         dels = [re.escape(d) for d in dels if d]
-        dels = [d for d in dels if d]
-        dels = "|".join(dels)
-        secs = re.split(r"(%s)" % dels, txt)
+        if not dels:
+            secs = [txt]
+        else:
+            dels = "|".join(dels)
+            secs = re.split(r"(%s)" % dels, txt)
         for sec in secs:
-            if re.match(f"^{dels}$", sec):
+            if dels and re.match(f"^{dels}$", sec):
                 continue
             add_chunk(sec)
 

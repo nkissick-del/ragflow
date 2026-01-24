@@ -14,19 +14,18 @@
 #  limitations under the License.
 #
 
+from typing import Optional
 from rag.nlp import find_codec
 
 
-def get_text(fnm: str, binary=None) -> str:
+def get_text(fnm: str, binary: Optional[bytes] = None) -> str:
     txt = ""
-    if binary:
+    if binary is not None:
         encoding = find_codec(binary)
         txt = binary.decode(encoding, errors="ignore")
     else:
-        with open(fnm, "r") as f:
-            while True:
-                line = f.readline()
-                if not line:
-                    break
-                txt += line
+        with open(fnm, "rb") as f:
+            binary = f.read()
+            encoding = find_codec(binary)
+            txt = binary.decode(encoding, errors="ignore")
     return txt

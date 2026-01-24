@@ -55,14 +55,14 @@ def refactor(cv):
             if "external" in v and v["external"] is not None:
                 del v["external"]
             vv.append(v)
-        cv[n] = {str(i): vv[i] for i in range(len(vv))}
+        cv[n] = {str(idx): item for idx, item in enumerate(vv)}
 
     basics = [
         ("basic_salary_month", "salary_month"),
         ("expect_annual_salary_from", "expect_annual_salary"),
     ]
     for n, t in basics:
-        if cv["basic"].get(n):
+        if n in cv["basic"]:
             cv["basic"][t] = cv["basic"][n]
             del cv["basic"][n]
 
@@ -77,11 +77,7 @@ def refactor(cv):
 
     if work:
         cv["basic"]["work_start_time"] = work[0].get("start_time", "")
-        cv["basic"]["management_experience"] = (
-            "Y"
-            if any([w.get("management_experience", "") == "Y" for w in work])
-            else "N"
-        )
+        cv["basic"]["management_experience"] = "Y" if any([w.get("management_experience", "") == "Y" for w in work]) else "N"
         cv["basic"]["annual_salary"] = work[-1].get("annual_salary_from", "0")
 
         for n in [
@@ -101,7 +97,7 @@ def refactor(cv):
             if n in edu[-1]:
                 cv["basic"][n] = edu[-1][n]
 
-    cv["basic"]["updated_at"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    cv["basic"]["updated_at"] = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     if "contact" not in cv:
         cv["contact"] = {}
     if not cv["contact"].get("name"):

@@ -174,7 +174,9 @@ export const useSelectParserList = (): Array<{
       .filter((x) => x.trim() !== '')
       .map((x) => {
         const arr = x.split(':');
-        return { value: arr[0], label: arr[1] };
+        const value = arr[0].trim();
+        const label = arr[1] ? arr[1].trim() : value;
+        return { value, label };
       });
 
     if (tenantParsers.length === 0) {
@@ -192,7 +194,7 @@ export const useSelectParserList = (): Array<{
     });
 
     return result;
-  }, [tenantInfo, apiTemplates]);
+  }, [tenantInfo?.parser_ids, apiTemplates]);
 
   return parserList;
 };

@@ -20,9 +20,7 @@ import re
 
 from rag.parsers.deepdoc.figure_parser import vision_figure_parser_pdf_wrapper
 from common.constants import ParserType
-from rag.parsers.deepdoc.figure_parser import vision_figure_parser_pdf_wrapper
-from common.constants import ParserType
-from rag.orchestration import orchestrator  # noqa: F401
+from rag.orchestration import orchestrator  # noqa: F401 - Kept for side-effects (registration)
 
 from rag.nlp import rag_tokenizer, tokenize, tokenize_table, add_positions, bullets_category, title_frequency, tokenize_chunks, attach_media_context
 from rag.parsers import PdfParser
@@ -68,7 +66,7 @@ class Pdf(PdfParser):
             callback(0.75, "Text merged ({:.2f}s)".format(timer() - start))
 
         # clean mess
-        if column_width < self.page_images[0].size[0] / zoomin / 2:
+        if self.page_images and column_width < self.page_images[0].size[0] / zoomin / 2:
             logging.debug("two_column................... {} {}".format(column_width, self.page_images[0].size[0] / zoomin / 2))
             self.boxes = self.sort_X_by_page(self.boxes, column_width / 2)
         for b in self.boxes:
@@ -152,7 +150,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
 
         name = layout_recognizer.strip().lower()
         pdf_parser = PARSERS.get(name, by_plaintext)
-        callback(0.1, "Start to parse.")
+        if callback:
+            callback(0.1, "Start to parse.")
 
         if name == "deepdoc":
             logging.info(f"[Paper] Using local Pdf parser for {filename}")
@@ -221,14 +220,16 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
     normalized_texts = [(sec[0] if isinstance(sec, tuple) else str(sec)) for sec in sorted_sections]
     bull = bullets_category(normalized_texts)
     most_level, levels = title_frequency(bull, sorted_sections)
-    assert len(sorted_sections) == len(levels)
+    if len(sorted_sections) != len(levels):
+        raise ValueError(f"Mismatch between number of sections ({len(sorted_sections)}) and header levels ({len(levels)}).")
     sec_ids = []
     sid = 0
     for i, lvl in enumerate(levels):
         if lvl <= most_level and i > 0 and lvl != levels[i - 1]:
             sid += 1
         sec_ids.append(sid)
-        logging.debug("{} {} {} {}".format(lvl, sorted_sections[i][0], most_level, sid))
+        sec_text = sorted_sections[i][0] if isinstance(sorted_sections[i], (tuple, list)) else str(sorted_sections[i])
+        logging.debug("{} {} {} {}".format(lvl, sec_text, most_level, sid))
 
     chunks = []
     last_sid = -2
@@ -257,4 +258,13 @@ if __name__ == "__main__":
     def dummy(prog=None, msg=""):
         pass
 
-    chunk(sys.argv[1], callback=dummy)
+    if len(sys.argv) < 2:
+        print("Usage: python paper.py <pdf_path>")
+        sys.exit(1)
+
+    try:
+        res = chunk(sys.argv[1], callback=dummy)
+        print(res)
+    except Exception as e:
+        print(f"Error parsing paper: {e}")
+        sys.exit(1)

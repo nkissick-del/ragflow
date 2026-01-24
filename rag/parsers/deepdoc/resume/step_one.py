@@ -74,16 +74,18 @@ FIELDS = [
 
 def refactor(df):
     def deal_obj(obj, k, kk):
-        if not isinstance(obj, type({})):
+        if not isinstance(obj, dict):
             return ""
         obj = obj.get(k, {})
-        if not isinstance(obj, type({})):
+        if not isinstance(obj, dict):
             return ""
         return obj.get(kk, "")
 
     def loadjson(line):
         try:
             return json.loads(line)
+        except json.JSONDecodeError:
+            pass
         except Exception:
             pass
         return {}
@@ -101,7 +103,7 @@ def refactor(df):
                 df[c] = df["obj"].map(lambda x: deal_obj(x, cc, c))
             else:
                 df[c] = df["obj"].map(
-                    lambda x: json.dumps(x.get(c, {}), ensure_ascii=False) if isinstance(x, type({})) and (isinstance(x.get(c), type({})) or not x.get(c)) else str(x).replace("None", "")
+                    lambda x: json.dumps(x.get(c, {}), ensure_ascii=False) if isinstance(x, dict) and (isinstance(x.get(c), dict) or x.get(c) is None) else ("" if x is None else str(x))
                 )
 
     extract(["education", "work", "certificate", "project", "language", "skill"])
@@ -172,21 +174,25 @@ def refactor(df):
     clms.extend(["is_management_experience", "is_marital"])
 
     df.fillna("", inplace=True)
-    for i in range(len(df)):
-        if not df.loc[i, "phone"].strip() and df.loc[i, "tel"].strip():
-            df.loc[i, "phone"] = df.loc[i, "tel"].strip()
+    df.fillna("", inplace=True)
+    mask = df["phone"].str.strip().eq("") & df["tel"].str.strip().ne("")
+    df.loc[mask, "phone"] = df.loc[mask, "tel"].str.strip()
 
-    for n in ["industry_ids", "management_experience", "marital", "tel"]:
-        for i in range(len(clms)):
-            if clms[i] == n:
-                del clms[i]
-                break
+    unwanted_set = {"industry_ids", "management_experience", "marital", "tel"}
+    clms = [c for c in clms if c not in unwanted_set]
 
     clms = list(set(clms))
 
     df = df.reindex(sorted(clms), axis=1)
-    # print(json.dumps(list(df.columns.values)), "LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL")
+
     for c in clms:
         df[c] = df[c].map(lambda s: str(s).replace("\t", " ").replace("\n", "\\n").replace("\r", "\\n"))
-    # print(df.values.tolist())
-    return dict(zip([n.split()[0] for n in FIELDS], df.values.tolist()[0]))
+
+    if df.empty or df.shape[0] != 1:
+        raise ValueError(f"DataFrame must have exactly one row, got {df.shape}")
+
+    target_fields = [n.split()[0] for n in FIELDS]
+    if len(df.columns) != len(target_fields):
+        raise ValueError(f"Column count mismatch: expected {len(target_fields)}, got {len(df.columns)}")
+
+    return dict(zip(target_fields, df.values.tolist()[0]))

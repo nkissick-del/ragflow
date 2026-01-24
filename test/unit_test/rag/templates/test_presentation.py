@@ -93,7 +93,7 @@ class MockPdfParser:
     def __call__(self, *args, **kwargs):
         return ["text"]
 
-    def __images__(self, *args, **kwargs):
+    def _images(self, *args, **kwargs):
         pass
 
     def _layouts_rec(self, *args, **kwargs):
@@ -125,58 +125,52 @@ mock_deepdoc.parser.PlainParser = MockPlainParser
 sys.modules["deepdoc"] = mock_deepdoc
 sys.modules["deepdoc.parser"] = mock_deepdoc.parser
 
-sys.modules["rag.nlp"] = MagicMock()
-sys.modules["rag.nlp"].rag_tokenizer.tokenize = MagicMock(return_value=[])
-sys.modules["rag.nlp"].rag_tokenizer.fine_grained_tokenize = MagicMock(return_value=[])
-sys.modules["rag.nlp"].is_english = MagicMock(return_value=True)
-sys.modules["rag.nlp"].tokenize = MagicMock()
-
-mock_parser_dict = {}
-mock_by_plaintext = MagicMock()
-mock_parser_dict = {}
-mock_by_plaintext = MagicMock()
-sys.modules["rag.orchestration.router"] = MagicMock()
-sys.modules["rag.orchestration.router"].PARSERS = mock_parser_dict
-sys.modules["rag.orchestration.router"].by_plaintext = mock_by_plaintext
-
-mock_common = MagicMock()
-mock_common.parser_config_utils.normalize_layout_recognizer = MagicMock(return_value=("DeepDOC", "model"))
-mock_common.settings.PARALLEL_DEVICES = 0
-sys.modules["common"] = mock_common
-sys.modules["common.settings"] = mock_common.settings
-sys.modules["common.parser_config_utils"] = mock_common.parser_config_utils
+# All global mocks are removed and will be handled by patch.dict in setUp.
 # ----------------- MOCK SETUP END -----------------
 
-HAS_PRESENTATION = False
-Pdf = None
-Ppt = None
-chunk = None
-
-try:
-    from rag.templates.presentation import Pdf, Ppt, chunk
-
-    HAS_PRESENTATION = True
-except ImportError:
-    pass
+# Imports moved to setUp to ensure mocks are in place
+# from rag.templates.presentation import Pdf, Ppt, chunk
 
 
-@unittest.skipUnless(HAS_PRESENTATION, "presentation module not available")
 class TestPresentationTemplate(unittest.TestCase):
     """Tests for the presentation template to verify callback safety and argument handling."""
 
     def setUp(self):
+        self.mock_modules = {
+            "rag.app.format_parsers": MagicMock(),
+            "rag.orchestration.router": MagicMock(),
+            "rag.templates.general": MagicMock(),
+            "rag.templates.semantic": MagicMock(),
+            "rag.nlp": MagicMock(),
+            "rag.utils.file_utils": MagicMock(),
+            "common": MagicMock(),
+            "common.settings": MagicMock(),
+            "api.db.services.llm_service": MagicMock(),
+            "rag.parsers": MagicMock(),
+            "rag.parsers.deepdoc": MagicMock(),
+            "rag.parsers.deepdoc.ppt_parser": MagicMock(),
+            "pptx": MagicMock(),
+            "deepdoc": MagicMock(),
+            "deepdoc.vision": MagicMock(),
+        }
+        self.patcher = patch.dict(sys.modules, self.mock_modules)
+        self.patcher.start()
+
+        from rag.templates.presentation import Pdf, Ppt, chunk
+
+        self.Pdf = Pdf
+        self.Ppt = Ppt
+        self.chunk = chunk
         patcher = patch("rag.templates.presentation.BytesIO")
         patcher.start()
         self.addCleanup(patcher.stop)
 
     def test_pdf_callback_none_safe(self):
         """Test Pdf parser with callback=None does NOT raise TypeError."""
-        import sys
-
         # Manually set the settings value on the mocked module
         sys.modules["common"].settings.PARALLEL_DEVICES = 0
-        parser = Pdf()
-        parser.__images__ = MagicMock()
+        parser = self.Pdf()
+        parser._images = MagicMock()
         parser._layouts_rec = MagicMock()
         parser._table_transformer_job = MagicMock()
         parser._text_merge = MagicMock()
@@ -190,7 +184,7 @@ class TestPresentationTemplate(unittest.TestCase):
             parser("dummy.pdf", callback=None)
         except TypeError as e:
             self.fail(f"Pdf raised TypeError with callback=None: {e}")
-        except (FileNotFoundError, AttributeError, KeyError, Exception):
+        except Exception:
             # These exceptions are acceptable due to mocking limitations
             # (e.g., mock object missing attributes, file operations on dummy paths)
             pass
@@ -203,7 +197,7 @@ class TestPresentationTemplate(unittest.TestCase):
             # MockParent() returns the instance mock.
             MockParent.return_value.side_effect = lambda *args, **kwargs: ["mock text"]
 
-            parser = Ppt()
+            parser = self.Ppt()
             try:
                 parser("dummy.pptx", 0, 10, callback=None)
             except TypeError as e:
@@ -221,7 +215,7 @@ class TestPresentationTemplate(unittest.TestCase):
         # This is necessary because PARSERS is imported at module level
         with patch.dict("rag.templates.presentation.PARSERS", {"deepdoc": mock_parser_impl}, clear=False):
             try:
-                chunk("dummy.pdf", callback=None)
+                self.chunk("dummy.pdf", callback=None)
             except TypeError as e:
                 self.fail(f"chunk(pdf) raised TypeError with callback=None: {e}")
             except (FileNotFoundError, AttributeError, KeyError):
@@ -232,7 +226,7 @@ class TestPresentationTemplate(unittest.TestCase):
                 # Patch base class call to avoid file system access
                 with patch("rag.parsers.deepdoc.ppt_parser.PptParser.__call__") as mock_ppt_call:
                     mock_ppt_call.return_value = ["mock text"]
-                    chunk("dummy.pptx", callback=None)
+                    self.chunk("dummy.pptx", callback=None)
             except TypeError as e:
                 self.fail(f"chunk(ppt) raised TypeError with callback=None: {e}")
             except (FileNotFoundError, AttributeError, KeyError, Exception):
@@ -246,7 +240,7 @@ class TestPresentationTemplate(unittest.TestCase):
             mock_ppt_instance.return_value = []
             MockPptClass.return_value = mock_ppt_instance
 
-            chunk("test.pptx", from_page=0, to_page=123)
+            self.chunk("test.pptx", from_page=0, to_page=123)
 
             args, _ = mock_ppt_instance.call_args
             self.assertEqual(args[2], 123, f"Expected to_page=123, got {args[2]}")

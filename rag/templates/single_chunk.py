@@ -27,14 +27,19 @@ from rag.parsers import DocxParser as Docx
 from common.parser_config_utils import normalize_layout_recognizer
 
 
+EXCEL_ROW_LIMIT = 1000000000
+
+
+def _noop_callback(*args, **kwargs):
+    pass
+
+
 class Pdf(PdfParser):
     def __call__(self, filename, binary=None, from_page=0, to_page=100000, zoomin=3, callback=None):
         from timeit import default_timer as timer
 
         if callback is None:
-
-            def callback(*args, **kwargs):
-                pass
+            callback = _noop_callback
 
         start = timer()
         callback(msg="OCR started")
@@ -56,20 +61,22 @@ class Pdf(PdfParser):
         tbls = self._extract_table_figure(True, zoomin, True, True)
         self._concat_downward()
 
-        sections = [(b["text"], self.get_position(b, zoomin)) for i, b in enumerate(self.boxes)]
-        return [(txt, "") for txt, _ in sorted(sections, key=lambda x: (x[-1][0][0], x[-1][0][3], x[-1][0][1]))], tbls
+        # sections = [(b["text"], self.get_position(b, zoomin)) for i, b in enumerate(self.boxes)]
+        # return [(txt, "") for txt, _ in sorted(sections, key=lambda x: (x[-1][0][0], x[-1][0][3], x[-1][0][1]))], tbls
+
+        # Optimized sorting with clear key explanation: (page, top, left)
+        sections_with_pos = [(b["text"], self.get_position(b, zoomin)) for b in self.boxes]
+        sorted_sections = sorted(sections_with_pos, key=lambda item: (item[1][0][0], item[1][0][3], item[1][0][1]))
+        return [(txt, "") for txt, _ in sorted_sections], tbls
 
 
 def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, **kwargs):
-    if callback is None:
-
-        def callback(*args, **kwargs):
-            pass
-
     """
     Supported file formats are docx, pdf, excel, txt.
     One file forms a chunk which maintains original text order.
     """
+    if callback is None:
+        callback = _noop_callback
     parser_config = kwargs.get("parser_config", {"chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC"})
     eng = lang.lower() == "english"  # is_english(cks)
 
@@ -105,7 +112,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         parser = PARSERS.get(name, by_plaintext)
         callback(0.1, "Start to parse.")
 
-        sections, tbls, pdf_parser = parser(
+        sections, tbls, _ = parser(
             filename=filename,
             binary=binary,
             from_page=from_page,
@@ -123,6 +130,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
             return []
 
         if name in ["tcadp", "docling", "mineru", "paddleocr"]:
+            parser_config = parser_config.copy()
             parser_config["chunk_token_num"] = 0
 
         callback(0.8, "Finish parsing.")
@@ -136,7 +144,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
     elif re.search(r"\.xlsx?$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         excel_parser = ExcelParser()
-        sections = excel_parser.html(binary, 1000000000)
+        sections = excel_parser.html(binary, EXCEL_ROW_LIMIT)
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.(txt|md|markdown|mdx)$", filename, re.IGNORECASE):
@@ -161,14 +169,19 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
             logging.warning(f"tika not available: {e}. Unsupported .doc parsing for {filename}.")
             return []
 
+        if binary is None:
+            error_msg = f"Binary content required for .doc processing: {filename}"
+            callback(-1, error_msg)
+            logging.warning(error_msg)
+            return []
+
         sections = []
-        if binary:
-            if isinstance(binary, bytes):
-                binary = BytesIO(binary)
-            doc_parsed = tika_parser.from_buffer(binary)
-            if doc_parsed.get("content", None) is not None:
-                sections = doc_parsed["content"].split("\n")
-                sections = [s for s in sections if s]
+        if isinstance(binary, bytes):
+            binary = BytesIO(binary)
+        doc_parsed = tika_parser.from_buffer(binary)
+        if doc_parsed.get("content", None) is not None:
+            sections = doc_parsed["content"].split("\n")
+            sections = [s for s in sections if s]
         callback(0.8, "Finish parsing.")
 
     else:
@@ -186,4 +199,5 @@ if __name__ == "__main__":
     def dummy(prog=None, msg=""):
         pass
 
-    chunk(sys.argv[1], from_page=0, to_page=10, callback=dummy)
+    res = chunk(sys.argv[1], from_page=0, to_page=10, callback=dummy)
+    print(res)

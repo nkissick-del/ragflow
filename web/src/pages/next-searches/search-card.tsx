@@ -1,6 +1,7 @@
 import { HomeCard } from '@/components/home-card';
 import { MoreButton } from '@/components/more-button';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
+import { memo } from 'react';
 import { ISearchAppProps } from './hooks';
 import { SearchDropdown } from './search-dropdown';
 
@@ -8,7 +9,8 @@ interface IProps {
   data: ISearchAppProps;
   showSearchRenameModal: (data: ISearchAppProps) => void;
 }
-export function SearchCard({ data, showSearchRenameModal }: IProps) {
+// Optimized: Wrapped in React.memo to prevent unnecessary re-renders when parent state changes.
+export const SearchCard = memo(({ data, showSearchRenameModal }: IProps) => {
   const { navigateToSearch } = useNavigatePage();
 
   return (
@@ -25,4 +27,6 @@ export function SearchCard({ data, showSearchRenameModal }: IProps) {
       onClick={navigateToSearch(data?.id)}
     />
   );
-}
+});
+
+SearchCard.displayName = 'SearchCard';

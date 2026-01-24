@@ -219,18 +219,8 @@ class KnowledgebaseService(CommonService):
             )
         )
         # sort by create_time asc
-        kbs.order_by(cls.model.create_time.asc())
-        # maybe cause slow query by deep paginate, optimize later.
-        offset, limit = 0, 50
-        res = []
-        while True:
-            kb_batch = kbs.offset(offset).limit(limit)
-            _temp = list(kb_batch.dicts())
-            if not _temp:
-                break
-            res.extend(_temp)
-            offset += limit
-        return res
+        kbs = kbs.order_by(cls.model.create_time.asc())
+        return list(kbs.dicts())
 
     @classmethod
     @DB.connection_context()

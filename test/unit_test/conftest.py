@@ -86,10 +86,10 @@ mock_openpyxl.Workbook = MagicMock()
 mock_openpyxl.load_workbook = MagicMock()
 sys.modules["openpyxl"] = mock_openpyxl
 
-# 0g. Mock docx (Word doc library)
-mock_docx = types.ModuleType("docx")
-mock_docx.Document = MagicMock()
-sys.modules["docx"] = mock_docx
+# 0g. Mock docx (Word doc library) - REMOVED (installed in test env)
+# mock_docx = types.ModuleType("docx")
+# mock_docx.Document = MagicMock()
+# sys.modules["docx"] = mock_docx
 
 # 0h. Mock PIL (image library) - need ImageFont for pptx
 mock_pil = types.ModuleType("PIL")
@@ -177,6 +177,15 @@ mock_settings.DATABASE_TYPE = "mysql"
 mock_settings.RAG_FLOW_EDITION = "community"
 mock_settings.ES_CONN = MagicMock()
 mock_settings.docStoreConn = MagicMock()
+mock_settings.DATABASE = {
+    "name": "ragflow",
+    "user": "root",
+    "password": "",
+    "host": "127.0.0.1",
+    "port": 3306,
+}
+mock_settings.PAGER = None  # Mock pager config
+mock_settings.PARALLEL_DEVICES = 0  # Mock parallel devices config
 sys.modules["common.settings"] = mock_settings
 
 # 7. Mock common.config_utils
@@ -236,3 +245,22 @@ sys.modules["common.config_utils"] = mock_config_utils
 # 8. Mock rag.utils connections (OpenDAL, etc.)
 sys.modules["rag.utils.ob_conn"] = MagicMock()
 sys.modules["rag.utils.opendal_conn"] = MagicMock()
+
+# 9. Mock tencentcloud (SDK)
+mock_tencentcloud = MagicMock()
+sys.modules["tencentcloud"] = mock_tencentcloud
+sys.modules["tencentcloud.common"] = MagicMock()
+sys.modules["tencentcloud.common.credential"] = MagicMock()
+sys.modules["tencentcloud.common.profile"] = MagicMock()
+sys.modules["tencentcloud.common.profile.client_profile"] = MagicMock()
+sys.modules["tencentcloud.common.profile.http_profile"] = MagicMock()
+sys.modules["tencentcloud.common.exception"] = MagicMock()
+sys.modules["tencentcloud.common.exception.tencent_cloud_sdk_exception"] = MagicMock()
+sys.modules["tencentcloud.ocr"] = MagicMock()
+sys.modules["tencentcloud.ocr.v20181119"] = MagicMock()
+sys.modules["tencentcloud.ocr.v20181119.ocr_client"] = MagicMock()
+sys.modules["tencentcloud.ocr.v20181119.models"] = MagicMock()
+sys.modules["tencentcloud.lkeap"] = MagicMock()
+sys.modules["tencentcloud.lkeap.v20240522"] = MagicMock()
+sys.modules["tencentcloud.lkeap.v20240522.lkeap_client"] = MagicMock()
+sys.modules["tencentcloud.lkeap.v20240522.models"] = MagicMock()

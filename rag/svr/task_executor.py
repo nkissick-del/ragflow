@@ -63,16 +63,15 @@ import exceptiongroup
 import faulthandler
 import numpy as np
 from peewee import DoesNotExist
-from common.constants import LLMType, ParserType, PipelineTaskType
+from common.constants import LLMType, PipelineTaskType
 from api.db.services.document_service import DocumentService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import TaskService, has_canceled, CANVAS_DEBUG_DOC_ID, GRAPH_RAPTOR_FAKE_DOC_ID
 from api.db.services.file2document_service import File2DocumentService
 from common.versions import get_ragflow_version
 from api.db.db_models import close_connection
-from rag.app import orchestrator, tag
 
-from rag.app.templates import laws, paper, presentation, manual, q_and_a as qa, table, book, resume, picture, single_chunk, audio, email
+from rag.templates import get_factory
 
 from rag.nlp import search, rag_tokenizer, add_positions
 from rag.raptor import RecursiveAbstractiveProcessing4TreeOrganizedRetrieval as Raptor
@@ -86,24 +85,7 @@ from common.constants import PAGERANK_FLD, TAG_FLD, SVR_CONSUMER_GROUP_NAME
 
 BATCH_SIZE = 64
 
-FACTORY = {
-    "general": orchestrator,
-    ParserType.NAIVE.value: orchestrator,
-    ParserType.PAPER.value: paper,
-    ParserType.BOOK.value: book,
-    ParserType.PRESENTATION.value: presentation,
-    ParserType.MANUAL.value: manual,
-    ParserType.LAWS.value: laws,
-    ParserType.QA.value: qa,
-    ParserType.TABLE.value: table,
-    ParserType.RESUME.value: resume,
-    ParserType.PICTURE.value: picture,
-    ParserType.ONE.value: single_chunk,
-    ParserType.AUDIO.value: audio,
-    ParserType.EMAIL.value: email,
-    ParserType.KG.value: orchestrator,
-    ParserType.TAG.value: tag,
-}
+FACTORY = get_factory()
 
 TASK_TYPE_TO_PIPELINE_TASK_TYPE = {
     "dataflow": PipelineTaskType.PARSE,

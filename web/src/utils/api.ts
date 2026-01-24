@@ -174,6 +174,7 @@ export default {
   listSystemToken: `${api_host}/system/token_list`,
   removeSystemToken: `${api_host}/system/token`,
   getSystemConfig: `${api_host}/system/config`,
+  getTemplates: `${api_host}/system/templates`,
   setLangfuseConfig: `${api_host}/langfuse/api_key`,
 
   // flow

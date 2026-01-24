@@ -37,8 +37,8 @@ from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.task_service import TaskService, queue_tasks, cancel_all_task_of
 from common.metadata_utils import meta_filter, convert_conditions
 from api.utils.api_utils import check_duplicate_ids, construct_json_result, get_error_data_result, get_parser_config, get_result, server_error_response, token_required, get_request_json
-from rag.app.templates.q_and_a import beAdoc, rmPrefix
-from rag.app.tag import label_question
+from rag.templates.q_and_a import beAdoc, rmPrefix
+from rag.templates.tag import label_question
 from rag.nlp import rag_tokenizer, search
 from rag.prompts.generator import cross_languages, keyword_extraction
 from common.string_utils import remove_redundant_spaces

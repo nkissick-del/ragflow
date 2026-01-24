@@ -28,8 +28,8 @@ from common.metadata_utils import apply_meta_data_filter
 from api.db.services.search_service import SearchService
 from api.db.services.user_service import UserTenantService
 from api.utils.api_utils import get_data_error_result, get_json_result, server_error_response, validate_request, get_request_json
-from rag.app.templates.q_and_a import beAdoc, rmPrefix
-from rag.app.tag import label_question
+from rag.templates.q_and_a import beAdoc, rmPrefix
+from rag.templates.tag import label_question
 from rag.nlp import rag_tokenizer, search
 from rag.prompts.generator import cross_languages, keyword_extraction
 from common.string_utils import remove_redundant_spaces

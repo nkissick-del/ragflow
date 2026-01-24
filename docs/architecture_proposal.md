@@ -29,57 +29,55 @@ Currently, the `General` template acts as a "Blender":
 
 ---
 
-## 3. The Vision: Three-Layer Architecture
+## 3. The Vision: The "Semantic Tree" Architecture
 
+We are moving from a monolith to a strict layered "Assembly Line" architecture, with DeepDOC quarantined as a pure engine.
+
+### 3.1 Target Directory Topology
+
+```text
+ragflow/
+├── deepdoc/                   # [QUARANTINED ENGINE]
+│   ├── vision/                # Core CV library (OCR, Layout)
+│   └── parser/                # Internal format logic. NO external access.
+│
+├── rag/
+│   ├── parsers/               # [LAYER 1: INPUT ACQUISITION]
+│   │   ├── base.py            # Common logic (Retry policies, API handling)
+│   │   ├── docling_client.py  # Connects to Docling API/Container
+│   │   ├── mineru_client.py   # Connects to MinerU API/Container
+│   │   └── deepdoc_client.py  # Wrapper calling local `deepdoc` (The only bridge)
+│   │
+│   ├── orchestration/         # [LAYER 2: NORMALIZATION]
+│   │   ├── base.py            # StandardizedDocument & Contracts
+│   │   ├── normalize.py       # Main orchestration script
+│   │   └── adapters/          # Adapters: specific parser output -> Standardized IR
+│   │
+│   └── templates/             # [LAYER 3: BUSINESS LOGIC]
+│       ├── base.py            # Common chunking utilities
+│       ├── semantic.py        # Structure-aware chunking
+│       ├── legal.py           # Domain logic (Contracts)
+│       └── ...
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  LAYER 1: PARSERS (Pre-Processing)                                          │
-│  "Make the document machine-readable"                                       │
-│                                                                             │
-│  ┌───────────┐  ┌───────────┐  ┌───────────┐  ┌───────────┐                │
-│  │  Docling  │  │  MinerU   │  │ DeepDOC   │  │  Future   │                │
-│  └─────┬─────┘  └─────┬─────┘  └─────┬─────┘  └─────┬─────┘                │
-│        │              │              │              │                       │
-│        └──────────────┴──────────────┴──────────────┘                       │
-│                              │                                              │
-│                    (Parser-specific output)                                 │
-└──────────────────────────────┼──────────────────────────────────────────────┘
-                               │
-                               ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  LAYER 2: ORCHESTRATION (Normalization)                                     │
-│  "Translate parser outputs into standardized IR"                            │
-│                                                                             │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │  Parser Adapters                                                     │   │
-│  │  ┌────────────────┐ ┌────────────────┐ ┌────────────────┐           │   │
-│  │  │ DoclingAdapter │ │ MinerUAdapter  │ │ DeepDOCAdapter │           │   │
-│  │  └───────┬────────┘ └───────┬────────┘ └───────┬────────┘           │   │
-│  │          └──────────────────┴──────────────────┘                     │   │
-│  │                             │                                        │   │
-│  │                             ▼                                        │   │
-│  │              ┌───────────────────────────────┐                       │   │
-│  │              │   STANDARDIZED IR (Contract)  │                       │   │
-│  │              │   - Structured Markdown       │                       │   │
-│  │              │   - Header hierarchy metadata │                       │   │
-│  │              │   - Table/code block markers  │                       │   │
-│  │              └───────────────────────────────┘                       │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-└──────────────────────────────┼──────────────────────────────────────────────┘
-                               │
-                               ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  LAYER 3: TEMPLATES (Business Logic)                                        │
-│  "Optimize chunking for retrieval based on domain knowledge"                │
-│                                                                             │
-│  ┌───────────┐  ┌───────────┐  ┌───────────┐  ┌───────────┐                │
-│  │  General  │  │ AEMO ISP  │  │   Legal   │  │  Future   │                │
-│  │(Semantic) │  │(Regulatory)│ │(Contracts)│  │           │                │
-│  └───────────┘  └───────────┘  └───────────┘  └───────────┘                │
-│                                                                             │
-│  Templates are PARSER-AGNOSTIC. They consume the Standardized IR.          │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+
+### 3.2 Philosophy: "Quarantine & Delegate"
+
+1.  **DeepDOC at Root:** `deepdoc/` lives at the project root. It is treated as an **internal 3rd-party library**.
+    *   **Strict Barrier:** No code in `rag/` may import `deepdoc` directly, EXCEPT `rag/parsers/deepdoc_client.py`.
+    *   **Optionality:** If `deepdoc` dependencies are missing, `deepdoc_client.py` gracefully degrades (disables the parser).
+
+2.  **Parsers as Clients:** The `rag/parsers/` directory contains **Clients**, not heavy logic.
+    *   They connect to an "Engine" (Service, API, or Isolated Library).
+    *   They return raw data (JSON/Markdown) to be normalized later.
+
+3.  **DRY Roots:**
+    *   `rag/parsers/base.py`: Handles HTTP retries, timeouts, and error reporting.
+    *   `rag/orchestration/base.py`: Defines the `StandardizedDocument` contract.
+    *   `rag/templates/base.py`: Handles token counting and text overlap logic.
+
+### 3.3 The Microservice Future
+
+This structure prepares RAGFlow to shed weight. Currently, "Engines" like Docling play the role of external microservices. Eventually, DeepDOC can also be peeled off into a sidecar container, leaving the `ragflow-core` container lightweight and focused purely on orchestration and retrieval.
 
 ---
 
@@ -90,7 +88,7 @@ Currently, the `General` template acts as a "Blender":
 |-----------|-------|
 | **Role** | "Solve the File Format" |
 | **Input** | Raw PDF, DOCX, HTML, etc. |
-| **Components** | `docling_parser.py`, `mineru_parser.py`, `deepdoc_parser.py` |
+| **Components** | `docling_client.py`, `mineru_client.py`, `deepdoc_client.py` |
 | **Output** | Parser-specific structured output (may vary in format) |
 | **Rule** | Never makes business decisions (chunk size, domain logic) |
 
@@ -544,13 +542,20 @@ When Phase 3 is complete, the following new template(s) should be exposed in the
 
 ## 13. Next Steps
 
-### Implementation Phases
+### Implementation Phases (Status Check)
 
-- [ ] **Phase 1:** Modify `docling_parser.py` to return structured Markdown
-- [ ] **Phase 2:** Add `DoclingAdapter` to orchestration layer
-- [ ] **Phase 3:** Create `templates/semantic.py` with header tracking
-- [ ] **Phase 4:** Update routing logic for structured parsers
-- [ ] **Phase 5:** Expose "Semantic" template in UI dropdown
+- [x] **Phase 1:** Modify `docling_parser.py` to return structured Markdown (Implemented)
+- [x] **Phase 2:** Add `DoclingAdapter` to orchestration layer (Implemented)
+- [x] **Phase 3:** Create `templates/semantic.py` with header tracking (Implemented)
+- [x] **Phase 4:** Update routing logic for structured parsers (Implemented)
+- [ ] **Phase 5:** Expose "Semantic" template in UI dropdown (Pending Frontend)
+
+### The New Default: "Semantic" vs "Templates"
+
+**Update 2026-01-24:**
+The `Semantic` template is intended to become the **New General** template (the default for all structure-aware parsers).
+Future "Templates" (e.g. Legal, AEMO) will effectively be **Post-Processing Modules** that run *after* or *on top of* the semantic structure, tailoring the chunking strategy to specific domain rules.
+
 
 ### Testing Requirements
 
@@ -575,3 +580,37 @@ When Phase 3 is complete, the following new template(s) should be exposed in the
 **Test Locations:**
 - **Functional:** `test/integration/test_docling_integration.py`
 - **Non-Functional:** `test/benchmark/`, `test/resilience/`
+
+---
+
+## 14. Implementation Audit (2026-01-24)
+
+**Auditor:** Antigravity
+
+### Status Overview
+The core re-architecture "Brain Transplant" is **Complete**. The system has successfully transitioned from a monolithic `rag/app` structure to the modular "Client-Engine" topology.
+
+### Component Audit
+
+| Component | Target State | Current Status | Notes |
+|-----------|--------------|----------------|-------|
+| **DeepDOC Engine** | Quarantined | ✅ **Quarantined** | Logic consolidated in `rag/parsers/deepdoc/`. No external calls except via **Client**. |
+| **DeepDOC Client** | `deepdoc_client.py` | ✅ **Implemented** | `rag/parsers/deepdoc_client.py` acts as the facade. |
+| **Orchestration** | `router.py` | ✅ **Implemented** | `rag/orchestration/router.py` handles dispatching using Client abstraction. |
+| **Templates** | `semantic.py` | ✅ **Exists** | `rag/templates/semantic.py` is present. |
+| **Project Structure** | `rag/parsers/` | ✅ **Aligned** | Clients (`docling`, `mineru`, `deepdoc`, `tcadp`) strictly separated. |
+| **Legacy Code** | `rag/app/` | ✅ **Eliminated** | `rag/app` folder has been deleted. |
+
+### Deviations from Proposal
+1.  **DeepDOC Location:** The proposal suggested moving `deepdoc/` to the project root.
+    *   **Decision:** We kept it at `rag/parsers/deepdoc/` for easier import management but strictly enforced the "Client Facade" pattern to achieve logical isolation.
+
+### Completed Tasks
+- [x] **Refactor Format Parsers:** Merged split logic (OCR, Layout, Table) back into `rag/parsers/deepdoc/` classes.
+- [x] **Client Abstraction:** Created `DeepDocParser` to mirror `DoclingParser` and `MinerUParser`.
+- [x] **Router Update:** `router.py` now uses the generic `DeepDocParser` interface, removing direct coupling to specific DeepDoc implementations.
+- [x] **Cleanup:** Deleted `rag/app/format_parsers.py` and `rag/parsers/rag_*.py` wrappers.
+
+### Next Immediate Focus
+- **Phase 5 (UI Integration):** Expose `Semantic` template in the frontend dropdown.
+- **Migration:** Validate `header_path` metadata storage in real-world ingestion.

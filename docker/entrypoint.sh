@@ -278,6 +278,16 @@ fi
 
 ensure_pip_dependency "docling" "${docling_spec}" "USE_DOCLING"
 
+# Install Google API Python Client for Gmail/Google Drive connectors
+google_api_version="${GOOGLE_API_VERSION:-2.150.0}"
+if [[ "${google_api_version}" =~ ^[[:space:]]*[\<\>=!~] ]]; then
+  google_api_spec="google-api-python-client${google_api_version}"
+else
+  google_api_spec="google-api-python-client==${google_api_version}"
+fi
+
+ensure_pip_dependency "google-api-python-client" "${google_api_spec}" "USE_GOOGLE_API" "googleapiclient"
+
 # -----------------------------------------------------------------------------
 # Start components based on flags
 # -----------------------------------------------------------------------------

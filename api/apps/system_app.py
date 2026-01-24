@@ -336,3 +336,38 @@ def get_config():
                         description: Whether user registration is enabled
     """
     return get_json_result(data={"registerEnabled": settings.REGISTER_ENABLED})
+
+
+@manager.route("/templates", methods=["GET"])  # noqa: F821
+def list_templates():
+    """
+    List available chunking templates for UI dropdown.
+    ---
+    tags:
+        - System
+    responses:
+        200:
+            description: List of available templates
+            schema:
+                type: object
+                properties:
+                    data:
+                        type: array
+                        items:
+                            type: object
+                            properties:
+                                value:
+                                    type: string
+                                    description: Template identifier (e.g., "semantic")
+                                label:
+                                    type: string
+                                    description: Display label (e.g., "Semantic")
+    """
+    try:
+        from rag.app.templates import list_templates as get_template_list
+
+        templates = get_template_list()
+        return get_json_result(data=templates)
+    except Exception as e:
+        logging.exception("Failed to list templates")
+        return server_error_response(e)

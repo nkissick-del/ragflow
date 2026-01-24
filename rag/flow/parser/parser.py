@@ -31,9 +31,9 @@ from common import settings
 from common.constants import LLMType
 from common.misc_utils import get_uuid
 from deepdoc.parser import ExcelParser
-from deepdoc.parser.pdf_parser import PlainParser, RAGFlowPdfParser, VisionParser
+from rag.parsers.deepdoc.parser.pdf_parser import PlainParser, RAGFlowPdfParser, VisionParser
 from deepdoc.parser.tcadp_parser import TCADPParser
-from rag.app.format_parsers import Docx
+from rag.parsers import DocxParser as Docx
 
 from rag.flow.base import ProcessBase, ProcessParamBase
 from rag.flow.parser.schema import ParserFromUpstream
@@ -583,7 +583,7 @@ class Parser(ProcessBase):
         conf = self._param.setups["text&markdown"]
         self.set_output("output_format", conf["output_format"])
 
-        from rag.app.orchestrator import Markdown as naive_markdown_parser
+        from rag.orchestration.orchestrator import Markdown as naive_markdown_parser
 
         markdown_parser = naive_markdown_parser()
         sections, tables, section_images = markdown_parser(

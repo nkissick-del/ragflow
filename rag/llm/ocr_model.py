@@ -18,8 +18,8 @@ import logging
 import os
 from typing import Any, Optional
 
-from deepdoc.parser.mineru_parser import MinerUParser
-from deepdoc.parser.paddleocr_parser import PaddleOCRParser
+from rag.parsers.mineru_client import MinerUParser
+from rag.parsers.deepdoc.paddleocr_parser import PaddleOCRParser
 
 
 class Base:

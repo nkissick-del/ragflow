@@ -7,10 +7,19 @@ def setup_mocks():
     """
     Sets up a comprehensive set of mocks for system modules to allow unit tests to run
     in an environment with missing dependencies.
+
+    Returns:
+        dict: A dictionary of the original sys.modules entries that were replaced,
+              to be used with teardown_mocks.
     """
+    # Save original modules to restore later
+    original_modules = sys.modules.copy()
     # Base system mocks
     sys.modules["opendal"] = MagicMock()
+    # Mock opendal submodules that might be accessed
+    sys.modules["opendal.layers"] = MagicMock()
     sys.modules["rag.utils.opendal_conn"] = MagicMock()
+    sys.modules["requests"] = MagicMock()
     sys.modules["boto3"] = MagicMock()
     sys.modules["botocore"] = MagicMock()
     sys.modules["minio"] = MagicMock()
@@ -24,7 +33,7 @@ def setup_mocks():
     # rather than mocking it locally in your test file. This ensures a single source
     # of truth for mocks.
     # RAG Utils Wrappers
-    # 5. Mock file_utils which is imported by token_utils
+    # Mock file_utils which is imported by token_utils
     mock_file_utils = types.ModuleType("common.file_utils")
     mock_file_utils.get_project_base_directory = lambda: "/tmp"
     sys.modules["common.file_utils"] = mock_file_utils
@@ -60,7 +69,6 @@ def setup_mocks():
     sys.modules["nltk"] = MagicMock()
     sys.modules["nltk.corpus"] = MagicMock()
     sys.modules["nltk.tokenize"] = MagicMock()
-    # NLP & ML Libraries
     mock_tiktoken = MagicMock()
     mock_encoder = MagicMock()
     # Mock encode to return a list whose length is roughly number of words
@@ -163,6 +171,7 @@ def setup_mocks():
 
     # Mock common.config_utils
     mock_config_utils = MagicMock()
+    # read_config simulates the stored/encrypted config with blank password fields
     mock_config_utils.read_config.return_value = {
         "ragflow": {},
         "service": {"ports": {"8000": 8000}},
@@ -171,6 +180,7 @@ def setup_mocks():
     }
     mock_config_utils.get_base_config.side_effect = lambda name, default=None: default
 
+    # side_effect_decrypt simulates the decrypted secrets (hence "mock_password")
     def side_effect_decrypt(name=None):
         configs = {
             "mysql": {"host": "127.0.0.1", "port": 3306, "name": "ragflow", "user": "root", "password": "mock_password", "engine": "mysql"},
@@ -210,3 +220,25 @@ def setup_mocks():
     # Utils
     sys.modules["PyPDF2"] = MagicMock()
     sys.modules["olefile"] = MagicMock()
+
+    return original_modules
+
+
+def teardown_mocks(original_modules):
+    """
+    Restores sys.modules to its state before setup_mocks was called.
+
+    Args:
+        original_modules (dict): The dictionary returned by setup_mocks.
+    """
+    if not original_modules:
+        return
+
+    # Remove keys added by setup_mocks
+    current_keys = list(sys.modules.keys())
+    for key in current_keys:
+        if key not in original_modules:
+            del sys.modules[key]
+
+    # Restore keys that were modified
+    sys.modules.update(original_modules)

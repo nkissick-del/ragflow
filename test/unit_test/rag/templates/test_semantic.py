@@ -37,9 +37,7 @@ class SemanticTestBase(unittest.TestCase):
 
         import sys
 
-        # We still need to reload the module to test import logic if needed
-        # but manual deletion of everything isn't needed if mocks are stable
-        # However, for this specific test class base, it seems to want fresh import
+        # Reload the module to ensure a fresh import for this test class when mocks may persist between tests.
         if "rag.templates.semantic" in sys.modules:
             del sys.modules["rag.templates.semantic"]
 

@@ -105,6 +105,7 @@ class TestLawsTemplate(unittest.TestCase):
         pdf.page_images = [MagicMock()]
         pdf.page_images[0].size = (100, 100)
 
+        # The test ensures no exception is raised when callback is None
         pdf("dummy.pdf", binary=b"dummy", callback=None)
 
     def test_doc_binary_none_uses_from_file(self):

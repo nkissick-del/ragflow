@@ -112,11 +112,11 @@ def get_table_html(img, tb_cpns, ocr):
         logging.error(f"Failed to read table template at {template_path}: {e}")
         return ""
 
-    table_content = TableStructureRecognizer.construct_table(boxes, html=True)
     if "<!-- TABLE_CONTENT -->" not in html_template:
         logging.error("Invalid table template: missing '<!-- TABLE_CONTENT -->' placeholder")
         return ""
 
+    table_content = TableStructureRecognizer.construct_table(boxes, html=True)
     return html_template.replace("<!-- TABLE_CONTENT -->", table_content)
 
 

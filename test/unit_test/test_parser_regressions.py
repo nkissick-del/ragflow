@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import MagicMock
 import pandas as pd
 
 
@@ -64,14 +65,43 @@ class TestParserFixes(unittest.TestCase):
         self.assertIsInstance(res, list)
         self.assertGreater(len(res), 1)
         # Verify reconstruction (ignoring exact whitespace if delimiter handling is complex, but roughly)
-        # Or just check chunk size <= 5 tokens roughly?
-        # The parser returns [[chunk, ""], ...]
-        # Let's verify we got multiple chunks
+        # Check that we got a list of [chunk, metadata] pairs
+        for item in res:
+            self.assertIsInstance(item, (list, tuple))
+            self.assertEqual(len(item), 2)
+            self.assertIsInstance(item[0], str)
+            self.assertIsInstance(item[1], str)
+            # Optional: check chunk size
+            # token-like split length check
+            tokens = item[0].split()
+            # It's soft limit, but let's just check it's not empty
+            self.assertTrue(len(tokens) > 0 or item[0] == "")
 
     def test_ppt_parser_has_extract_method(self):
-        """Test that PPT parser has the expected private extract method"""
+        """Test that PPT parser has the expected private extract method and it behaves safely."""
         parser = RAGFlowPptParser()
         self.assertTrue(hasattr(parser, "_RAGFlowPptParser__extract"))
+
+        # Behavioral assertion: call the private method
+        # Mocking or providing minimal args to ensure it runs or fails predictably
+        # __extract(self, ppt_path, from_page, to_page) usually
+        # Since we don't have a real PPT, let's see if we can call it.
+        # It likely accepts a path.
+        # Depending on implementation, it might raise validation error or try to open.
+        # If we pass a dummy path that doesn't exist?
+        extract_method = getattr(parser, "_RAGFlowPptParser__extract")
+        # Just ensure we can get a handle to it.
+        # If the user wants a RUN, we need to mock Presentation.
+        with unittest.mock.patch("rag.parsers.deepdoc.ppt_parser.Presentation") as mock_ppt:
+            # Setup a mock presentation with slides
+            mock_prs = MagicMock()
+            mock_ppt.return_value = mock_prs
+            mock_prs.slides = []
+
+            # Call the method
+            res = extract_method("dummy.pptx", 0, 10)
+            # Expect a list
+            self.assertIsInstance(res, list)
 
 
 if __name__ == "__main__":

@@ -40,7 +40,7 @@ get_float = common.float_utils.get_float
 class QAParseError(Exception):
     """Raised when Q&A parsing fails."""
 
-    pass
+    """Raised when Q&A parsing fails."""
 
 
 def build_beAdoc(d, q, a, eng, image=None, poss=None, row_num=-1):
@@ -412,7 +412,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         except ValueError as e:
             if callback:
                 callback(0.0, f"PDF parse error: {e}")
-            raise QAParseError(str(e))
+            raise QAParseError(str(e)) from e
         for q, a, image, poss in qai_list:
             res.append(beAdocPdf(deepcopy(doc), q, a, eng, image, poss))
         return res

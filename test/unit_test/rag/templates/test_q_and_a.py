@@ -14,10 +14,12 @@ class BaseQAndATestCase(unittest.TestCase):
     def setUp(self):
         from test.mocks.mock_utils import setup_mocks
 
-        setup_mocks()
+        self.original_modules = setup_mocks()
 
     def tearDown(self):
-        pass
+        from test.mocks.mock_utils import teardown_mocks
+
+        teardown_mocks(self.original_modules)
 
 
 class TestQAndATemplate(BaseQAndATestCase):
@@ -161,9 +163,11 @@ class TestQAndATemplate(BaseQAndATestCase):
             chunk = res[0]
 
             # Verify required fields exist
+            # Verify required fields exist
             required_fields = ["docnm_kwd", "title_tks", "content_with_weight", "content_ltks", "content_sm_ltks"]
             for field in required_fields:
-                self.assertIn(field, chunk, f"Missing required field: {field}")
+                with self.subTest(field=field):
+                    self.assertIn(field, chunk, f"Missing required field: {field}")
 
             # Verify content contains the original Q&A (minus any prefix stripping)
             self.assertIn("Python", chunk["content_with_weight"])

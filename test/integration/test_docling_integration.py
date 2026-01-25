@@ -11,9 +11,10 @@ from deepdoc.parser.docling_parser import DoclingParser
 
 
 class TestDoclingIntegration(unittest.TestCase):
-    def test_docling_parser_api_success(self):
+    @patch("requests.Session")
+    def test_docling_parser_api_success(self, mock_session_cls):
         # Setup mock session
-        mock_session = MagicMock()
+        mock_session = mock_session_cls.return_value
 
         # 1. Mock Check Installation (Health Check)
         # 2. Mock Submit Response
@@ -53,9 +54,6 @@ class TestDoclingIntegration(unittest.TestCase):
         # Setup Parser
         with patch.dict(os.environ, {"DOCLING_BASE_URL": "http://mock-docling"}):
             parser = DoclingParser()
-            # Mock create_retry_session to return our mock_session
-            parser._create_retry_session = MagicMock(return_value=mock_session)
-
             # Test parse_pdf
             sections, tables = parser.parse_pdf("test.pdf", binary=b"dummy content")
 
@@ -98,8 +96,6 @@ class TestDoclingIntegration(unittest.TestCase):
         # Setup Parser
         with patch.dict(os.environ, {"DOCLING_BASE_URL": "http://mock-docling"}):
             parser = DoclingParser()
-            parser._create_retry_session = MagicMock(return_value=mock_session)
-
             # Test parse_pdf should catch the error and return empty lists
             mock_callback = MagicMock()
             sections, tables = parser.parse_pdf("test.pdf", binary=b"dummy content", callback=mock_callback)
@@ -149,8 +145,6 @@ class TestDoclingIntegration(unittest.TestCase):
 
         with patch.dict(os.environ, {"DOCLING_BASE_URL": "http://mock-docling"}):
             parser = DoclingParser()
-            parser._create_retry_session = MagicMock(return_value=mock_session)
-
             # Test SEMANTIC mode - should return string
             sections_semantic, _ = parser.parse_pdf("test.pdf", binary=b"dummy", use_semantic_chunking=True)
             self.assertIsInstance(sections_semantic, str)

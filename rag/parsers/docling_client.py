@@ -143,11 +143,11 @@ class DoclingParser:
                     file_content = f.read()
             except Exception as e:
                 self.logger.error(f"[Docling] Failed to read file {filepath}: {e}")
-                return [], []
+                return "", []
 
         if not file_content:
             self.logger.error("[Docling] No content to parse.")
-            return [], []
+            return "", []
 
         # Use fresh session for each request to avoid connection pooling issues
         session = self._create_retry_session()
@@ -345,7 +345,7 @@ class DoclingParser:
             self.logger.error(f"[Docling] API request failed: {e}")
             if callback:
                 callback(-1, f"Docling API failed: {e}")
-            return [], []
+            return "", []
         finally:
             session.close()
 

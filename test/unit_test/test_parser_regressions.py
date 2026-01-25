@@ -1,6 +1,16 @@
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, PropertyMock
 import pandas as pd
+
+# Adjust path to find test.mocks if needed, assuming run from root
+# This allows 'from test.mocks.mock_utils import ...'
+try:
+    from test.mocks.mock_utils import setup_mocks
+
+    setup_mocks()
+except ImportError:
+    # Fallback or strict failure if mocks are essential
+    pass
 
 
 # Import parsers (assuming they are in python path)
@@ -57,6 +67,12 @@ class TestParserFixes(unittest.TestCase):
 
     def test_txt_chunking(self):
         """Test txt parser chunking logic"""
+        # Configure mock to return integer for token count
+        import common.token_utils
+
+        if isinstance(common.token_utils, MagicMock) or hasattr(common.token_utils, "num_tokens_from_string"):
+            common.token_utils.num_tokens_from_string.side_effect = lambda x: len(x.split())
+
         parser = RAGFlowTxtParser()
         # parser_txt accepts raw string, no need to mock get_text
         # Include delimiters to facilitate chunking
@@ -74,8 +90,10 @@ class TestParserFixes(unittest.TestCase):
             # Check that we got a list of [chunk, metadata] pairs
             # token-like split length check
             tokens = item[0].split()
-            # Require non-whitespace tokens or allow empty/whitespace chunks if that is the intent
-            self.assertTrue(len(tokens) > 0 or item[0].strip() == "")
+            if item[0].strip() == "":
+                self.assertEqual(tokens, [])
+            else:
+                self.assertGreater(len(tokens), 0)
 
     def test_ppt_parser_has_extract_method(self):
         """Test that PPT parser has the expected private extract method and it behaves safely."""
@@ -92,18 +110,28 @@ class TestParserFixes(unittest.TestCase):
         extract_method = getattr(parser, "_RAGFlowPptParser__extract")
         # Just ensure we can get a handle to it.
         # If the user wants a RUN, we need to mock Presentation.
-        with patch("rag.parsers.deepdoc.ppt_parser.Presentation") as mock_ppt:
-            # Setup a mock presentation with slides
-            mock_prs = MagicMock()
-            mock_ppt.return_value = mock_prs
-            mock_prs.slides = []
+        # Test __extract with a mock shape
+        mock_shape = MagicMock()
+        # Case 1: Shape with text frame
+        mock_shape.has_text_frame = True
+        p1 = MagicMock()
+        p1.text = "Hello"
+        p1.level = 0
+        p1._p.xpath.return_value = []  # no bullets
+        mock_shape.text_frame.paragraphs = [p1]
 
-            # Call the method
-            res = extract_method("dummy.pptx", 0, 10)
-            # Expect a list
-            self.assertIsInstance(res, list)
-            # Verify that Presentation was initialized with the correct filename
-            mock_ppt.assert_called_with("dummy.pptx")
+        res = extract_method(mock_shape)
+        self.assertEqual(res, "Hello")
+
+        # Case 2: Shape without text frame, simple text
+        mock_shape2 = MagicMock()
+        mock_shape2.has_text_frame = False
+        # If shape_type access fails, it falls back to text
+        type(mock_shape2).shape_type = PropertyMock(side_effect=NotImplementedError)
+        mock_shape2.text = "Simple Text"
+
+        res2 = extract_method(mock_shape2)
+        self.assertEqual(res2, "Simple Text")
 
 
 if __name__ == "__main__":

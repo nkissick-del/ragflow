@@ -220,10 +220,10 @@ class DocumentService(CommonService):
         metadata_counter = {}
         empty_metadata_count = 0
 
-        for row in rows:
-            suffix_counter[row.suffix] = suffix_counter.get(row.suffix, 0) + 1
-            run_status_counter[str(row.run)] = run_status_counter.get(str(row.run), 0) + 1
-            meta_fields = row.meta_fields or {}
+        for row in rows.dicts().iterator():
+            suffix_counter[row["suffix"]] = suffix_counter.get(row["suffix"], 0) + 1
+            run_status_counter[str(row["run"])] = run_status_counter.get(str(row["run"]), 0) + 1
+            meta_fields = row["meta_fields"] or {}
             if not meta_fields:
                 empty_metadata_count += 1
                 continue

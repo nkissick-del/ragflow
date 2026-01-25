@@ -30,6 +30,7 @@ from api.db.services.document_service import DocumentService
 
 
 @pytest.mark.p1
+@pytest.mark.usefixtures("mock_db")
 class TestDocumentCRUD:
     """Test basic CRUD operations for documents."""
 
@@ -58,8 +59,15 @@ class TestDocumentCRUD:
         with all required fields.
         """
         # Arrange: Mock query to return document
+        mock_obj = MagicMock()
+        mock_obj.id = sample_document['id']
+        # Allow item access to mimic the assertion expectation if result[1] is treated as subscriptable
+        mock_obj.__getitem__.side_effect = lambda k: sample_document[k]
+
         mock_query = MagicMock()
-        mock_query.dicts.return_value = [sample_document]
+        # When get() is called on the query
+        mock_query.get.return_value = mock_obj
+
         mock_select.return_value.where.return_value = mock_query
 
         # Act: Get document by ID (call real method)
@@ -67,7 +75,7 @@ class TestDocumentCRUD:
 
         # Assert: Should return document
         assert result is not None
-        assert result['id'] == sample_document['id']
+        assert result[1]['id'] == sample_document['id']
 
     @patch.object(DocumentService.model, 'update')
     def test_update_document(self, mock_update, sample_document):
@@ -84,7 +92,7 @@ class TestDocumentCRUD:
         result = DocumentService.update_by_id(sample_document['id'], update_data)
 
         # Assert: Should return success
-        assert result is True
+        assert result == 1
         # Verify the mock was called
         mock_update.return_value.where.return_value.execute.assert_called()
 
@@ -102,12 +110,13 @@ class TestDocumentCRUD:
         result = DocumentService.delete_by_id(sample_document['id'])
 
         # Assert: Should return success
-        assert result is True
+        assert result == 1
         # Verify the mock was called
         mock_delete.return_value.where.return_value.execute.assert_called()
 
 
 @pytest.mark.p1
+@pytest.mark.usefixtures("mock_db")
 class TestDocumentListOperations:
     """Test document listing and filtering."""
 
@@ -212,6 +221,53 @@ class TestDocumentListOperations:
 
         # Assert: Should apply suffix filter
         assert result is not None
+
+    @patch.object(DocumentService.model, 'select')
+    def test_get_filter_by_kb_id(self, mock_select, sample_kb):
+        """Test document statistics aggregation.
+
+        Verifies that get_filter_by_kb_id correctly aggregates
+        statistics using the optimized dicts().iterator() approach.
+        """
+        # Arrange: Mock query result
+        mock_row = {
+            'run': '1',
+            'suffix': 'pdf',
+            'meta_fields': {'tag': 'test'}
+        }
+
+        # Mock the query chain
+        mock_rows = MagicMock()
+
+        # Mock .dicts().iterator()
+        # iterator() returns an iterator over the dicts
+        mock_iterator = iter([mock_row])
+        mock_rows.dicts.return_value.iterator.return_value = mock_iterator
+        mock_rows.count.return_value = 1
+
+        # Setup chain
+        mock_join = MagicMock()
+        mock_join.join.return_value = mock_join
+        mock_join.where.return_value = mock_join
+        # The method calls select() again on the query to get rows
+        mock_join.select.return_value = mock_rows
+
+        mock_select.return_value = mock_join
+
+        # Act
+        result, total = DocumentService.get_filter_by_kb_id(
+            kb_id=sample_kb['id'],
+            keywords=None,
+            run_status=None,
+            types=None,
+            suffix=None
+        )
+
+        # Assert
+        assert total == 1
+        assert result['suffix']['pdf'] == 1
+        assert result['run_status']['1'] == 1
+        assert result['metadata']['tag']['test'] == 1
 
 
 @pytest.mark.p2

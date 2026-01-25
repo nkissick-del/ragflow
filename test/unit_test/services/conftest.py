@@ -48,10 +48,14 @@ def mock_db():
             kb = KnowledgebaseService.save(name="test")
             assert kb is not None
     """
-    with patch('api.db.db_models.DB.connection_context') as mock_ctx:
-        mock_ctx.return_value.__enter__ = MagicMock()
-        mock_ctx.return_value.__exit__ = MagicMock()
-        yield mock_ctx
+    with patch('api.db.db_models.DB.connect') as mock_connect, \
+         patch('api.db.db_models.DB.close') as mock_close, \
+         patch('api.db.db_models.DB.commit') as mock_commit, \
+         patch('api.db.db_models.DB.rollback') as mock_rollback, \
+         patch('api.db.db_models.DB.atomic') as mock_atomic:
+        mock_atomic.return_value.__enter__ = MagicMock()
+        mock_atomic.return_value.__exit__ = MagicMock()
+        yield
 
 
 @pytest.fixture

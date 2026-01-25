@@ -122,9 +122,7 @@ export default function SearchList() {
                   <SearchCard
                     key={x.id}
                     data={x}
-                    showSearchRenameModal={() => {
-                      showSearchRenameModal(x);
-                    }}
+                    showSearchRenameModal={showSearchRenameModal}
                   ></SearchCard>
                 );
               })}

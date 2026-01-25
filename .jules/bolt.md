@@ -5,3 +5,7 @@
 ## 2024-05-24 - Frontend: Memoizing Table Columns
 **Learning:** In React table implementations (like TanStack Table), re-creating the `columns` definition array on every render forces the table library to recalculate its internal state, potentially leading to unnecessary processing and child component re-renders.
 **Action:** Always wrap column definitions in `useMemo` when using `useReactTable` or similar libraries, ensuring that the column structure remains referentially stable unless its dependencies actually change.
+
+## 2024-05-25 - Frontend: Memoizing List Items with Parent State Changes
+**Learning:** List components (like cards in a grid) are often rendered inside parents that manage frequent state updates (e.g., search input). Without memoization, every keystroke causes all list items to re-render, even if the list data is stable. Additionally, passing inline arrow functions as props (e.g., `onClick={() => handler(item)}`) defeats `React.memo` by creating new function references on every render.
+**Action:** Wrap list item components in `React.memo` and ensure that callbacks passed to them are referentially stable (e.g., pass the handler function directly and let the child component invoke it with the necessary data, or use `useCallback`).

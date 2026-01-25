@@ -6,6 +6,7 @@ import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { IKnowledge } from '@/interfaces/database/knowledge';
 import { t } from 'i18next';
 import { ChevronRight } from 'lucide-react';
+import { memo } from 'react';
 import { DatasetDropdown } from './dataset-dropdown';
 import { useRenameDataset } from './use-rename-dataset';
 
@@ -13,7 +14,7 @@ export type DatasetCardProps = {
   dataset: IKnowledge;
 } & Pick<ReturnType<typeof useRenameDataset>, 'showDatasetRenameModal'>;
 
-export function DatasetCard({
+export const DatasetCard = memo(function DatasetCard({
   dataset,
   showDatasetRenameModal,
 }: DatasetCardProps) {
@@ -37,7 +38,7 @@ export function DatasetCard({
       onClick={navigateToDataset(dataset.id)}
     />
   );
-}
+});
 
 export function SeeAllCard() {
   const { navigateToDatasetList } = useNavigatePage();

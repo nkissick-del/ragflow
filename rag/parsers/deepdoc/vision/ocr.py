@@ -588,7 +588,7 @@ class OCR:
                     break
         return _boxes
 
-    def _validate_device_id(self, device_id):
+    def _validate_device_id(self, device_id: int) -> None:
         if device_id < 0 or device_id >= len(self.text_detector) or device_id >= len(self.text_recognizer):
             raise ValueError(f"device_id {device_id} is out of range. Available detectors: {len(self.text_detector)}, Available recognizers: {len(self.text_recognizer)}")
 

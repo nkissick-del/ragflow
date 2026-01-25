@@ -163,7 +163,6 @@ class TestQAndATemplate(BaseQAndATestCase):
             chunk = res[0]
 
             # Verify required fields exist
-            # Verify required fields exist
             required_fields = ["docnm_kwd", "title_tks", "content_with_weight", "content_ltks", "content_sm_ltks"]
             for field in required_fields:
                 with self.subTest(field=field):

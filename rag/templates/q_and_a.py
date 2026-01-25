@@ -40,8 +40,6 @@ get_float = common.float_utils.get_float
 class QAParseError(Exception):
     """Raised when Q&A parsing fails."""
 
-    """Raised when Q&A parsing fails."""
-
 
 def build_beAdoc(d, q, a, eng, image=None, poss=None, row_num=-1):
     qprefix = "Question: " if eng else "问题："

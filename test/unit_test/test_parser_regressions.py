@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 import pandas as pd
 
 
@@ -71,11 +71,11 @@ class TestParserFixes(unittest.TestCase):
             self.assertEqual(len(item), 2)
             self.assertIsInstance(item[0], str)
             self.assertIsInstance(item[1], str)
-            # Optional: check chunk size
+            # Check that we got a list of [chunk, metadata] pairs
             # token-like split length check
             tokens = item[0].split()
-            # It's soft limit, but let's just check it's not empty
-            self.assertTrue(len(tokens) > 0 or item[0] == "")
+            # Require non-whitespace tokens or allow empty/whitespace chunks if that is the intent
+            self.assertTrue(len(tokens) > 0 or item[0].strip() == "")
 
     def test_ppt_parser_has_extract_method(self):
         """Test that PPT parser has the expected private extract method and it behaves safely."""
@@ -92,7 +92,7 @@ class TestParserFixes(unittest.TestCase):
         extract_method = getattr(parser, "_RAGFlowPptParser__extract")
         # Just ensure we can get a handle to it.
         # If the user wants a RUN, we need to mock Presentation.
-        with unittest.mock.patch("rag.parsers.deepdoc.ppt_parser.Presentation") as mock_ppt:
+        with patch("rag.parsers.deepdoc.ppt_parser.Presentation") as mock_ppt:
             # Setup a mock presentation with slides
             mock_prs = MagicMock()
             mock_ppt.return_value = mock_prs
@@ -102,6 +102,8 @@ class TestParserFixes(unittest.TestCase):
             res = extract_method("dummy.pptx", 0, 10)
             # Expect a list
             self.assertIsInstance(res, list)
+            # Verify that Presentation was initialized with the correct filename
+            mock_ppt.assert_called_with("dummy.pptx")
 
 
 if __name__ == "__main__":

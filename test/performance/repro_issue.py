@@ -9,7 +9,23 @@ try:
 except ImportError:
     # Add project root to path to find tests module
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    project_root = os.path.dirname(os.path.dirname(os.path.dirname(current_dir)))
+    project_root = current_dir
+    # Walk up parent directories to find a marker (like .git or pyproject.toml)
+    # Defaulting to 3 levels up if not found (original logic)
+    found_root = False
+    for _ in range(4):
+        if os.path.exists(os.path.join(project_root, ".git")) or os.path.exists(os.path.join(project_root, "pyproject.toml")):
+            found_root = True
+            break
+        parent = os.path.dirname(project_root)
+        if parent == project_root:
+            break
+        project_root = parent
+
+    if not found_root:
+        # Fallback to original hardcoded 3 levels up
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(current_dir)))
+
     if project_root not in sys.path:
         sys.path.insert(0, project_root)
 
@@ -291,7 +307,7 @@ if __name__ == "__main__":
 
         if leg_res.get("type") == "folder":
             if leg_res.get("size") != opt_res.get("size"):
-                print(f"Size mismatch for {leg_res['id']}: {leg_res['size']} vs {opt_res['size']}")
+                print(f"Size mismatch for {leg_res['id']}: {leg_res.get('size')} vs {opt_res.get('size')}")
                 match = False
             if leg_res.get("has_child_folder") != opt_res.get("has_child_folder"):
                 print(f"Has child folder mismatch for {leg_res['id']}: {leg_res.get('has_child_folder')} vs {opt_res.get('has_child_folder')}")

@@ -38,6 +38,7 @@ export default {
       preview: 'Preview',
       move: 'Move',
       warn: 'Warn',
+      more: 'More',
       action: 'Action',
       s: 'S',
       pleaseSelect: 'Please select',

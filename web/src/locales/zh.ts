@@ -37,6 +37,7 @@ export default {
       preview: '预览',
       move: '移动',
       warn: '提醒',
+      more: '更多',
       action: '操作',
       s: '秒',
       pleaseSelect: '请选择',

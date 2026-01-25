@@ -8,3 +8,7 @@
 ## 2024-05-23 - Composing Tooltips with Dialog Triggers
 **Learning:** Adding a Tooltip to a Button that is already a trigger for a Radix Dialog (via `ConfirmDeleteDialog`) requires careful nesting. The `Tooltip` must wrap the `ConfirmDeleteDialog`, and the `ConfirmDeleteDialog` must wrap the `TooltipTrigger`. The `TooltipTrigger` then wraps the `Button` using `asChild`. This ensures that props/refs are correctly forwarded from both the Dialog system and the Tooltip system to the underlying Button.
 **Action:** Use this composition pattern whenever adding tooltips to existing action buttons that trigger dialogs.
+
+## 2024-05-24 - Accessible "Show on Hover" Elements
+**Learning:** Using `invisible` (visibility: hidden) for elements that appear on hover removes them from the tab order, making them inaccessible to keyboard users.
+**Action:** Use `opacity-0` combined with `pointer-events-none` (and `opacity-100 pointer-events-auto` on focus/hover) to hide elements visually while keeping them keyboard accessible. Ensure `focus-visible` styles are applied so the element becomes visible when focused.

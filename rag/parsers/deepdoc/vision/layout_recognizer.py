@@ -66,7 +66,7 @@ class LayoutRecognizer(Recognizer):
             self.client = DLAClient(os.environ["TENSORRT_DLA_SVR"])
 
     def process_layouts(self, ocr_result, layout_result, image_shape, scale_factor, thr=0.4, drop=True):
-        bxs = ocr_result
+        bxs = list(ocr_result)
         lts = [
             {
                 "type": b["type"],
@@ -80,7 +80,8 @@ class LayoutRecognizer(Recognizer):
             for b in layout_result
             if float(b["score"]) >= thr or b["type"] not in self.garbage_layouts
         ]
-        lts = self.sort_Y_firstly(lts, np.mean([lt["bottom"] - lt["top"] for lt in lts]) / 2)
+        if lts:
+            lts = self.sort_Y_firstly(lts, np.mean([lt["bottom"] - lt["top"] for lt in lts]) / 2)
         lts = self.layouts_cleanup(bxs, lts)
 
         garbages = {}

@@ -93,7 +93,6 @@ CORP_TAG = {corpNorm(rmNoise(c), False): v for c, v in CORP_TAG.items()}
 
 
 def is_good(nm):
-    global GOOD_CORP
     if nm.find("外派") >= 0:
         return False
     nm = rmNoise(nm)

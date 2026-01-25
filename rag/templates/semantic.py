@@ -381,8 +381,6 @@ class Semantic:
                             sentences = re.split(r"(?<=[.!?])\s+", para)
                     else:
                         sentences = re.split(r"(?<=[.!?])\s+", para)
-                        # Fallback to regex splitting
-                        sentences = re.split(r"(?<=[.!?])\s+", para)
 
                     if not sentences:
                         logging.warning("[Semantic] No sentences found. Returning original paragraph.")
@@ -479,10 +477,17 @@ class Semantic:
                                 # Remove from start until we're within overlap_tokens
                                 first_space = overlap_text.find(" ")
                                 if first_space == -1:
-                                    # Fallback for CJK or text without spaces
-                                    removed_piece = overlap_text[0]
-                                    overlap_count -= count_tokens(removed_piece)
-                                    overlap_text = overlap_text[1:]
+                                    # Fallback for CJK or text without spaces - use binary search
+                                    low = 0
+                                    high = len(overlap_text)
+                                    while low < high:
+                                        mid = (low + high) // 2
+                                        if count_tokens(overlap_text[mid:]) > overlap_tokens:
+                                            low = mid + 1
+                                        else:
+                                            high = mid
+                                    overlap_text = overlap_text[low:]
+                                    overlap_count = count_tokens(overlap_text)
                                     continue
 
                                 removed_piece = overlap_text[: first_space + 1]

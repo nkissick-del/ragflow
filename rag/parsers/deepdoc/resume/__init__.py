@@ -77,7 +77,7 @@ def refactor(cv):
 
     if work:
         cv["basic"]["work_start_time"] = work[0].get("start_time", "")
-        cv["basic"]["management_experience"] = "Y" if any([w.get("management_experience", "") == "Y" for w in work]) else "N"
+        cv["basic"]["management_experience"] = "Y" if any(w.get("management_experience", "") == "Y" for w in work) else "N"
         cv["basic"]["annual_salary"] = work[-1].get("annual_salary_from", "0")
 
         for n in [
@@ -97,7 +97,7 @@ def refactor(cv):
             if n in edu[-1]:
                 cv["basic"][n] = edu[-1][n]
 
-    cv["basic"]["updated_at"] = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    cv["basic"]["updated_at"] = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ")
     if "contact" not in cv:
         cv["contact"] = {}
     if not cv["contact"].get("name"):

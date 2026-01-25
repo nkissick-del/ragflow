@@ -81,13 +81,17 @@ class RAGFlowExcelParser:
 
         for row_num, row in enumerate(df.values, 2):
             for col_num, value in enumerate(row, 1):
+                if pd.isna(value):
+                    value = None
                 ws.cell(row=row_num, column=col_num, value=value)
 
     @staticmethod
     def _dataframe_to_workbook(df):
         # if contains multiple sheets use _dataframes_to_workbook
         if isinstance(df, dict):
-            if len(df) > 1:
+            if len(df) == 0:
+                return RAGFlowExcelParser._dataframes_to_workbook(df)
+            elif len(df) > 1:
                 return RAGFlowExcelParser._dataframes_to_workbook(df)
             elif len(df) == 1:
                 df = next(iter(df.values()))

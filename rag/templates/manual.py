@@ -191,6 +191,13 @@ class Docx(DocxParser):
         return ti_list, tbls
 
 
+def _attach_media_context_if_needed(res, parser_config):
+    table_ctx = max(0, int(parser_config.get("table_context_size", 0) or 0))
+    image_ctx = max(0, int(parser_config.get("image_context_size", 0) or 0))
+    if table_ctx or image_ctx:
+        attach_media_context(res, table_ctx, image_ctx)
+
+
 def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, **kwargs):
     """
     Supported file types: PDF and DOCX.
@@ -365,10 +372,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         )
         res = tokenize_table(tbls, doc, eng)
         res.extend(tokenize_chunks(chunks, doc, eng, pdf_parser))
-        table_ctx = max(0, int(parser_config.get("table_context_size", 0) or 0))
-        image_ctx = max(0, int(parser_config.get("image_context_size", 0) or 0))
-        if table_ctx or image_ctx:
-            attach_media_context(res, table_ctx, image_ctx)
+        _attach_media_context_if_needed(res, parser_config)
         return res
 
     elif re.search(r"\.docx?$", filename, re.IGNORECASE):
@@ -387,10 +391,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
     else:
         raise NotImplementedError("file type not supported yet(pdf and docx supported)")
 
-    table_ctx = max(0, int(parser_config.get("table_context_size", 0) or 0))
-    image_ctx = max(0, int(parser_config.get("image_context_size", 0) or 0))
-    if table_ctx or image_ctx:
-        attach_media_context(res, table_ctx, image_ctx)
+    _attach_media_context_if_needed(res, parser_config)
     return res
 
 

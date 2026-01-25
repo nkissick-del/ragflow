@@ -34,7 +34,10 @@ class RAGFlowTxtParser:
         cks = [""]
         tk_nums = [0]
         if isinstance(delimiter, str):
-            delimiter = codecs.decode(delimiter, "unicode_escape")
+            try:
+                delimiter = codecs.decode(delimiter, "unicode_escape")
+            except Exception:
+                pass
 
         def add_chunk(t):
             nonlocal cks, tk_nums, delimiter

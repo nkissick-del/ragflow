@@ -359,6 +359,7 @@ class TableStructureRecognizer(Recognizer):
         html = "<table>"
         if cap:
             html += f"<caption>{cap}</caption>"
+        seen_header_texts = set()
         for i in range(len(tbl)):
             row = "<tr>"
             txts = []
@@ -383,7 +384,7 @@ class TableStructureRecognizer(Recognizer):
                     row += f"<td {sp} >" + txt + "</td>"
 
             if i in hdset:
-                seen_header_texts = set()
+                # seen_header_texts = set()
                 if all(t in seen_header_texts for t in txts):
                     continue
                 for t in txts:

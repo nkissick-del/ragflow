@@ -151,7 +151,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
             logging.warning(f"tika not available: {e}. Unsupported .doc parsing for {filename}.")
             return []
 
-        if isinstance(binary, (str, bytes, bytearray)):
+        if binary is None or isinstance(binary, (str, bytes, bytearray)):
             if isinstance(binary, str) or binary is None:
                 with open(binary if binary else filename, "rb") as f:
                     binary = f.read()

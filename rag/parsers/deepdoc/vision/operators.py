@@ -462,6 +462,8 @@ class E2EResizeForTest:
 class KieResize:
     def __init__(self, **kwargs):
         super(KieResize, self).__init__()
+        if "img_scale" not in kwargs or not isinstance(kwargs["img_scale"], (list, tuple)) or len(kwargs["img_scale"]) < 2:
+            raise ValueError("KieResize requires 'img_scale' in kwargs with at least two elements")
         self.max_side, self.min_side = kwargs["img_scale"][0], kwargs["img_scale"][1]
 
     def __call__(self, data):
@@ -574,11 +576,6 @@ class Permute:
         channel_first (bool): whether convert HWC to CHW
     """
 
-    def __init__(
-        self,
-    ):
-        super(Permute, self).__init__()
-
     def __call__(self, im, im_info):
         """
         Args:
@@ -593,9 +590,9 @@ class Permute:
 
 
 class PadStride:
-    """padding image for model with FPN, instead PadBatch(pad_to_stride) in original config
+    """padding image for models with FPN, used instead of PadBatch(pad_to_stride) in the original config
     Args:
-        stride (bool): model with FPN need image shape % stride == 0
+        stride (int): models with FPN require image dimensions to be divisible by stride
     """
 
     def __init__(self, stride=0):

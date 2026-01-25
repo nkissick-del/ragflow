@@ -1,26 +1,9 @@
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 import sys
 
 
-# Mock dependencies to prevent heavy imports (DB, ML models, etc.)
-# This allows running unit tests without installing the full environment.
-from unittest.mock import MagicMock
-
-_mock_modules = [
-    "rag.app.format_parsers",
-    "rag.orchestration.router",
-    "rag.templates.general",
-    "rag.templates.semantic",
-    "rag.nlp",
-    "rag.utils.file_utils",
-    "common",
-    "common.settings",
-    "api.db.services.llm_service",
-]
-
-
-class TestOrchestrator(unittest.TestCase):
+class OrchestratorTestBase(unittest.TestCase):
     def setUp(self):
         # Setup mocks
         self.mock_modules = {
@@ -58,12 +41,16 @@ class TestOrchestrator(unittest.TestCase):
     def tearDown(self):
         self.patcher.stop()
 
-    @patch("rag.orchestration.orchestrator.UniversalRouter")
-    @patch("rag.orchestration.orchestrator.General")
-    def test_chunk(self, mock_general, mock_router):
-        # Setup mocks
-        mock_router.return_value.route.return_value = self.ParseResult(sections=["section1"])
-        mock_general.return_value.chunk.return_value = [{"content": "result"}]
+
+class TestOrchestrator(OrchestratorTestBase):
+    def test_chunk(self):
+        # Setup mocks via existing mocked modules from setUp
+        # orchestrator.UniversalRouter is imported from rag.orchestration.router
+        mock_router = self.mock_modules["rag.orchestration.router"].UniversalRouter
+        mock_general = self.mock_modules["rag.templates.general"].General
+
+        mock_router.route.return_value = self.ParseResult(sections=["section1"])
+        mock_general.chunk.return_value = [{"content": "result"}]
 
         # Test call
         filename = "test.docx"
@@ -71,8 +58,8 @@ class TestOrchestrator(unittest.TestCase):
         res = self.orchestrator.chunk(filename, binary)
 
         # Verify calls
-        mock_router.return_value.route.assert_called_once()
-        mock_general.return_value.chunk.assert_called_once()
+        mock_router.route.assert_called_once()
+        mock_general.chunk.assert_called_once()
 
         # Verify result
         self.assertEqual(len(res), 1)
@@ -83,46 +70,25 @@ class TestOrchestrator(unittest.TestCase):
         # Simulate an embedded file
         mock_extract.return_value = [("embed.pdf", b"embed_content")]
 
-        # Mock dependencies to avoid actual parsing
-        with patch("rag.orchestration.orchestrator.UniversalRouter") as mock_router, patch("rag.orchestration.orchestrator.General") as mock_general:
-            mock_router.return_value.route.return_value = self.ParseResult()
-            mock_general.return_value.chunk.return_value = []
+        # Mock dependencies
+        mock_router = self.mock_modules["rag.orchestration.router"].UniversalRouter
+        mock_general = self.mock_modules["rag.templates.general"].General
 
-            self.orchestrator.chunk("root.docx", b"root_content")
+        mock_router.route.return_value = self.ParseResult()
+        mock_general.chunk.return_value = []
 
-            # Verify extract called
-            # Verify recursive call happens (implied by extract_embed_file being called and loop running)
-            # Since we mocked chunk's internals, we expect at least the root processing attempts.
-            # We expect 2 calls to route: one for the root document, and one for the embedded file.
-            self.assertEqual(mock_router.return_value.route.call_count, 2)
+        # Reset counts for this test
+        mock_router.route.reset_mock()
+
+        self.orchestrator.chunk("root.docx", b"root_content")
+
+        # Verify extract called
+        # Verify 2 calls to route: one for the root document, and one for the embedded file.
+        self.assertEqual(mock_router.route.call_count, 2)
 
 
-class TestAdaptDoclingOutput(unittest.TestCase):
+class TestAdaptDoclingOutput(OrchestratorTestBase):
     """Tests for the adapt_docling_output() adapter function."""
-
-    def setUp(self):
-        mock_modules = {
-            "rag.app.format_parsers": MagicMock(),
-            "rag.orchestration.router": MagicMock(),
-            "rag.templates.general": MagicMock(),
-            "rag.templates.semantic": MagicMock(),
-            "rag.nlp": MagicMock(),
-            "rag.utils.file_utils": MagicMock(),
-            "common": MagicMock(),
-            "common.settings": MagicMock(),
-            "api.db.services.llm_service": MagicMock(),
-        }
-        self.patcher = patch.dict(sys.modules, mock_modules)
-        self.patcher.start()
-
-        from rag.orchestration import orchestrator
-        from rag.orchestration.base import StandardizedDocument
-
-        self.orchestrator = orchestrator
-        self.StandardizedDocument = StandardizedDocument
-
-    def tearDown(self):
-        self.patcher.stop()
 
     def test_adapt_string_input(self):
         """Test adapter with new string format (semantic mode)."""
@@ -130,41 +96,12 @@ class TestAdaptDoclingOutput(unittest.TestCase):
         tables = []
         parser_config = {"layout_recognizer": "Docling"}
 
-        # Need to re-import or use class imports if possible, but this is a separate class.
-        # So we need to patch here too.
-        # Actually, AdaptDoclingOutput tests standard library function, it imports orchestrator.
-        # We should use a base class or setUp here too.
-        # For now, let's just patch sys.modules in setUp of this class as well, or at least import inside tests.
-        # But we need mocks for dependencies too?
-        # adapt_docling_output relies on StandardizedDocument and DocumentElement from base.py
-        # orchestrator imports them.
-        # adapt_docling_output doesn't seem to rely on heavy stuff.
-        # But we import orchestrator which triggers heavy imports.
-        # So we MUST patch/mock modules before import.
+        result = self.orchestrator.adapt_docling_output(sections, tables, parser_config)
 
-        # To avoid duplicating setUp, I should probably merge classes or inherit from a base.
-        # I'll patch sys.modules here too.
-        mock_modules = {
-            "rag.app.format_parsers": MagicMock(),
-            "rag.orchestration.router": MagicMock(),
-            "rag.templates.general": MagicMock(),
-            "rag.templates.semantic": MagicMock(),
-            "rag.nlp": MagicMock(),
-            "rag.utils.file_utils": MagicMock(),
-            "common": MagicMock(),
-            "common.settings": MagicMock(),
-            "api.db.services.llm_service": MagicMock(),
-        }
-        with patch.dict(sys.modules, mock_modules):
-            from rag.orchestration import orchestrator
-            from rag.orchestration.base import StandardizedDocument
-
-            result = orchestrator.adapt_docling_output(sections, tables, parser_config)
-
-            self.assertIsInstance(result, StandardizedDocument)
-            self.assertEqual(result.content, sections)
-            self.assertEqual(result.metadata["parser"], "docling")
-            self.assertEqual(result.metadata["layout_recognizer"], "Docling")
+        self.assertIsInstance(result, self.StandardizedDocument)
+        self.assertEqual(result.content, sections)
+        self.assertEqual(result.metadata["parser"], "docling")
+        self.assertEqual(result.metadata["layout_recognizer"], "Docling")
 
     def test_adapt_with_tables(self):
         """Test adapter handling of tables."""
@@ -172,28 +109,13 @@ class TestAdaptDoclingOutput(unittest.TestCase):
         tables = [{"type": "table", "content": "| A | B |\n|---|---|\n| 1 | 2 |"}]
         parser_config = {"layout_recognizer": "Docling"}
 
-        mock_modules = {
-            "rag.app.format_parsers": MagicMock(),
-            "rag.orchestration.router": MagicMock(),
-            "rag.templates.general": MagicMock(),
-            "rag.templates.semantic": MagicMock(),
-            "rag.nlp": MagicMock(),
-            "rag.utils.file_utils": MagicMock(),
-            "common": MagicMock(),
-            "common.settings": MagicMock(),
-            "api.db.services.llm_service": MagicMock(),
-        }
-        with patch.dict(sys.modules, mock_modules):
-            from rag.orchestration import orchestrator
-            from rag.orchestration.base import StandardizedDocument
+        result = self.orchestrator.adapt_docling_output(sections, tables, parser_config)
 
-            result = orchestrator.adapt_docling_output(sections, tables, parser_config)
-
-            self.assertIsInstance(result, StandardizedDocument)
-            self.assertEqual(result.content, sections)
-            self.assertEqual(result.metadata["tables"], tables)
-            self.assertEqual(result.metadata["parser"], "docling")
-            self.assertEqual(result.metadata["layout_recognizer"], "Docling")
+        self.assertIsInstance(result, self.StandardizedDocument)
+        self.assertEqual(result.content, sections)
+        self.assertEqual(result.metadata["tables"], tables)
+        self.assertEqual(result.metadata["parser"], "docling")
+        self.assertEqual(result.metadata["layout_recognizer"], "Docling")
 
     def test_adapt_list_input_legacy(self):
         """Test adapter with legacy list format."""
@@ -225,85 +147,68 @@ class TestAdaptDoclingOutput(unittest.TestCase):
             _ = result.elements
 
 
-class TestSemanticRouting(unittest.TestCase):
+class TestSemanticRouting(OrchestratorTestBase):
     """Tests for semantic template routing in orchestrator.chunk()."""
 
     def setUp(self):
-        mock_modules = {
-            "rag.app.format_parsers": MagicMock(),
-            "rag.orchestration.router": MagicMock(),
-            "rag.templates.general": MagicMock(),
-            "rag.templates.semantic": MagicMock(),
-            "rag.nlp": MagicMock(),
-            "rag.utils.file_utils": MagicMock(),
-            "common": MagicMock(),
-            "common.settings": MagicMock(),
-            "api.db.services.llm_service": MagicMock(),
-        }
-        self.patcher = patch.dict(sys.modules, mock_modules)
-        self.patcher.start()
+        super().setUp()
+        # Helper to access mocks
+        self.mock_router = self.mock_modules["rag.orchestration.router"].UniversalRouter
+        self.mock_general = self.mock_modules["rag.templates.general"].General
+        self.mock_semantic = self.mock_modules["rag.templates.semantic"].Semantic
 
-        from rag.orchestration import orchestrator
-        from rag.orchestration.router import ParseResult
-
-        self.orchestrator = orchestrator
-        self.ParseResult = ParseResult
-
-    def tearDown(self):
-        self.patcher.stop()
-
-    @patch("rag.orchestration.orchestrator.UniversalRouter")
-    @patch("rag.orchestration.orchestrator.General")
-    def test_legacy_path_with_list_sections(self, mock_general, mock_router):
+    def test_legacy_path_with_list_sections(self):
         """Test that list sections still route to General template."""
         # Sections as list = legacy path
-        mock_router.return_value.route.return_value = self.ParseResult(sections=["section1", "section2"], is_markdown=False)
-        mock_general.return_value.chunk.return_value = [{"content": "general result"}]
+        self.mock_router.route.return_value = self.ParseResult(sections=["section1", "section2"], is_markdown=False)
+        self.mock_general.chunk.return_value = [{"content": "general result"}]
 
         parser_config = {"layout_recognizer": "Docling", "use_semantic_chunking": False}
+
+        self.mock_general.chunk.reset_mock()
 
         # os.environ patch removed as requested
         self.orchestrator.chunk("test.pdf", b"content", parser_config=parser_config)
 
         # Should use General because sections is a list, not string
-        mock_general.return_value.chunk.assert_called_once()
+        self.mock_general.chunk.assert_called_once()
 
-    @patch("rag.orchestration.orchestrator.UniversalRouter")
-    @patch("rag.orchestration.orchestrator.Semantic")
-    def test_semantic_path_with_string_sections(self, mock_semantic, mock_router):
+    def test_semantic_path_with_string_sections(self):
         """Test that string sections with use_semantic_chunking routes to Semantic template."""
         # Sections as string = new semantic path
-        mock_router.return_value.route.return_value = self.ParseResult(sections="# Heading\n\nContent", is_markdown=True)
-        mock_semantic.return_value.chunk.return_value = [{"content": "semantic result", "header_path": "/Heading/"}]
+        self.mock_router.route.return_value = self.ParseResult(sections="# Heading\n\nContent", is_markdown=True)
+        self.mock_semantic.chunk.return_value = [{"content": "semantic result", "header_path": "/Heading/"}]
 
         parser_config = {"layout_recognizer": "Docling", "use_semantic_chunking": True}
+
+        self.mock_semantic.chunk.reset_mock()
 
         # The decorator patch on rag.app.orchestrator.Semantic is sufficient
         # No need for redundant inner patch of rag.app.templates.semantic.Semantic
         res = self.orchestrator.chunk("test.pdf", b"content", parser_config=parser_config)
 
         # Should use Semantic template
-        mock_semantic.return_value.chunk.assert_called_once()
+        self.mock_semantic.chunk.assert_called_once()
 
         # Verify the result contains the expected semantic chunk
         self.assertEqual(len(res), 1)
         self.assertEqual(res[0]["content"], "semantic result")
         self.assertEqual(res[0]["header_path"], "/Heading/")
 
-    @patch("rag.orchestration.orchestrator.UniversalRouter")
-    @patch("rag.orchestration.orchestrator.General")
-    def test_legacy_path_without_semantic_flag(self, mock_general, mock_router):
+    def test_legacy_path_without_semantic_flag(self):
         """Test that without use_semantic_chunking flag, General is used."""
-        mock_router.return_value.route.return_value = self.ParseResult(sections="# Heading\n\nContent")
-        mock_general.return_value.chunk.return_value = [{"content": "general result"}]
+        self.mock_router.route.return_value = self.ParseResult(sections="# Heading\n\nContent")
+        self.mock_general.chunk.return_value = [{"content": "general result"}]
 
         # No use_semantic_chunking flag
         parser_config = {"layout_recognizer": "Docling"}
 
+        self.mock_general.chunk.reset_mock()
+
         res = self.orchestrator.chunk("test.pdf", b"content", parser_config=parser_config)
 
         # Should use General because flag is not set
-        mock_general.return_value.chunk.assert_called_once()
+        self.mock_general.chunk.assert_called_once()
         self.assertEqual(res, [{"content": "general result"}])
 
 

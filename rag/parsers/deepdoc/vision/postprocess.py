@@ -67,7 +67,11 @@ class DBPostProcess:
         boxes = []
         scores = []
 
-        contours, _ = cv2.findContours((bitmap * 255).astype(np.uint8), cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+        outs = cv2.findContours((bitmap * 255).astype(np.uint8), cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+        if len(outs) == 3:
+            _, contours, _ = outs
+        elif len(outs) == 2:
+            contours, _ = outs
 
         for contour in contours[: self.max_candidates]:
             epsilon = 0.002 * cv2.arcLength(contour, True)

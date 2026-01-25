@@ -400,6 +400,8 @@ class TCADPParser:
         out_dir = None
         created_tmp_dir = False
 
+        binary_bytes = None
+
         try:
             # Handle input file
             if binary:
@@ -425,7 +427,7 @@ class TCADPParser:
             if callback:
                 callback(0.2, "[TCADP] Converting file to Base64 format")
 
-            file_base64 = self._file_to_base64(file_path, binary)
+            file_base64 = self._file_to_base64(file_path, binary_bytes)
             if callback:
                 callback(0.25, f"[TCADP] File converted to Base64, size: {len(file_base64)} characters")
 

@@ -138,13 +138,14 @@ class TestPresentationTemplate(unittest.TestCase):
     def setUp(self):
         self.mock_modules = {
             "rag.app.format_parsers": MagicMock(),
-            "rag.orchestration.router": MagicMock(),
+            "rag.orchestration.router": MagicMock(PARSERS={}),
             "rag.templates.general": MagicMock(),
             "rag.templates.semantic": MagicMock(),
             "rag.nlp": MagicMock(),
             "rag.utils.file_utils": MagicMock(),
             "common": MagicMock(),
             "common.settings": MagicMock(),
+            "common.parser_config_utils": MagicMock(),
             "api.db.services.llm_service": MagicMock(),
             "rag.parsers": MagicMock(),
             "rag.parsers.deepdoc": MagicMock(),
@@ -155,6 +156,10 @@ class TestPresentationTemplate(unittest.TestCase):
         }
         self.patcher = patch.dict(sys.modules, self.mock_modules)
         self.patcher.start()
+        self.addCleanup(self.patcher.stop)
+
+        # Configure common.parser_config_utils.normalize_layout_recognizer to return a valid tuple
+        self.mock_modules["common.parser_config_utils"].normalize_layout_recognizer.return_value = ("DeepDOC", "DeepDOC")
 
         from rag.templates.presentation import Pdf, Ppt, chunk
 

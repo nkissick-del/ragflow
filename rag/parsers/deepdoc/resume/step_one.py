@@ -174,7 +174,6 @@ def refactor(df):
     clms.extend(["is_management_experience", "is_marital"])
 
     df.fillna("", inplace=True)
-    df.fillna("", inplace=True)
     mask = df["phone"].str.strip().eq("") & df["tel"].str.strip().ne("")
     df.loc[mask, "phone"] = df.loc[mask, "tel"].str.strip()
 
@@ -194,5 +193,13 @@ def refactor(df):
     target_fields = [n.split()[0] for n in FIELDS]
     if len(df.columns) != len(target_fields):
         raise ValueError(f"Column count mismatch: expected {len(target_fields)}, got {len(df.columns)}")
+
+    # Ensure columns match target_fields in order
+    if list(df.columns) != target_fields:
+        # If columns match but order differs, reorder
+        if set(df.columns) == set(target_fields):
+            df = df[target_fields]
+        else:
+            raise ValueError(f"Column name mismatch. Expected: {target_fields}, Got: {list(df.columns)}")
 
     return dict(zip(target_fields, df.values.tolist()[0]))

@@ -21,6 +21,8 @@ from PIL import ImageDraw
 
 
 def save_results(image_list, results, labels, output_dir="output/", threshold=0.5):
+    if len(image_list) != len(results):
+        raise ValueError(f"Length mismatch: {len(image_list)} images vs {len(results)} results")
     os.makedirs(output_dir, exist_ok=True)
     for idx, (im, res) in enumerate(zip(image_list, results)):
         im = draw_box(im, res, labels, threshold=threshold)

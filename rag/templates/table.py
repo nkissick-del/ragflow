@@ -290,10 +290,6 @@ class Excel(ExcelParser):
                 merged_value = self._get_merged_cell_value(ws, actual_row_num, actual_col_num, merged_ranges)
                 if merged_value is not None:
                     cell_value = merged_value
-                if merged_value is not None:
-                    cell_value = merged_value
-                else:
-                    cell_value = self._get_merged_cell_value(ws, actual_row_num, actual_col_num, merged_ranges)
             row_data.append(cell_value)
         return row_data
 

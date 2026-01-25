@@ -29,9 +29,6 @@ from rag.nlp import find_codec, concat_img
 
 
 class RAGFlowMarkdownParser:
-    def __init__(self):
-        pass
-
     def extract_tables_and_remainder(self, markdown_text, separate_tables=True):
         tables = []
         working_text = markdown_text
@@ -149,7 +146,7 @@ class RAGFlowMarkdownParser:
 
     def extract_image_urls_with_lines(self, text):
         md_img_re = re.compile(r"!\[[^\]]*\]\(([^)\s]+)")
-        html_img_re = re.compile(r'src=["\']([^"\'\s>]+)', re.IGNORECASE)
+        html_img_re = re.compile(r'src=(["\'])(.*?)\1', re.IGNORECASE)
         urls = []
         seen = set()
         lines = text.splitlines()
@@ -158,7 +155,7 @@ class RAGFlowMarkdownParser:
                 if (url, idx) not in seen:
                     urls.append({"url": url, "line": idx})
                     seen.add((url, idx))
-            for url in html_img_re.findall(line):
+            for _, url in html_img_re.findall(line):
                 if (url, idx) not in seen:
                     urls.append({"url": url, "line": idx})
                     seen.add((url, idx))
@@ -215,7 +212,7 @@ class RAGFlowMarkdownParser:
                     # For now just checking existence as before but logging clearly
                     if local_path.exists():
                         # Ensure it's not a sensitive system file if needed
-                        img_obj = Image.open(url).convert("RGB")
+                        img_obj = Image.open(local_path).convert("RGB")
                     else:
                         logging.warning(f"Local image file not found or access denied: {url}")
             except Exception as e:
@@ -275,7 +272,14 @@ class MarkdownElementExtractor:
         self.lines = markdown_content.split("\n")
 
     def _is_block_start(self, line):
-        return re.match(r"^#{1,6}\s+.*$", line) or line.strip().startswith("```") or re.match(r"^\s*[-*+]\s+.*$", line) or re.match(r"^\s*\d+\.\s+.*$", line) or line.strip().startswith(">")
+        stripped = line.strip()
+        return (
+            re.match(r"^#{1,6}\s+.*$", line)  # header
+            or stripped.startswith("```")  # code fence
+            or re.match(r"^\s*[-*+]\s+.*$", line)  # unordered list
+            or re.match(r"^\s*\d+\.\s+.*$", line)  # ordered list
+            or stripped.startswith(">")  # blockquote
+        )
 
     def get_delimiters(self, delimiters):
         toks = re.findall(r"`([^`]+)`", delimiters)

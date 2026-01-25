@@ -106,7 +106,7 @@ def chunk(
     main_res.extend(tokenize_chunks(chunks, doc, eng, None))
     logging.debug("naive_merge({}): {}".format(filename, timer() - st))
     # get the attachment info
-    # parent_filename = filename  # Preserve parent email filename before loop
+
     for part in msg.iter_attachments():
         content_disposition = part.get("Content-Disposition")
         if content_disposition:

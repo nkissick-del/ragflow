@@ -15,6 +15,7 @@
 #
 
 import copy
+import logging
 import re
 from collections import defaultdict
 from io import BytesIO
@@ -44,15 +45,19 @@ class Ppt(PptParser):
         else:
             presentation_stream = BytesIO(fnm) if isinstance(fnm, bytes) else fnm
 
-        with slides.Presentation(presentation_stream) as presentation:
-            for i, slide in enumerate(presentation.slides[from_page:to_page]):
-                try:
-                    with BytesIO() as buffered:
-                        slide.get_thumbnail(0.1, 0.1).save(buffered, drawing.imaging.ImageFormat.jpeg)
-                        buffered.seek(0)
-                        imgs.append(Image.open(buffered).copy())
-                except RuntimeError as e:
-                    raise RuntimeError(f"ppt parse error at page {i + 1}, original error: {str(e)}") from e
+        try:
+            with slides.Presentation(presentation_stream) as presentation:
+                for i, slide in enumerate(presentation.slides[from_page:to_page]):
+                    try:
+                        with BytesIO() as buffered:
+                            slide.get_thumbnail(0.1, 0.1).save(buffered, drawing.imaging.ImageFormat.jpeg)
+                            buffered.seek(0)
+                            imgs.append(Image.open(buffered).copy())
+                    except RuntimeError as e:
+                        raise RuntimeError(f"ppt parse error at page {i + 1}, original error: {str(e)}") from e
+        finally:
+            if isinstance(fnm, str) and hasattr(presentation_stream, "close"):
+                presentation_stream.close()
         if len(imgs) != len(txts):
             raise ValueError("Slides text and image do not match: {} vs. {}".format(len(imgs), len(txts)))
         if callback:
@@ -118,9 +123,7 @@ class Pdf(PdfParser):
                 # pn_index in tbls is absolute page number
                 current_page_num = int(pn_index) + 1
             except Exception as e:
-                import logging
-
-                logging.getLogger(__name__).exception(f"Error parsing position: {e}")
+                logging.getLogger(__name__).exception("Error parsing position")
                 continue
 
             if not (from_page <= current_page_num <= to_page + from_page):

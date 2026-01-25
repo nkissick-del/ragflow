@@ -1181,7 +1181,7 @@ class RAGFlowPdfParser:
 
         self.page_cum_height = np.cumsum(self.page_cum_height)
         assert len(self.page_cum_height) == len(self.page_images) + 1
-        if len(self.boxes) == 0 and zoomin < MAX_ZOOM and depth < MAX_DEPTH:
+        if all(not b for b in self.boxes) and zoomin < MAX_ZOOM and depth < MAX_DEPTH:
             logging.info(f"No OCR boxes found, retrying with zoom {zoomin * 3} (depth {depth + 1})")
             self.__images__(fnm, min(zoomin * 3, MAX_ZOOM), page_from, page_to, callback, depth + 1)
 
@@ -1453,7 +1453,7 @@ class PlainParser:
         try:
             with pdf2_read(filename if isinstance(filename, str) else BytesIO(filename)) as pdf:
                 for page in pdf.pages[from_page:to_page]:
-                    lines.extend([t for t in page.extract_text().split("\n")])
+                    lines.extend([t for t in (page.extract_text() or "").split("\n")])
 
                 outlines = pdf.outline
 

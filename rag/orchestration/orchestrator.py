@@ -68,11 +68,7 @@ def adapt_docling_output(sections, tables, parser_config) -> StandardizedDocumen
         StandardizedDocument: Normalized document ready for template processing
     """
     # If sections is already a string (new Docling format), use it directly
-    if isinstance(sections, str):
-        content = sections
-    else:
-        # Legacy: sections is List[str], join them back
-        content = "\n".join(sections) if sections else ""
+    content = sections if isinstance(sections, str) else ""
 
     return StandardizedDocument(
         content_input=content,
@@ -168,7 +164,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
             try:
                 sub_url_res = chunk(url, html_bytes, callback=callback, lang=lang, is_root=False, **kwargs)
             except Exception as e:
-                logging.info(f"Failed to chunk url in registered file type {url}: {e}")
+                logging.error(f"Failed to chunk url in registered file type {url}: {e}")
                 try:
                     sub_url_res = chunk(f"{index}.html", html_bytes, callback=callback, lang=lang, is_root=False, **kwargs)
                 except Exception as fallback_e:
@@ -193,6 +189,13 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         logging.info(f"[Orchestrator] Used Semantic template for {filename}")
     else:
         # LEGACY PATH: DeepDOC, or Docling without semantic flag
+
+        # Compatibility: DoclingParser now returns strict Markdown string.
+        # If we are in legacy mode (Semantic Chunking disabled), we need to split lines
+        # to satisfy General.chunk's expectations for non-semantic processing.
+        if is_docling and isinstance(sections, str):
+            sections = sections.splitlines()
+
         res = General.chunk(filename, sections, tables, section_images, pdf_parser, is_markdown, parser_config, doc, is_english, callback, is_docling=is_docling, **kwargs)
 
     logging.info("chunk({}): {}".format(filename, timer() - st))

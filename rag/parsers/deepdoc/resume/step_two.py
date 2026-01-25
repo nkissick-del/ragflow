@@ -726,8 +726,9 @@ def parse(cv):
         cv["id"] = str(tr_id)
         logging.debug(f"Handled resume ID: {tr_id}")
     else:
-        cv["id"] = None
-        logging.warning("Missing 'tob_resume_id' in CV record")
+        if "id" in cv:
+            del cv["id"]
+        logging.debug("Missing 'tob_resume_id' in CV record")
 
     return dealWithInt64(cv)
 

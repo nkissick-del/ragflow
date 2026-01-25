@@ -124,7 +124,7 @@ class Pdf(PdfParser):
         q_bull, reg = qbullets_category(sections)
         if q_bull == -1:
             logging.warning("Unable to recognize Q&A structure.")
-            return [], []
+            raise ValueError("Unable to recognize Q&A structure.")
         qai_list = []
         last_q, last_a, last_tag = "", "", ""
         last_index = -1

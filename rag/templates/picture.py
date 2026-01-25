@@ -76,6 +76,8 @@ def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
             bxs = ocr(np.array(img))
         except Exception as e:
             logger.error(f"Error processing image {filename}: {e}")
+            if callback:
+                callback(-1, str(e))
             return []
         txt = "\n".join([t[0] for _, t in bxs if t[0]])
         if callback:
@@ -125,7 +127,6 @@ def vision_llm_chunk(pil_image: Image.Image, vision_model, prompt=None, callback
                 img_binary.truncate()
                 pil_image.save(img_binary, format="PNG")
 
-            img_binary.seek(0)
             img_binary.seek(0)
             description = vision_model.describe_with_prompt(img_binary.read(), prompt)
             if not description:

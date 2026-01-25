@@ -31,6 +31,8 @@ class TestParserFixes(unittest.TestCase):
         # If blockType returns nothing or Counter is empty, it shouldn't crash
         # We can't easily trigger the exact crash without mocking blockType or having specific data,
         # but the fix condition 'if df.shape[1] > 0 and counter:' prevents the crash.
+        res2 = parser._RAGFlowDocxParser__compose_table_content(df2)
+        self.assertEqual(res2, [])
 
     def test_json_valid_method_static(self):
         """Test RAGFlowJsonParser._is_valid_json is static and works"""
@@ -42,6 +44,7 @@ class TestParserFixes(unittest.TestCase):
         parser = RAGFlowJsonParser()
         data = {"key": "中文"}
         chunks = parser.split_text(data, ensure_ascii=False)
+        self.assertTrue(chunks)
         self.assertIn("中文", chunks[0])
 
     def test_resume_falsy_check(self):

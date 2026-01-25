@@ -70,6 +70,7 @@ def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
         delimiter = "\t" if tab >= comma else ","
 
         content = ""
+        record_idx = 0
         i = 0
         while i < len(lines):
             arr = lines[i].split(delimiter)
@@ -77,7 +78,9 @@ def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
                 content += "\n" + lines[i]
             elif len(arr) == 2:
                 content += "\n" + arr[0]
-                res.append(beAdoc(deepcopy(doc), content, arr[1], i))
+                content += "\n" + arr[0]
+                res.append(beAdoc(deepcopy(doc), content, arr[1], record_idx))
+                record_idx += 1
                 content = ""
             i += 1
             if callback and len(res) > 0 and len(res) % 999 == 0:
@@ -135,7 +138,9 @@ def label_question(question, kbs):
         topn = tag_kbs[0].parser_config.get("topn_tags", 3)
         all_tags = get_tags_from_cache(tag_kb_ids)
         if not all_tags:
-            all_tags = settings.retriever.all_tags_in_portion(tenant_ids[0], tag_kb_ids)
+            all_tags = {}
+            for tenant_id in tenant_ids:
+                all_tags.update(settings.retriever.all_tags_in_portion(tenant_id, tag_kb_ids))
             set_tags_to_cache(tags=all_tags, kb_ids=tag_kb_ids)
         else:
             all_tags = json.loads(all_tags)

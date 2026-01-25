@@ -61,9 +61,6 @@ class Pdf(PdfParser):
         tbls = self._extract_table_figure(True, zoomin, True, True)
         self._concat_downward()
 
-        # sections = [(b["text"], self.get_position(b, zoomin)) for i, b in enumerate(self.boxes)]
-        # return [(txt, "") for txt, _ in sorted(sections, key=lambda x: (x[-1][0][0], x[-1][0][3], x[-1][0][1]))], tbls
-
         # Optimized sorting with clear key explanation: (page, top, left)
         sections_with_pos = [(b["text"], self.get_position(b, zoomin)) for b in self.boxes]
         sorted_sections = sorted(sections_with_pos, key=lambda item: (item[1][0][0], item[1][0][3], item[1][0][1]))
@@ -196,8 +193,5 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
 if __name__ == "__main__":
     import sys
 
-    def dummy(prog=None, msg=""):
-        pass
-
-    res = chunk(sys.argv[1], from_page=0, to_page=10, callback=dummy)
+    res = chunk(sys.argv[1], from_page=0, to_page=10, callback=_noop_callback)
     print(res)

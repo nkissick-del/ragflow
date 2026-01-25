@@ -60,7 +60,11 @@ class RAGFlowPptParser:
                     for j in range(len(tb.columns)):
                         cell = tb.cell(i, j)
                         if cell.text.strip():
-                            row_cells.append(tb.cell(0, j).text + ": " + cell.text)
+                            header_text = tb.cell(0, j).text.strip()
+                            if header_text:
+                                row_cells.append(header_text + ": " + cell.text)
+                            else:
+                                row_cells.append(cell.text)
                     if row_cells:
                         rows.append("; ".join(row_cells))
                 return "\n".join(rows)

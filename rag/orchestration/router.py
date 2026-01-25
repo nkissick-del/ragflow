@@ -120,9 +120,8 @@ class UniversalRouter:
             )
             return ParseResult(sections=sections, tables=tables, pdf_parser=pdf_parser, urls=urls)
 
-        elif re.search(r"\.(csv|xlsx?)$", filename, re.IGNORECASE):
-            layout_recognizer_raw = parser_config.get("layout_recognizer", parser_config.get("layout_recognize", "DeepDOC"))
-            layout_recognizer, _ = normalize_layout_recognizer(layout_recognizer_raw)
+        if re.search(r"\.(csv|xlsx?)$", filename, re.IGNORECASE):
+            layout_recognizer, _ = normalize_layout_recognizer(layout_recognizer_val)
             if isinstance(layout_recognizer, bool):
                 layout_recognizer = "DeepDOC" if layout_recognizer else "Plain Text"
             layout_recognizer_normalized = layout_recognizer.strip().lower() if isinstance(layout_recognizer, str) else ""
@@ -158,12 +157,6 @@ class UniversalRouter:
             urls.update(hyperlink_urls)
 
             return ParseResult(sections=sections, tables=tables, section_images=section_images, is_markdown=True, urls=urls)
-
-            sections = [(_, "") for _ in sections if _]
-            return ParseResult(sections=sections, urls=urls)
-
-            sections = [(_, "") for _ in sections if _]
-            return ParseResult(sections=sections, urls=urls)
 
         elif re.search(r"\.doc$", filename, re.IGNORECASE):
             try:
@@ -247,11 +240,11 @@ def by_mineru(
                 logging.error(f"Failed to parse pdf via LLMBundle MinerU ({mineru_llm_name}): {e}")
                 if callback:
                     callback(-1, f"MinerU ({mineru_llm_name}) found but failed to parse: {e}")
-                return None, None, mineru_parser
+                return [], [], mineru_parser
 
     if callback:
         callback(-1, "MinerU not found.")
-    return None, None, mineru_parser
+    return [], [], mineru_parser
 
 
 def by_docling(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, pdf_cls=None, **kwargs):
@@ -261,7 +254,7 @@ def by_docling(filename, binary=None, from_page=0, to_page=100000, lang="Chinese
     if not pdf_parser.check_installation():
         if callback and callable(callback):
             callback(-1, "Docling not found.")
-        return None, None, pdf_parser
+        return [], [], pdf_parser
 
     sections, tables = pdf_parser.parse_pdf(
         filepath=filename,
@@ -340,11 +333,11 @@ def by_paddleocr(
                 logging.error(f"Failed to parse pdf via LLMBundle PaddleOCR ({paddleocr_llm_name}): {e}")
                 if callback and callable(callback):
                     callback(-1, f"PaddleOCR parsing failed: {e}")
-                return None, None, paddle_parser
+                return [], [], paddle_parser
 
     if callback and callable(callback):
         callback(-1, "PaddleOCR not found.")
-    return None, None, paddle_parser
+    return [], [], paddle_parser
 
 
 def by_plaintext(filename, binary=None, from_page=0, to_page=100000, callback=None, **kwargs):
@@ -374,4 +367,5 @@ PARSERS = {
     "tcadp": by_tcadp,
     "paddleocr": by_paddleocr,
     "plaintext": by_plaintext,  # default
+    "plain text": by_plaintext,
 }

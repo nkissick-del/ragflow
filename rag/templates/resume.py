@@ -32,7 +32,7 @@ from common.string_utils import remove_redundant_spaces
 RESUME_PARSER_ENDPOINT = os.environ.get("RESUME_PARSER_ENDPOINT", "http://127.0.0.1:61670/tog")
 try:
     RESUME_PARSER_UID = int(os.environ.get("RESUME_PARSER_UID", "1"))
-except Exception:
+except (ValueError, TypeError):
     logging.warning(f"Invalid RESUME_PARSER_UID in environment variables: {os.environ.get('RESUME_PARSER_UID')}. using default 1.")
     RESUME_PARSER_UID = 1
 RESUME_PARSER_USER = os.environ.get("RESUME_PARSER_USER", "default_user")

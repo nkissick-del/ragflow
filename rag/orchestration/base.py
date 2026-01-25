@@ -64,7 +64,7 @@ class StandardizedDocument:
     content_input: InitVar[str] = ""
 
     # Backing field for content (use property for access)
-    _content: str = field(default="", repr=False)
+    _content: str = field(default="", init=False, repr=False)
 
     # Document-level metadata
     metadata: Dict[str, Any] = field(default_factory=dict)
@@ -73,8 +73,7 @@ class StandardizedDocument:
     _elements: Optional[List[DocumentElement]] = field(default=None, init=False, repr=False)
 
     def __post_init__(self, content_input: str):
-        if content_input and not self._content:
-            self._content = content_input
+        self._content = content_input
 
     @property
     def content(self) -> str:
@@ -96,6 +95,9 @@ class StandardizedDocument:
 
         Note: StandardizedDocument._parse_elements is a stub; full parsing must be
         provided by templates or semantic._parse_with_headers.
+
+        Warning: If populate_elements() has not been called and no concrete _parse_elements
+        implementation is provided (default behavior), this will raise NotImplementedError.
         """
         if self._elements is None:
             self._elements = self._parse_elements(self._content)
@@ -112,6 +114,9 @@ class StandardizedDocument:
         Args:
             elements: Iterable of DocumentElement objects to cache
         """
+        if isinstance(elements, (str, bytes, bytearray)):
+            raise TypeError(f"elements must be an Iterable of DocumentElement, not a string/bytes: got {type(elements)}")
+
         if not isinstance(elements, Iterable):
             raise TypeError(f"elements must be an Iterable, got {type(elements)}")
 

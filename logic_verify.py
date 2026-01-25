@@ -43,8 +43,11 @@ def test_subordinates_count_filter():
     # New logic
     fea_subordinates_count = [int(i) for i in fea_subordinates_count if re.match(r"^\d+$", str(i))]
     assert fea_subordinates_count == [10, 20]
-    max_sub = np.max(fea_subordinates_count)
-    assert max_sub == 20
+    if fea_subordinates_count:
+        max_sub = np.max(fea_subordinates_count)
+        assert max_sub == 20
+    else:
+        max_sub = None
     print("test_subordinates_count_filter passed")
 
 

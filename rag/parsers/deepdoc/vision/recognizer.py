@@ -213,11 +213,13 @@ class Recognizer:
         while s < ii:
             if box["top"] > bxs[s]["bottom"]:
                 s += 1
-            continue
+                continue
+            break
         while e - 1 > ii:
             if box["bottom"] < bxs[e - 1]["top"]:
                 e -= 1
-            continue
+                continue
+            break
 
         max_overlapped_i, max_overlapped = None, 0
         for i in range(s, e):

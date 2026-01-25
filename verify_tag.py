@@ -1,5 +1,7 @@
 import sys
 import os
+import traceback
+
 
 # Add current directory to path to import rag modules
 sys.path.append(os.getcwd())
@@ -27,8 +29,6 @@ try:
         print(f"Doc: {doc['content_with_weight']} | Tags: {doc['tag_kwd']}")
 except Exception as e:
     print(f"Error during CSV chunk: {e}")
-    import traceback
-
     traceback.print_exc()
 
 # Create a dummy TXT file
@@ -47,7 +47,13 @@ try:
         print(f"Doc: {doc['content_with_weight']} | Tags: {doc['tag_kwd']}")
 except Exception as e:
     print(f"Error during TXT chunk: {e}")
+    traceback.print_exc()
 
 # Cleanup
-os.remove("test_tag.csv")
-os.remove("test_tag.txt")
+try:
+    if os.path.exists("test_tag.csv"):
+        os.remove("test_tag.csv")
+    if os.path.exists("test_tag.txt"):
+        os.remove("test_tag.txt")
+except Exception as e:
+    print(f"Error during cleanup: {e}")

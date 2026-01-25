@@ -48,8 +48,6 @@ class SemanticTestBase(unittest.TestCase):
 class TestSemanticChunkDataclass(SemanticTestBase):
     """Unit tests for SemanticChunk dataclass."""
 
-    # Inherits setUp from SemanticTestBase
-
     def test_create_chunk(self):
         """Test creating a semantic chunk."""
         chunk = self.SemanticChunk(text="Some text content", header_path=["Introduction", "Background"], metadata={"tokens": 10})
@@ -61,7 +59,6 @@ class TestSemanticChunkDataclass(SemanticTestBase):
 class TestSemanticParseWithHeaders(SemanticTestBase):
     """Unit tests for the _parse_with_headers algorithm."""
 
-    # Inherits setUp from SemanticTestBase
     def test_single_header(self):
         """Test parsing content with a single header."""
         content = """# Introduction
@@ -234,17 +231,9 @@ Another paragraph.
 class TestSemanticChunkMethod(SemanticTestBase):
     """Tests for the self.Semantic.chunk() public method."""
 
-    # Inherits setUp from SemanticTestBase
-
-    def test_chunk_produces_ragflow_format(self):
+    @patch("rag.templates.semantic.rag_tokenizer")
+    def test_chunk_produces_ragflow_format(self, mock_tokenizer):
         """Test that chunk() produces dicts with required RAGFlow fields."""
-        # Mock tokenizer manually to allow side_effect control
-        from unittest.mock import MagicMock
-        import rag.templates.semantic
-
-        mock_tokenizer = MagicMock()
-        rag.templates.semantic.rag_tokenizer = mock_tokenizer
-
         mock_tokenizer.tokenize.return_value = "tokenized content"
         mock_tokenizer.fine_grained_tokenize.return_value = "fine grained"
 

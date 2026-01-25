@@ -73,6 +73,8 @@ sys.modules["sklearn.metrics"] = MagicMock()
 
 # 0c. Mock cv2 (OpenCV library used by deepdoc vision)
 sys.modules["cv2"] = MagicMock()
+
+# Mock python-pptx library (pptx, pptx.enum, pptx.enum.shapes)
 sys.modules["pptx"] = MagicMock()
 sys.modules["pptx.enum"] = MagicMock()
 sys.modules["pptx.enum.shapes"] = MagicMock()
@@ -100,6 +102,107 @@ sys.modules["PIL.ImageFont"] = mock_pil.ImageFont
 
 # 0i. Mock markdown library
 sys.modules["markdown"] = MagicMock()
+
+# 0k. Mock bs4 (BeautifulSoup)
+sys.modules["bs4"] = MagicMock()
+sys.modules["bs4.BeautifulSoup"] = MagicMock()
+sys.modules["bs4.NavigableString"] = MagicMock()
+sys.modules["bs4.Tag"] = MagicMock()
+sys.modules["bs4.Comment"] = MagicMock()
+
+# 0l. Mock huggingface_hub
+sys.modules["huggingface_hub"] = MagicMock()
+
+# 0m. Mock pypdf
+sys.modules["pypdf"] = MagicMock()
+
+
+# 0n. Mock peewee
+class MockField:
+    def __init__(self, *args, **kwargs):
+        pass
+
+
+sys.modules["peewee"] = MagicMock()
+sys.modules["peewee"].Model = MagicMock
+sys.modules["peewee"].CharField = MockField
+sys.modules["peewee"].DateTimeField = MockField
+sys.modules["peewee"].FloatField = MockField
+sys.modules["peewee"].IntegerField = MockField
+sys.modules["peewee"].TextField = MockField
+sys.modules["peewee"].Field = MockField
+
+# 0o. Mock werkzeug
+sys.modules["werkzeug"] = MagicMock()
+sys.modules["werkzeug.security"] = MagicMock()
+
+# 0p. Mock playhouse
+mock_playhouse = types.ModuleType("playhouse")
+sys.modules["playhouse"] = mock_playhouse
+sys.modules["playhouse.pool"] = MagicMock()
+sys.modules["playhouse.shortcuts"] = MagicMock()
+sys.modules["playhouse.migrate"] = MagicMock()
+
+# 0q. Mock xxhash
+sys.modules["xxhash"] = MagicMock()
+
+# 0r. Mock itsdangerous
+sys.modules["itsdangerous"] = MagicMock()
+sys.modules["itsdangerous.url_safe"] = MagicMock()
+
+# 0s. Mock quart_auth
+sys.modules["quart_auth"] = MagicMock()
+sys.modules["quart_auth"].AuthUser = MagicMock
+
+# 0t. Mock tenacity
+sys.modules["tenacity"] = MagicMock()
+
+# 0u. Mock langfuse
+sys.modules["langfuse"] = MagicMock()
+
+# 0v. Mock json_repair
+sys.modules["json_repair"] = MagicMock()
+
+# 0w. Mock litellm
+sys.modules["litellm"] = MagicMock()
+
+# 0x. Mock openai
+mock_openai = types.ModuleType("openai")
+mock_openai.AsyncOpenAI = MagicMock()
+mock_openai.OpenAI = MagicMock()
+sys.modules["openai"] = mock_openai
+sys.modules["openai.lib"] = MagicMock()
+sys.modules["openai.lib.azure"] = MagicMock()
+
+# 0y. Mock jinja2
+sys.modules["jinja2"] = MagicMock()
+
+# 0z. Mock LLM providers
+sys.modules["dashscope"] = MagicMock()
+sys.modules["zhipuai"] = MagicMock()
+sys.modules["volcengine"] = MagicMock()
+sys.modules["volcengine.maas"] = MagicMock()
+sys.modules["ollama"] = MagicMock()
+sys.modules["boto3"] = MagicMock()
+sys.modules["qianfan"] = MagicMock()
+
+# 0z2. Mock httpx
+sys.modules["httpx"] = MagicMock()
+
+# 0z3. Mock yarl
+sys.modules["yarl"] = MagicMock()
+
+# 0z4. Mock ormsgpack
+sys.modules["ormsgpack"] = MagicMock()
+
+# 0z5. Mock websocket
+sys.modules["websocket"] = MagicMock()
+
+# 0z6. Mock PyPDF2
+sys.modules["PyPDF2"] = MagicMock()
+
+# 0z7. Mock olefile
+sys.modules["olefile"] = MagicMock()
 
 # 0j. Mock deepdoc.parser submodules to prevent heavy imports
 # These are imported by deepdoc.parser.__init__ and have heavy dependencies

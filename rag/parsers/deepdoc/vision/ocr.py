@@ -204,7 +204,6 @@ class TextRecognizer:
         img_black = img_black[:, :, np.newaxis]
 
         row, col, c = img_black.shape
-        c = img_black.shape[2]
 
         return np.reshape(img_black, (c, row, col)).astype(np.float32)
 
@@ -347,7 +346,7 @@ class TextRecognizer:
             width_list.append(img.shape[1] / float(img.shape[0]))
         # Sorting can speed up the recognition process
         indices = np.argsort(np.array(width_list))
-        rec_res = [["", 0.0]] * img_num
+        rec_res = [["", 0.0] for _ in range(img_num)]
         batch_num = self.rec_batch_num
         st = time.time()
 
@@ -520,10 +519,8 @@ class OCR:
                 self.text_detector.append(TextDetector(model_dir, device_id))
                 self.text_recognizer.append(TextRecognizer(model_dir, device_id))
         else:
-            self.text_detector = [TextDetector(model_dir)]
-            self.text_recognizer = [TextRecognizer(model_dir)]
-        self.drop_score = 0.5
-        self.crop_image_res_index = 0
+            self.text_detector = [TextDetector(model_dir, device_id=0)]
+            self.text_recognizer = [TextRecognizer(model_dir, device_id=0)]
 
     def get_rotate_crop_image(self, img, points, device_id=0):
         """
@@ -635,7 +632,7 @@ class OCR:
             texts.append(text)
         return texts
 
-    def __call__(self, img, device_id=0):
+    def __call__(self, img, device_id: int | None = None):
         time_dict = {"det": 0, "rec": 0, "cls": 0, "all": 0}
         if device_id is None:
             device_id = 0

@@ -54,7 +54,8 @@ def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
 
         if ans:
             tokenize(doc, ans, is_english)
-        return [doc]
+            return [doc]
+        return []
     except Exception as e:
         if callback:
             callback(-1, str(e))

@@ -37,6 +37,12 @@ DEFAULT_TBL_TAG = "@@0\t0\t0\t0\t0##"
 get_float = common.float_utils.get_float
 
 
+class QAParseError(Exception):
+    """Raised when Q&A parsing fails."""
+
+    pass
+
+
 def build_beAdoc(d, q, a, eng, image=None, poss=None, row_num=-1):
     qprefix = "Question: " if eng else "问题："
     aprefix = "Answer: " if eng else "回答："
@@ -266,11 +272,9 @@ class Docx(DocxParser):
                 while i < len(r.cells):
                     span = 1
                     c = r.cells[i]
-                    for j in range(i + 1, len(r.cells)):
-                        if c._tc == r.cells[j]._tc:
-                            span += 1
-                            i = j
-                    i += 1
+                    if c._element.tcPr is not None and c._element.tcPr.gridSpan is not None:
+                        span = int(c._element.tcPr.gridSpan.val)
+                    i += span
                     c_text = html.escape(c.text, quote=True)
                     tbl_html += f"<td>{c_text}</td>" if span == 1 else f"<td colspan='{span}'>{c_text}</td>"
                 tbl_html += "</tr>"
@@ -407,8 +411,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
             qai_list, tbls = pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page, callback=callback)
         except ValueError as e:
             if callback:
-                callback(0.99, f"PDF parse error: {e}")
-            return []
+                callback(0.0, f"PDF parse error: {e}")
+            raise QAParseError(str(e))
         for q, a, image, poss in qai_list:
             res.append(beAdocPdf(deepcopy(doc), q, a, eng, image, poss))
         return res

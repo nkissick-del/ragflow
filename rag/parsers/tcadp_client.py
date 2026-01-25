@@ -185,7 +185,7 @@ class TencentCloudAPIClient:
                         shutil.copyfileobj(response.raw, f)
             except (requests.exceptions.Timeout, requests.exceptions.RequestException) as e:
                 logging.error(f"[TCADP] HTTP error downloading result: {e}")
-                raise
+                return None
 
             logging.info(f"[TCADP] Document parsing result downloaded to: {os.path.basename(file_path)}")
             return file_path

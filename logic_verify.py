@@ -56,11 +56,17 @@ def test_year_check():
 
     y = "2027"
     y_int = int(y) if y and str(y).isdigit() else 0
-    assert y_int > current_year if current_year < 2027 else not (y_int > current_year)
+    if current_year < 2027:
+        assert y_int > current_year
+    else:
+        assert not (y_int > current_year)
 
     y = "2025"
     y_int = int(y) if y and str(y).isdigit() else 0
-    assert not (y_int > current_year) if current_year >= 2025 else y_int > current_year
+    if current_year >= 2025:
+        assert not (y_int > current_year)
+    else:
+        assert y_int > current_year
     print("test_year_check passed")
 
 

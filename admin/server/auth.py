@@ -83,7 +83,7 @@ def init_default_admin():
         }
         if not UserService.save(**default_admin):
             raise AdminException("Can't init admin.", 500)
-    elif not any([u.is_active for u in users]):
+    elif all(u.is_active == ActiveEnum.INACTIVE.value for u in users):
         raise AdminException("No active admin. Please update 'is_active' in db manually.", 500)
 
 

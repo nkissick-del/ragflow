@@ -62,9 +62,7 @@ class MetaConfig(BaseConfig):
 
     def to_dict(self) -> dict[str, Any]:
         result = super().to_dict()
-        if "extra" not in result:
-            result["extra"] = dict()
-        extra_dict = result["extra"].copy()
+        extra_dict = result.get("extra", {}).copy()
         extra_dict["meta_type"] = self.meta_type
         result["extra"] = extra_dict
         return result
@@ -255,7 +253,7 @@ class OceanBaseConfig(MetaConfig):
 
 
 class UserDefaultLLMConfig(BaseConfig):
-    default_models: dict
+    default_models: dict[str, Any]
 
     def to_dict(self) -> dict[str, Any]:
         result = super().to_dict()
@@ -289,7 +287,7 @@ def load_configurations(config_path: str) -> list[BaseConfig]:
                     port: int = parsed.port or int(v.get("port") or 9200)
                 except (ValueError, TypeError):
                     port = 9200
-                if not host or not isinstance(port, int):
+                if not host:
                     logging.warning(f"Invalid ES url: {url}, expected scheme://host:port")
                     continue
                 username: str = v.get("username")
@@ -376,8 +374,11 @@ def load_configurations(config_path: str) -> list[BaseConfig]:
                     config = DoclingConfig(id=id_count, name=name, host=host, port=port, base_url=url, service_type="docling", detail_func_name="check_docling_alive")  # Placeholder function name
                     configurations.append(config)
                     id_count += 1
-                except Exception as e:
-                    logging.warning(f"Error parsing docling config: {e}")
+                except (ValueError, AttributeError) as e:
+                    logging.warning(f"Error parsing docling config: {e}. URL: {v.get('base_url', 'unknown')}")
+                except Exception:
+                    logging.exception(f"Unexpected error parsing docling config. Config: {v}")
+                    raise
             case "os":
                 name: str = "opensearch"
                 url = v.get("hosts", "")

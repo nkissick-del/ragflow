@@ -37,6 +37,7 @@ from rag.utils.redis_conn import REDIS_CONN
 from quart import jsonify
 from api.utils.health_utils import run_health_checks
 from common import settings
+from rag.templates import list_templates as get_template_list
 
 
 @manager.route("/version", methods=["GET"])  # noqa: F821
@@ -364,8 +365,6 @@ def list_templates():
                                     description: Display label (e.g., "Semantic")
     """
     try:
-        from rag.app.templates import list_templates as get_template_list
-
         templates = get_template_list()
         return get_json_result(data=templates)
     except Exception as e:

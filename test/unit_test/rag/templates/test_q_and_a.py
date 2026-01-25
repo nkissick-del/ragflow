@@ -6,30 +6,25 @@ Excel, TXT, CSV, and edge cases.
 
 import unittest
 from unittest.mock import patch, MagicMock
-import sys
 
 
-class TestQAndATemplate(unittest.TestCase):
+class BaseQAndATestCase(unittest.TestCase):
+    """Base test case with shared mock setup."""
+
+    def setUp(self):
+        from test.mocks.mock_utils import setup_mocks
+
+        setup_mocks()
+
+    def tearDown(self):
+        pass
+
+
+class TestQAndATemplate(BaseQAndATestCase):
     """Tests for the Q&A template."""
 
     def setUp(self):
-        # Setup mocks for modules that q_and_a might import
-        self.mock_modules = {
-            "rag.parsers": MagicMock(),
-            "rag.parsers.deepdoc_client": MagicMock(),
-            "rag.parsers.PdfParser": MagicMock(),
-            "rag.parsers.ExcelParser": MagicMock(),
-            "rag.parsers.DocxParser": MagicMock(),
-            "deepdoc": MagicMock(),
-            "deepdoc.parser": MagicMock(),
-            "common": MagicMock(),
-            "common.token_utils": MagicMock(),
-            "bs4": MagicMock(),
-            "openpyxl": MagicMock(),
-        }
-        self.patcher = patch.dict(sys.modules, self.mock_modules)
-        self.patcher.start()
-
+        super().setUp()
         # Import q_and_a after mocks are set up
         from rag.templates import q_and_a
 
@@ -38,7 +33,7 @@ class TestQAndATemplate(unittest.TestCase):
         self.callback = MagicMock()
 
     def tearDown(self):
-        self.patcher.stop()
+        super().tearDown()
 
     def test_chunk_excel(self):
         """Test Excel file parsing returns expected Q&A pairs."""
@@ -46,7 +41,7 @@ class TestQAndATemplate(unittest.TestCase):
             mock_instance = MockParser.return_value
             # The Excel.__call__ returns a list of (question, answer) tuples
             # Note: rmPrefix strips "A " prefix (matches "A:" pattern) so use answer without A prefix
-            mock_instance.return_value = [("What is this?", "This is a test answer.")]
+            mock_instance.return_value = ([("What is this?", "This is a test answer.")], "eng")
 
             res = self.q_and_a.chunk("test.xlsx", b"content", callback=self.callback)
 
@@ -244,30 +239,17 @@ class TestQAndATemplate(unittest.TestCase):
             self.assertIn("问题：", res_zh[0]["content_with_weight"])
 
 
-class TestMdQuestionLevel(unittest.TestCase):
+class TestMdQuestionLevel(BaseQAndATestCase):
     """Test cases for the mdQuestionLevel helper function."""
 
     def setUp(self):
-        # We need q_and_a module here too
-        # Reuse patch.dict or just import if no side effects...
-        # mdQuestionLevel depends on token_utils? No, it's regex.
-        # But q_and_a import triggers others.
-        # So we must mock.
-        self.mock_modules = {
-            "rag.parsers": MagicMock(),
-            "deepdoc": MagicMock(),
-            "common": MagicMock(),
-            "common.token_utils": MagicMock(),
-            "bs4": MagicMock(),
-        }
-        self.patcher = patch.dict(sys.modules, self.mock_modules)
-        self.patcher.start()
+        super().setUp()
         from rag.templates import q_and_a
 
         self.q_and_a = q_and_a
 
     def tearDown(self):
-        self.patcher.stop()
+        super().tearDown()
 
     def test_heading_levels(self):
         """Test that markdown heading levels are correctly detected."""

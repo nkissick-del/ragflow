@@ -592,8 +592,8 @@ class OCR:
         if device_id is None:
             device_id = 0
 
-        if device_id < 0 or device_id >= len(self.text_detector):
-            raise ValueError(f"device_id {device_id} is out of range. Available devices: {len(self.text_detector)}")
+        if device_id < 0 or device_id >= len(self.text_detector) or device_id >= len(self.text_recognizer):
+            raise ValueError(f"device_id {device_id} is out of range. Available detectors: {len(self.text_detector)}, Available recognizers: {len(self.text_recognizer)}")
 
         time_dict = {"det": 0, "rec": 0, "cls": 0, "all": 0}
 
@@ -615,8 +615,8 @@ class OCR:
         if device_id is None:
             device_id = 0
 
-        if device_id < 0 or device_id >= len(self.text_recognizer):
-            raise ValueError(f"device_id {device_id} is out of range. Available devices: {len(self.text_recognizer)}")
+        if device_id < 0 or device_id >= len(self.text_recognizer) or device_id >= len(self.text_detector):
+            raise ValueError(f"device_id {device_id} is out of range. Available recognizers: {len(self.text_recognizer)}, Available detectors: {len(self.text_detector)}")
 
         img_crop = self.get_rotate_crop_image(ori_im, box, device_id)
 
@@ -629,8 +629,8 @@ class OCR:
     def recognize_batch(self, img_list, device_id: int | None = None):
         if device_id is None:
             device_id = 0
-        if device_id < 0 or device_id >= len(self.text_recognizer):
-            raise ValueError(f"device_id {device_id} is out of range. Available devices: {len(self.text_recognizer)}")
+        if device_id < 0 or device_id >= len(self.text_recognizer) or device_id >= len(self.text_detector):
+            raise ValueError(f"device_id {device_id} is out of range. Available recognizers: {len(self.text_recognizer)}, Available detectors: {len(self.text_detector)}")
 
         rec_res, elapse = self.text_recognizer[device_id](img_list)
         texts = []
@@ -646,8 +646,8 @@ class OCR:
         if device_id is None:
             device_id = 0
 
-        if device_id < 0 or device_id >= len(self.text_detector):
-            raise ValueError(f"device_id {device_id} is out of range. Available devices: {len(self.text_detector)}")
+        if device_id < 0 or device_id >= len(self.text_detector) or device_id >= len(self.text_recognizer):
+            raise ValueError(f"device_id {device_id} is out of range. Available detectors: {len(self.text_detector)}, Available recognizers: {len(self.text_recognizer)}")
 
         if img is None:
             return None, None, time_dict

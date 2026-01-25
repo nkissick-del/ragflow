@@ -273,7 +273,13 @@ async def build_chunks(task, progress_callback):
                 tenant_id=task["tenant_id"],
             )
         if hasattr(chunker, "FIELD_MAP"):
-            KnowledgebaseService.update_parser_config(task["kb_id"], {"field_map": chunker.FIELD_MAP})
+            try:
+                await asyncio.get_running_loop().run_in_executor(
+                    None,
+                    partial(KnowledgebaseService.update_parser_config, task["kb_id"], {"field_map": chunker.FIELD_MAP}),
+                )
+            except Exception as e:
+                logging.error(f"update_parser_config({task['kb_id']}) got exception {e} with field_map {chunker.FIELD_MAP}")
         logging.info("Chunking({}) {}/{} done".format(timer() - st, task["location"], task["name"]))
     except TaskCanceledException:
         raise

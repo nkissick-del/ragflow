@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 import sys
 
 # Project root is automatically added to sys.path by test/unit_test/conftest.py
@@ -14,11 +14,13 @@ class TestSemanticLogging(unittest.TestCase):
         """
         # We need to force a reload of the module with tiktoken missing
 
-        # Mock dependencies that might import tiktoken themselves
-        mock_tokenizer = MagicMock()
-        mock_doc = MagicMock()
+        from test.mocks.mock_utils import setup_mocks
 
-        with patch.dict(sys.modules, {"tiktoken": None, "rag.nlp": MagicMock(), "rag.nlp.rag_tokenizer": mock_tokenizer, "common.token_utils": MagicMock(), "rag.orchestration.base": mock_doc}):
+        setup_mocks()
+
+        # We need to manually patch tiktoken to None as the test expects it to be missing
+        # setup_mocks mocks it, so we overwrite it
+        with patch.dict(sys.modules, {"tiktoken": None}):
             # Mock logging to capture calls
             with patch("logging.warning") as mock_log:
                 # Save original module to restore later
@@ -29,7 +31,7 @@ class TestSemanticLogging(unittest.TestCase):
                     del sys.modules["rag.templates.semantic"]
 
                 try:
-                    import rag.templates.semantic
+                    import rag.templates.semantic  # noqa: F401
                 except ImportError as e:
                     if "tiktoken" in str(e):
                         self.skipTest("tiktoken not installed")

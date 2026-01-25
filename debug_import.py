@@ -12,6 +12,7 @@ def try_import(module_path):
     try:
         mod = importlib.import_module(module_path)
         print(f"{module_path} imported: {mod}", file=sys.stderr)
+        return mod
     except Exception as e:
         print(f"Failed to import {module_path}: {e}", file=sys.stderr)
         sys.exit(1)

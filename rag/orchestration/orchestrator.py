@@ -72,7 +72,7 @@ def adapt_docling_output(sections, tables, parser_config) -> StandardizedDocumen
         content = sections
     elif isinstance(sections, list):
         # Legacy fallback: Join list of strings
-        content = "\n".join(sections)
+        content = "\n".join([str(s) for s in sections if s is not None])
         logging.warning("[Docling] Received legacy list sections in adapt_docling_output, joining with newlines.")
     else:
         content = ""

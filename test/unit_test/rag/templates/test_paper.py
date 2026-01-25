@@ -1,7 +1,7 @@
 import unittest
 
 from unittest.mock import MagicMock, patch
-from tests.mock_utils import setup_mocks
+from test.mocks.mock_utils import setup_mocks
 
 # Set up system mocks
 setup_mocks()
@@ -61,15 +61,18 @@ class TestPaperTemplate(unittest.TestCase):
         # Call the real __call__ method using the mock object as 'self'
         paper.Pdf.__call__(self.pdf, "test.pdf", callback=None)
 
+    @patch("rag.templates.paper.rag_tokenizer")
     @patch("rag.templates.paper.vision_figure_parser_pdf_wrapper")
-    @patch("rag.templates.paper.Pdf")
     @patch("rag.templates.paper.normalize_layout_recognizer")
-    def test_chunk_callback_none(self, mock_normalize, mock_pdf_cls, mock_vision):
+    def test_chunk_callback_none(self, mock_normalize, mock_vision, mock_tok):
         """Verify chunk() works when callback is None"""
         mock_normalize.return_value = ("DeepDOC", "model")
+        mock_tok.tokenize.return_value = []
+        mock_tok.fine_grained_tokenize.return_value = []
 
         # Configure the mock Pdf instance returned by the class constructor logic
-        mock_pdf_instance = mock_pdf_cls.return_value
+        # Since Pdf is already patched at the class level in setUp, we use self.pdf
+        mock_pdf_instance = self.pdf
         # Add required keys: authors, title, abstract
         mock_pdf_instance.return_value = {"sections": [], "tables": [], "authors": "", "title": "", "abstract": ""}
 
@@ -80,11 +83,10 @@ class TestPaperTemplate(unittest.TestCase):
 
     @patch("rag.templates.paper.vision_figure_parser_pdf_wrapper")
     @patch("rag.templates.paper.rag_tokenizer")
-    @patch("rag.templates.paper.Pdf")
     @patch("rag.templates.paper.normalize_layout_recognizer")
     @patch("rag.templates.paper.title_frequency")
     @patch("rag.templates.paper.bullets_category")
-    def test_chunk_logging_defensive(self, mock_bullets, mock_title, mock_normalize, mock_pdf_cls, mock_tok, mock_vision):
+    def test_chunk_logging_defensive(self, mock_bullets, mock_title, mock_normalize, mock_tok, mock_vision):
         """Verify chunk() logging handles both tuples and strings in sorted_sections"""
         mock_bullets.return_value = []
         mock_title.return_value = (0, [0, 0])
@@ -98,7 +100,7 @@ class TestPaperTemplate(unittest.TestCase):
         for name, sorted_sections in test_cases:
             with self.subTest(name=name):
                 # Setup specific return value for this case
-                mock_pdf_instance = mock_pdf_cls.return_value
+                mock_pdf_instance = self.pdf
                 mock_pdf_instance.return_value = {"sections": sorted_sections, "tables": [], "authors": "", "title": "", "abstract": ""}
                 # Fix ValueError in tokenize_chunks -> pdf_parser.crop
                 # pdf_parser is the mock_pdf_instance in this context
@@ -112,18 +114,17 @@ class TestPaperTemplate(unittest.TestCase):
 
     @patch("rag.templates.paper.vision_figure_parser_pdf_wrapper")
     @patch("rag.templates.paper.rag_tokenizer")
-    @patch("rag.templates.paper.Pdf")
     @patch("rag.templates.paper.normalize_layout_recognizer")
     @patch("rag.templates.paper.title_frequency")
     @patch("rag.templates.paper.bullets_category")
-    def test_chunk_mismatch_error(self, mock_bullets, mock_title, mock_normalize, mock_pdf_cls, mock_tok, mock_vision):
+    def test_chunk_mismatch_error(self, mock_bullets, mock_title, mock_normalize, mock_tok, mock_vision):
         """Verify chunk() raises ValueError when sections and levels mismatch"""
         mock_bullets.return_value = []
         mock_title.return_value = (0, [0])
         mock_normalize.return_value = ("DeepDOC", "model")
 
         sorted_sections = ["text1", "text2"]
-        mock_pdf = mock_pdf_cls.return_value
+        mock_pdf = self.pdf
         mock_pdf.return_value = {"sections": sorted_sections, "tables": [], "authors": "", "title": "", "abstract": ""}
 
         mock_tok.tokenize.return_value = []

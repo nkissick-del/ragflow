@@ -1504,17 +1504,12 @@ class VisionParser(RAGFlowPdfParser):
         zoomin = kwargs.get("zoomin", 3)
         self.__images__(fnm=filename, zoomin=zoomin, page_from=from_page, page_to=to_page, callback=callback)
 
-        total_pdf_pages = self.total_page
-
         start_page = max(0, from_page)
-        end_page = min(to_page, total_pdf_pages)
 
         all_docs = []
 
         for idx, img_binary in enumerate(self.page_images or []):
             pdf_page_num = idx + start_page
-            if pdf_page_num < start_page or pdf_page_num >= end_page:
-                continue
 
             from rag.templates.picture import vision_llm_chunk as picture_vision_llm_chunk
 

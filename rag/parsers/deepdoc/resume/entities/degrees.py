@@ -34,8 +34,8 @@ TBL = {
 TBL_ = {v: k for k, v in TBL.items()}
 
 
-def get_name(id):
-    return TBL.get(str(id), "")
+def get_name(identifier):
+    return TBL.get(str(identifier), "")
 
 
 def get_id(nm):

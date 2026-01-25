@@ -101,10 +101,22 @@ def get_table_html(img, tb_cpns, ocr):
             b["SP"] = ii
 
     template_path = os.path.join(os.path.dirname(__file__), "table_template.html")
-    with open(template_path, "r") as f:
-        html_template = f.read()
+    if not os.path.exists(template_path):
+        logging.error(f"Table template not found at {template_path}")
+        return ""
+
+    try:
+        with open(template_path, "r", encoding="utf-8") as f:
+            html_template = f.read()
+    except Exception as e:
+        logging.error(f"Failed to read table template at {template_path}: {e}")
+        return ""
 
     table_content = TableStructureRecognizer.construct_table(boxes, html=True)
+    if "<!-- TABLE_CONTENT -->" not in html_template:
+        logging.error("Invalid table template: missing '<!-- TABLE_CONTENT -->' placeholder")
+        return ""
+
     return html_template.replace("<!-- TABLE_CONTENT -->", table_content)
 
 

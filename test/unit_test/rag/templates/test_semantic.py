@@ -31,13 +31,18 @@ class SemanticTestBase(unittest.TestCase):
     """Base class for Semantic template tests handling module reloading."""
 
     def setUp(self):
+        from test.mocks.mock_utils import setup_mocks
+
+        setup_mocks()
+
         import sys
 
-        # Remove modules from sys.modules to force re-import
+        # We still need to reload the module to test import logic if needed
+        # but manual deletion of everything isn't needed if mocks are stable
+        # However, for this specific test class base, it seems to want fresh import
         if "rag.templates.semantic" in sys.modules:
             del sys.modules["rag.templates.semantic"]
 
-        # Now import to ensure fresh state
         import rag.templates.semantic
 
         # Bind fresh classes to self for use in tests
@@ -237,7 +242,7 @@ class TestSemanticChunkMethod(SemanticTestBase):
         mock_tokenizer.tokenize.return_value = "tokenized content"
         mock_tokenizer.fine_grained_tokenize.return_value = "fine grained"
 
-        doc = StandardizedDocument(_content="# Test\n\nContent here.")
+        doc = StandardizedDocument(content_input="# Test\n\nContent here.")
         parser_config = {"chunk_token_num": 500}
         doc_metadata = {"docnm_kwd": "test.pdf", "title_tks": "test"}
 
@@ -272,7 +277,7 @@ Intro content.
 
 Background content.
 """
-        doc = StandardizedDocument(_content=content)
+        doc = StandardizedDocument(content_input=content)
         parser_config = {"chunk_token_num": 500}
 
         chunks = self.Semantic.chunk(filename="test.pdf", standardized_doc=doc, parser_config=parser_config, doc={}, is_english=True)

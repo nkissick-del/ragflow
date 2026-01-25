@@ -704,7 +704,7 @@ def clean_tts_text(text: str) -> str:
     text = re.sub(r"[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]", "", text)
 
     emoji_pattern = re.compile(
-        "[\U0001f600-\U0001f64f\U0001f300-\U0001f5ff\U0001f680-\U0001f6ff\U0001f1e0-\U0001f1ff\U00002700-\U000027bf\U0001f900-\U0001f9ff\U0001fa70-\U0001faff\U0001fad0-\U0001faff]+", flags=re.UNICODE
+        "[\U0001f600-\U0001f64f\U0001f300-\U0001f5ff\U0001f680-\U0001f6ff\U0001f1e0-\U0001f1ff\U00002700-\U000027bf\U0001f900-\U0001f9ff\U0001fa70-\U0001faff]+", flags=re.UNICODE
     )
     text = emoji_pattern.sub("", text)
 
@@ -712,7 +712,12 @@ def clean_tts_text(text: str) -> str:
 
     MAX_LEN = 500
     if len(text) > MAX_LEN:
-        text = text[:MAX_LEN]
+        cutoff = text.rfind(" ", 0, MAX_LEN)
+        if cutoff > 0:
+            text = text[:cutoff]
+        else:
+            text = text[:MAX_LEN]
+        text = text.strip()
 
     return text
 
@@ -723,14 +728,14 @@ def tts(tts_mdl, text):
     text = clean_tts_text(text)
     if not text:
         return None
-    bin = b""
+    audio_data = b""
     try:
         for chunk in tts_mdl.tts(text):
-            bin += chunk
+            audio_data += chunk
     except Exception as e:
         logging.error(f"TTS failed: {e}, text={text!r}")
         return None
-    return binascii.hexlify(bin).decode("utf-8")
+    return binascii.hexlify(audio_data).decode("utf-8")
 
 
 class _ThinkStreamState:

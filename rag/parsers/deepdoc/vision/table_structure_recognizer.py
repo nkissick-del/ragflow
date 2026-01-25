@@ -53,6 +53,10 @@ class TableStructureRecognizer(Recognizer):
             )
 
     def __call__(self, images, thr=0.2):
+        if thr < 0.08:
+            logging.warning("Threshold too low, setting to 0.08")
+            thr = 0.08
+
         table_structure_recognizer_type = os.getenv("TABLE_STRUCTURE_RECOGNIZER_TYPE", "onnx").lower()
         if table_structure_recognizer_type not in ["onnx", "ascend"]:
             raise RuntimeError("Unsupported table structure recognizer type.")
@@ -600,11 +604,7 @@ class TableStructureRecognizer(Recognizer):
         images = [np.array(im) if not isinstance(im, np.ndarray) else im for im in image_list]
         results = []
 
-        if thr < 0.08:
-            logging.warning("Threshold too low, setting to 0.08")
-            conf_thr = 0.08
-        else:
-            conf_thr = thr
+        conf_thr = thr
 
         batch_loop_cnt = math.ceil(float(len(images)) / batch_size)
         for bi in range(batch_loop_cnt):

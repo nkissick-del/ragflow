@@ -1,5 +1,6 @@
 import sys
 from unittest.mock import MagicMock
+import types
 
 
 def setup_mocks():
@@ -16,7 +17,18 @@ def setup_mocks():
     sys.modules["minio.commonconfig"] = MagicMock()
     sys.modules["minio.error"] = MagicMock()
 
-    # RAG Utils Wrappers (mocking these avoids importing their heavy dependencies)
+    # Provides lightweight mock implementations of heavy dependencies
+    # for local unit testing without Docker.
+    #
+    # NOTE: If your test requires mocking a new system dependency, please add it here
+    # rather than mocking it locally in your test file. This ensures a single source
+    # of truth for mocks.
+    # RAG Utils Wrappers
+    # 5. Mock file_utils which is imported by token_utils
+    mock_file_utils = types.ModuleType("common.file_utils")
+    mock_file_utils.get_project_base_directory = lambda: "/tmp"
+    sys.modules["common.file_utils"] = mock_file_utils
+    sys.modules["common.float_utils"] = MagicMock()
     sys.modules["rag.utils.s3_conn"] = MagicMock()
     sys.modules["rag.utils.minio_conn"] = MagicMock()
     sys.modules["rag.utils.infinity_conn"] = MagicMock()
@@ -48,7 +60,14 @@ def setup_mocks():
     sys.modules["nltk"] = MagicMock()
     sys.modules["nltk.corpus"] = MagicMock()
     sys.modules["nltk.tokenize"] = MagicMock()
-    sys.modules["tiktoken"] = MagicMock()
+    # NLP & ML Libraries
+    mock_tiktoken = MagicMock()
+    mock_encoder = MagicMock()
+    # Mock encode to return a list whose length is roughly number of words
+    mock_encoder.encode.side_effect = lambda x: x.split() if x else []
+    mock_tiktoken.encoding_for_model.return_value = mock_encoder
+    sys.modules["tiktoken"] = mock_tiktoken
+
     sys.modules["xgboost"] = MagicMock()
     sys.modules["sklearn"] = MagicMock()
     sys.modules["sklearn.cluster"] = MagicMock()
@@ -130,13 +149,64 @@ def setup_mocks():
     sys.modules["tencentcloud.lkeap.v20240522.lkeap_client"] = MagicMock()
     sys.modules["tencentcloud.lkeap.v20240522.models"] = MagicMock()
 
-    # Utils
-    sys.modules["PyPDF2"] = MagicMock()
-    sys.modules["olefile"] = MagicMock()
+    # Mock common.token_utils
+    sys.modules["common.token_utils"] = MagicMock()
+    sys.modules["common.constants"] = MagicMock()
+    sys.modules["common.parser_config_utils"] = MagicMock()
 
     # Special logic for rag_tokenizer to return strings instead of Mocks
     rag_tokenizer = MagicMock()
     rag_tokenizer.tradi2simp.side_effect = lambda x: x
     rag_tokenizer.strQ2B.side_effect = lambda x: x
-    rag_tokenizer.tokenize.side_effect = lambda x: x
+    rag_tokenizer.tokenize.side_effect = lambda x: x.split() if x else []
     sys.modules["rag.nlp.rag_tokenizer"] = rag_tokenizer
+
+    # Mock common.config_utils
+    mock_config_utils = MagicMock()
+    mock_config_utils.read_config.return_value = {
+        "ragflow": {},
+        "service": {"ports": {"8000": 8000}},
+        "mysql": {"name": "ragflow", "user": "root", "password": "", "host": "127.0.0.1", "port": 3306},
+        "postgres": {"name": "ragflow", "user": "root", "password": "", "host": "127.0.0.1", "port": 5432},
+    }
+    mock_config_utils.get_base_config.side_effect = lambda name, default=None: default
+
+    def side_effect_decrypt(name=None):
+        configs = {
+            "mysql": {"host": "127.0.0.1", "port": 3306, "name": "ragflow", "user": "root", "password": "mock_password", "engine": "mysql"},
+            "postgres": {"host": "127.0.0.1", "port": 5432, "name": "ragflow", "user": "postgres", "password": "mock_password", "engine": "postgres"},
+        }
+        if name and name.lower() in configs:
+            return configs[name.lower()]
+        return {"host": "127.0.0.1", "port": 3306, "name": "mock_db", "user": "mock_user", "password": "mock_password"}
+
+    mock_config_utils.decrypt_database_config.side_effect = side_effect_decrypt
+    sys.modules["common.config_utils"] = mock_config_utils
+
+    # Mock common package
+    # We must preserve submodules we explicitly mocked, but mocking the parent helps with attribute access
+    sys.modules["common"] = MagicMock()
+    # Link mocked submodules to common mock
+    sys.modules["common"].file_utils = sys.modules["common.file_utils"]
+    sys.modules["common"].float_utils = sys.modules["common.float_utils"]
+    sys.modules["common"].config_utils = sys.modules["common.config_utils"]
+    sys.modules["common"].token_utils = sys.modules["common.token_utils"]
+    sys.modules["common"].constants = sys.modules["common.constants"]
+    sys.modules["common"].parser_config_utils = sys.modules["common.parser_config_utils"]
+
+    # Mock rag.nlp package
+    mock_rag_nlp = MagicMock()
+    mock_rag_nlp.rag_tokenizer = rag_tokenizer
+    mock_rag_nlp.bullets_category.return_value = []
+    mock_rag_nlp.title_frequency.return_value = (0, [])
+    mock_rag_nlp.tokenize.side_effect = lambda x, eng=True: x.split() if isinstance(x, str) else []
+    mock_rag_nlp.tokenize_table.return_value = []
+    mock_rag_nlp.add_positions.side_effect = lambda d, p: None
+    mock_rag_nlp.tokenize_chunks.return_value = []
+    mock_rag_nlp.attach_media_context.side_effect = lambda r, t, i: None
+
+    sys.modules["rag.nlp"] = mock_rag_nlp
+
+    # Utils
+    sys.modules["PyPDF2"] = MagicMock()
+    sys.modules["olefile"] = MagicMock()

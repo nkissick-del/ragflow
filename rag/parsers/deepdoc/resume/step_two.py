@@ -57,7 +57,12 @@ def time_limit(seconds):
         target_thread = threading.current_thread().ident
 
         def trigger_timeout():
-            ctypes.pythonapi.PyThreadState_SetAsyncExc(ctypes.c_long(target_thread), ctypes.py_object(TimeoutException))
+            ret = ctypes.pythonapi.PyThreadState_SetAsyncExc(ctypes.c_long(target_thread), ctypes.py_object(TimeoutException))
+            if ret == 0:
+                logging.error(f"Invalid thread ID {target_thread}, failed to raise TimeoutException")
+            elif ret > 1:
+                ctypes.pythonapi.PyThreadState_SetAsyncExc(ctypes.c_long(target_thread), None)
+                logging.error("TimeoutException raised in multiple threads, undoing...")
 
         timer = threading.Timer(seconds, trigger_timeout)
         timer.start()
@@ -110,7 +115,7 @@ def forEdu(cv):
                 y, m, d = getYMD(dt)
                 ed_dt.append(str(y))
                 e["end_dt_kwd"] = str(y)
-            except Exception as exc:
+            except Exception:
                 pass
         if n.get("start_time"):
             try:

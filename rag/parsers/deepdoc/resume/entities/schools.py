@@ -44,7 +44,7 @@ def loadRank(fnm):
             except (ValueError, IndexError, TypeError, KeyError) as e:
                 logging.warning(f"Error parsing line {line}: {e}")
             except Exception as e:
-                logging.warning(f"Unexpected error parsing line {line}: {e}")
+                logging.error(f"Unexpected error parsing line {line}: {e}", exc_info=True)
 
 
 loadRank(os.path.join(current_file_path, "res/school.rank.csv"))
@@ -67,7 +67,7 @@ def select(nm):
         nm = str(nm[0])
     nm = split(nm)[0]
     nm = str(nm).lower().strip()
-    nm = re.sub(r"[(（][^()（）]+[)）]", "", nm.lower())
+    nm = re.sub(r"[(（][^()（）]+[)）]", "", nm)
     nm = re.sub(r"(^the |[,.&（）();；·]+|^(英国|美国|瑞士))", "", nm)
     nm = re.sub(r"大学.*学院", "大学", nm)
 

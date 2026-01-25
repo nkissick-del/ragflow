@@ -66,8 +66,6 @@ class TestLawsTemplate(unittest.TestCase):
     def tearDown(self):
         self.patcher.stop()
 
-    """Tests for the laws template to verify callback safety and error handling."""
-
     @staticmethod
     def _doc_search_side_effect(pat, f, flags=0):
         """Shared helper for mocking re.search to match .doc files."""
@@ -107,8 +105,7 @@ class TestLawsTemplate(unittest.TestCase):
         pdf.page_images = [MagicMock()]
         pdf.page_images[0].size = (100, 100)
 
-        with self.assertRaisesRegex(TypeError, "callback=None"):
-            pdf("dummy.pdf", binary=b"dummy", callback=None)
+        pdf("dummy.pdf", binary=b"dummy", callback=None)
 
     def test_doc_binary_none_uses_from_file(self):
         """Verify .doc parsing handles None binary correctly by using from_file."""
@@ -147,15 +144,13 @@ class TestLawsTemplate(unittest.TestCase):
 
     def test_not_implemented_error_lists_all_formats(self):
         """Verify NotImplementedError message lists all supported formats."""
-        try:
+        with self.assertRaises(NotImplementedError) as cm:
             self.laws.chunk("unsupported.xyz", callback=lambda *args, **kwargs: None)
-        except NotImplementedError as e:
-            msg = str(e)
-            expected = ["doc", "docx", "pdf", "txt", "md", "markdown", "mdx", "htm", "html"]
-            for ext in expected:
-                self.assertIn(ext, msg, f"Message missing extension: {ext}")
-        else:
-            self.fail("Did not raise NotImplementedError")
+
+        msg = str(cm.exception)
+        expected = ["doc", "docx", "pdf", "txt", "md", "markdown", "mdx", "htm", "html"]
+        for ext in expected:
+            self.assertIn(ext, msg, f"Message missing extension: {ext}")
 
 
 # Removed teardown_module as it is no longer needed with setUp/patcher

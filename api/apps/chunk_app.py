@@ -198,8 +198,11 @@ async def switch():
             e, doc = DocumentService.get_by_id(req["doc_id"])
             if not e:
                 return get_data_error_result(message="Document not found!")
+            tenant_id = DocumentService.get_tenant_id(req["doc_id"])
+            if not tenant_id:
+                return get_data_error_result(message="Tenant not found!")
             for cid in req["chunk_ids"]:
-                if not settings.docStoreConn.update({"id": cid}, {"available_int": int(req["available_int"])}, search.index_name(DocumentService.get_tenant_id(req["doc_id"])), doc.kb_id):
+                if not settings.docStoreConn.update({"id": cid}, {"available_int": int(req["available_int"])}, search.index_name(tenant_id), doc.kb_id):
                     return get_data_error_result(message="Index updating failure")
             return get_json_result(data=True)
 

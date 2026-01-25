@@ -94,7 +94,7 @@ class RAGFlowHtmlParser:
         for table_rows in tables:
             new_table = soup.new_tag("table")
             for row in table_rows:
-                new_table.append(copy.copy(row))
+                new_table.append(copy.deepcopy(row))
             table_str_list.append(str(new_table))
 
         return table_str_list

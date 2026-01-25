@@ -329,13 +329,11 @@ class DoclingParser:
 
             # Clean Base64 images from Markdown to prevent "garbage" chunks
             # Pattern matches: ![Alt Text](data:image/...)
-            sections = ""
-            tables = []
             if result_text:
                 result_text = re.sub(r"!\[.*?\]\(data:image\/[^)]*;base64,[^)]*\)", "", result_text)
 
-                sections = result_text if result_text else ""
-                tables = []  # Tables are embedded in markdown
+            sections = result_text or ""
+            tables = []  # Tables are embedded in markdown
 
             if callback:
                 callback(1.0, "[Docling] Done.")

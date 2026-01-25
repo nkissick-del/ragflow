@@ -81,7 +81,7 @@ sys.modules["sklearn"] = mock_sklearn
 sys.modules["sklearn.cluster"] = MagicMock()
 sys.modules["sklearn.metrics"] = MagicMock()
 
-# 0c2. Mock cv2 (OpenCV library used by deepdoc vision)
+# 0d. Mock cv2 (OpenCV library used by deepdoc vision)
 sys.modules["cv2"] = MagicMock()
 
 # 0c3. Mock python-pptx library (pptx, pptx.enum, pptx.enum.shapes)
@@ -89,7 +89,7 @@ sys.modules["pptx"] = MagicMock()
 sys.modules["pptx.enum"] = MagicMock()
 sys.modules["pptx.enum.shapes"] = MagicMock()
 
-# 0d. Mock onnxruntime (used by deepdoc vision)
+# 0e. Mock onnxruntime (used by deepdoc vision)
 sys.modules["onnxruntime"] = MagicMock()
 
 # 0e. Mock pdfplumber (heavy PDF library used by deepdoc)

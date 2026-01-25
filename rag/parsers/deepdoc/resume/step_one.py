@@ -84,11 +84,8 @@ def refactor(df):
     def loadjson(line):
         try:
             return json.loads(line)
-        except json.JSONDecodeError:
-            pass
         except Exception:
-            pass
-        return {}
+            return {}
 
     df["obj"] = df["resume_content"].map(lambda x: loadjson(x))
     df.fillna("", inplace=True)

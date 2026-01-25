@@ -36,7 +36,7 @@ class RAGFlowTxtParser:
         if isinstance(delimiter, str):
             try:
                 delimiter = codecs.decode(delimiter, "unicode_escape")
-            except UnicodeDecodeError:
+            except (UnicodeDecodeError, ValueError):
                 pass
 
         def add_chunk(t):
@@ -61,11 +61,12 @@ class RAGFlowTxtParser:
         dels = [re.escape(d) for d in dels if d]
         if not dels:
             secs = [txt]
+            dels_pattern = ""
         else:
-            dels = "|".join(dels)
-            secs = re.split(r"(%s)" % dels, txt)
+            dels_pattern = "|".join(dels)
+            secs = re.split(r"(%s)" % dels_pattern, txt)
         for sec in secs:
-            if dels and re.match(f"^{dels}$", sec):
+            if dels_pattern and re.match(f"^{dels_pattern}$", sec):
                 continue
             add_chunk(sec)
 

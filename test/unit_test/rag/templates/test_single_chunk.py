@@ -49,6 +49,8 @@ class TestSingleChunk(unittest.TestCase):
     def test_chunk_docx(self):
         # Verify logic branches to Docx parser
         mock_docx_instance = MagicMock()
+        # Configure mock to look like it parsed content
+        mock_docx_instance.return_value = [("Parsed Docx Content", [], [])]
 
         with patch.object(self.single_chunk, "Docx") as mock_docx, patch.object(self.single_chunk, "vision_figure_parser_docx_wrapper_naive") as _:
             mock_docx.return_value = mock_docx_instance
@@ -57,7 +59,8 @@ class TestSingleChunk(unittest.TestCase):
 
             mock_docx.assert_called_once()
             self.assertEqual(len(res), 1)
-            self.assertEqual(res[0]["content_with_weight"], "")
+            # Verify the content was used
+            self.assertIn("Parsed Docx Content", res[0]["content_with_weight"])
 
 
 if __name__ == "__main__":

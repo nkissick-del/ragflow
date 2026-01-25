@@ -1,4 +1,4 @@
-from tests.mock_utils import setup_mocks
+from test.mocks.mock_utils import setup_mocks
 
 # Set up system mocks
 setup_mocks()

@@ -136,7 +136,6 @@ class RAGFlowJsonParser:
             sections = [json.dumps(line, ensure_ascii=False) for line in chunks if line]
         except json.JSONDecodeError:
             logging.error("Failed to parse JSON content.")
-            pass
         return sections
 
     def _parse_jsonl(self, content: str) -> list[str]:

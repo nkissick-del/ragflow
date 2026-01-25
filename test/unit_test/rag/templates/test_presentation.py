@@ -207,7 +207,7 @@ class TestPresentationTemplate(unittest.TestCase):
                 parser("dummy.pptx", 0, 10, callback=None)
             except TypeError as e:
                 self.fail(f"Ppt raised TypeError with callback=None: {e}")
-            except (FileNotFoundError, AttributeError, KeyError, Exception):
+            except Exception:
                 # Accept other errors as long as it's not the TypeError we are testing for
                 pass
 

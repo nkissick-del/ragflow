@@ -371,14 +371,6 @@ class AscendLayoutRecognizer(LayoutRecognizer):
                 h = image_list[pn].shape[0]
                 w = image_list[pn].shape[1]
 
-            if lts:
-                # Ascend layouts are mostly sorted by score but let's sort by Y
-                avg_h = np.mean([lt["bbox"][3] - lt["bbox"][1] for lt in lts])
-                lts = self.sort_Y_firstly(lts, avg_h / 2 if avg_h > 0 else 0)
-
-            # process_layouts is defined in LayoutRecognizer. We need to inherit from it.
-            # I will assume I change the class definition in another step or rely on Python MRO if I changed it (I haven't yet).
-            # I will invoke it as self.process_layouts hoping I fix inheritance.
             res, page_lt = self.process_layouts(ocr_res[pn], lts, (w, h), scale_factor, thr, drop)
             final_ocr_res.extend(res)
             final_page_layout.append(page_lt)

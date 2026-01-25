@@ -403,7 +403,12 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         if callback:
             callback(0.1, "Start to parse.")
         pdf_parser = Pdf()
-        qai_list, tbls = pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page, callback=callback)
+        try:
+            qai_list, tbls = pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page, callback=callback)
+        except ValueError as e:
+            if callback:
+                callback(0.99, f"PDF parse error: {e}")
+            return []
         for q, a, image, poss in qai_list:
             res.append(beAdocPdf(deepcopy(doc), q, a, eng, image, poss))
         return res

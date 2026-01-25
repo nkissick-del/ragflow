@@ -1,8 +1,6 @@
 import unittest
 import pandas as pd
-from collections import Counter
-from io import BytesIO
-from unittest.mock import MagicMock, patch
+
 
 # Import parsers (assuming they are in python path)
 # We will mock dependencies where needed to test logic in isolation
@@ -12,7 +10,6 @@ from rag.parsers.deepdoc.json_parser import RAGFlowJsonParser
 from rag.parsers.deepdoc.resume import refactor
 from rag.parsers.deepdoc.txt_parser import RAGFlowTxtParser
 from rag.parsers.deepdoc.ppt_parser import RAGFlowPptParser
-from pptx.enum.shapes import MSO_SHAPE_TYPE
 
 
 class TestParserFixes(unittest.TestCase):
@@ -36,6 +33,7 @@ class TestParserFixes(unittest.TestCase):
 
     def test_json_valid_method_static(self):
         """Test RAGFlowJsonParser._is_valid_json is static and works"""
+        self.assertIsInstance(RAGFlowJsonParser.__dict__["_is_valid_json"], staticmethod)
         self.assertTrue(RAGFlowJsonParser._is_valid_json('{"a": 1}'))
         self.assertFalse(RAGFlowJsonParser._is_valid_json("{a: 1}"))
 
@@ -59,15 +57,19 @@ class TestParserFixes(unittest.TestCase):
     def test_txt_chunking(self):
         """Test txt parser chunking logic"""
         parser = RAGFlowTxtParser()
-        # Mock get_text to return string directly
-        with patch("rag.parsers.deepdoc.txt_parser.get_text", return_value="a b c " * 50):
-            # chunk_token_num small to force chunking
-            res = parser.parser_txt("a b c " * 50, chunk_token_num=5)
-            # Just ensure it runs without error and returns list
-            self.assertIsInstance(res, list)
+        # parser_txt accepts raw string, no need to mock get_text
+        # Include delimiters to facilitate chunking
+        txt = "a b c \n" * 50
+        res = parser.parser_txt(txt, chunk_token_num=5)
+        self.assertIsInstance(res, list)
+        self.assertGreater(len(res), 1)
+        # Verify reconstruction (ignoring exact whitespace if delimiter handling is complex, but roughly)
+        # Or just check chunk size <= 5 tokens roughly?
+        # The parser returns [[chunk, ""], ...]
+        # Let's verify we got multiple chunks
 
-    def test_ppt_shape_constants(self):
-        """Test that PPT parser uses MSO_SHAPE_TYPE constants (static check implied by import success)"""
+    def test_ppt_parser_has_extract_method(self):
+        """Test that PPT parser has the expected private extract method"""
         parser = RAGFlowPptParser()
         self.assertTrue(hasattr(parser, "_RAGFlowPptParser__extract"))
 

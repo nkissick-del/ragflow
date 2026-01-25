@@ -1,3 +1,13 @@
+"""
+Unit test configuration file for RAGFlow.
+
+This file handles mocking of heavy dependencies (like vision libraries, PDF parsers, etc.)
+that are difficult to install or unnecessary for unit testing logic.
+
+IMPORTANT: Mocks are organized and ordered specifically to ensure submodules are mocked
+before their parent packages are imported or mocked, to avoid ImportErrors.
+"""
+
 import sys
 from unittest.mock import MagicMock
 import warnings
@@ -71,10 +81,10 @@ sys.modules["sklearn"] = mock_sklearn
 sys.modules["sklearn.cluster"] = MagicMock()
 sys.modules["sklearn.metrics"] = MagicMock()
 
-# 0c. Mock cv2 (OpenCV library used by deepdoc vision)
+# 0c2. Mock cv2 (OpenCV library used by deepdoc vision)
 sys.modules["cv2"] = MagicMock()
 
-# Mock python-pptx library (pptx, pptx.enum, pptx.enum.shapes)
+# 0c3. Mock python-pptx library (pptx, pptx.enum, pptx.enum.shapes)
 sys.modules["pptx"] = MagicMock()
 sys.modules["pptx.enum"] = MagicMock()
 sys.modules["pptx.enum.shapes"] = MagicMock()
@@ -105,10 +115,6 @@ sys.modules["markdown"] = MagicMock()
 
 # 0k. Mock bs4 (BeautifulSoup)
 sys.modules["bs4"] = MagicMock()
-sys.modules["bs4.BeautifulSoup"] = MagicMock()
-sys.modules["bs4.NavigableString"] = MagicMock()
-sys.modules["bs4.Tag"] = MagicMock()
-sys.modules["bs4.Comment"] = MagicMock()
 
 # 0l. Mock huggingface_hub
 sys.modules["huggingface_hub"] = MagicMock()
@@ -204,7 +210,7 @@ sys.modules["PyPDF2"] = MagicMock()
 # 0z7. Mock olefile
 sys.modules["olefile"] = MagicMock()
 
-# 0j. Mock deepdoc.parser submodules to prevent heavy imports
+# 0z8. Mock deepdoc.parser submodules to prevent heavy imports
 # These are imported by deepdoc.parser.__init__ and have heavy dependencies
 sys.modules["deepdoc.parser.pdf_parser"] = MagicMock()
 sys.modules["deepdoc.parser.ppt_parser"] = MagicMock()

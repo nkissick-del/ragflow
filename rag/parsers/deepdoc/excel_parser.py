@@ -109,6 +109,10 @@ class RAGFlowExcelParser:
     def _dataframes_to_workbook(dfs: dict):
         wb = Workbook()
         default_sheet = wb.active
+
+        if not dfs:
+            return wb
+
         wb.remove(default_sheet)
 
         for sheet_name, df in dfs.items():

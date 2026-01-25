@@ -113,11 +113,10 @@ class DoclingParser:
             output_dir: Reserved for interface compatibility with other parsers (unused)
             delete_output: Reserved for interface compatibility with other parsers (unused)
             parse_method: Reserved for interface compatibility with other parsers (unused)
-            **kwargs: Additional arguments including use_semantic_chunking flag
+            **kwargs: Additional arguments
 
         Returns:
-            Tuple of (sections, tables) where sections is either list[str] or str
-            depending on use_semantic_chunking flag.
+            Tuple of (sections, tables) where sections is string.
 
         Note:
             The parameters output_dir, delete_output, and parse_method are accepted
@@ -330,21 +329,18 @@ class DoclingParser:
 
             # Clean Base64 images from Markdown to prevent "garbage" chunks
             # Pattern matches: ![Alt Text](data:image/...)
+            sections = ""
+            tables = []
             if result_text:
                 result_text = re.sub(r"!\[.*?\]\(data:image\/[^)]*;base64,[^)]*\)", "", result_text)
 
-                # Feature flag for semantic chunking (new structured output)
-                # When enabled, return the full Markdown string for semantic template processing
-                # When disabled (default), maintain backward compatibility with splitlines()
-                # Return structured Markdown (or plain text) directly
-                # The orchestration layer handles chunking/splitting as needed
                 sections = result_text if result_text else ""
                 tables = []  # Tables are embedded in markdown
 
             if callback:
                 callback(1.0, "[Docling] Done.")
 
-            self.logger.info(f"[Docling] Successfully parsed, result length: {len(result_text)} chars")
+            self.logger.info(f"[Docling] Successfully parsed, result length: {len(result_text or '')} chars")
             return sections, tables
 
         except Exception as e:
@@ -357,9 +353,6 @@ class DoclingParser:
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
-    parser = DoclingParser()
-    # Test valid connection if you have a running server, else this might fail
     logging.basicConfig(level=logging.INFO)
     parser = DoclingParser()
     try:

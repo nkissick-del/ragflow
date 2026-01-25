@@ -592,6 +592,9 @@ class OCR:
         if device_id is None:
             device_id = 0
 
+        if device_id < 0 or device_id >= len(self.text_detector):
+            raise ValueError(f"device_id {device_id} is out of range. Available devices: {len(self.text_detector)}")
+
         time_dict = {"det": 0, "rec": 0, "cls": 0, "all": 0}
 
         if img is None:
@@ -612,6 +615,9 @@ class OCR:
         if device_id is None:
             device_id = 0
 
+        if device_id < 0 or device_id >= len(self.text_recognizer):
+            raise ValueError(f"device_id {device_id} is out of range. Available devices: {len(self.text_recognizer)}")
+
         img_crop = self.get_rotate_crop_image(ori_im, box, device_id)
 
         rec_res, elapse = self.text_recognizer[device_id]([img_crop])
@@ -623,6 +629,9 @@ class OCR:
     def recognize_batch(self, img_list, device_id: int | None = None):
         if device_id is None:
             device_id = 0
+        if device_id < 0 or device_id >= len(self.text_recognizer):
+            raise ValueError(f"device_id {device_id} is out of range. Available devices: {len(self.text_recognizer)}")
+
         rec_res, elapse = self.text_recognizer[device_id](img_list)
         texts = []
         for i in range(len(rec_res)):
@@ -636,6 +645,9 @@ class OCR:
         time_dict = {"det": 0, "rec": 0, "cls": 0, "all": 0}
         if device_id is None:
             device_id = 0
+
+        if device_id < 0 or device_id >= len(self.text_detector):
+            raise ValueError(f"device_id {device_id} is out of range. Available devices: {len(self.text_detector)}")
 
         if img is None:
             return None, None, time_dict

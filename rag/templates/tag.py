@@ -78,7 +78,7 @@ def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
                 content += "\n" + lines[i]
             elif len(arr) == 2:
                 content += "\n" + arr[0]
-                content += "\n" + arr[0]
+                content += "\n" + arr[1]
                 res.append(beAdoc(deepcopy(doc), content, arr[1], record_idx))
                 record_idx += 1
                 content = ""

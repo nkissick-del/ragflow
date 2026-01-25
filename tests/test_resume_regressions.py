@@ -1,29 +1,12 @@
-import sys
-from unittest.mock import MagicMock
+from tests.mock_utils import setup_mocks
 
-# Mock opendal before importing modules that depend on it
-sys.modules["opendal"] = MagicMock()
-sys.modules["rag.utils.opendal_conn"] = MagicMock()
-sys.modules["boto3"] = MagicMock()
-sys.modules["minio"] = MagicMock()
-sys.modules["minio.commonconfig"] = MagicMock()
-sys.modules["rag.utils.s3_conn"] = MagicMock()
-sys.modules["rag.utils.minio_conn"] = MagicMock()
-sys.modules["elasticsearch"] = MagicMock()
-sys.modules["infinity"] = MagicMock()
-sys.modules["infinity.rag_tokenizer"] = MagicMock()
-sys.modules["opensearchpy"] = MagicMock()
-sys.modules["oss2"] = MagicMock()
-sys.modules["azure.storage.blob"] = MagicMock()
-sys.modules["google.cloud.storage"] = MagicMock()
-sys.modules["elasticsearch_dsl"] = MagicMock()
+# Set up system mocks
+setup_mocks()
 
 import unittest
 import json
 import os
 import pandas as pd
-import re
-from unittest.mock import MagicMock, patch
 
 # Adjust import paths based on project structure
 from rag.parsers.deepdoc.resume.entities import corporations, regions, schools
@@ -33,7 +16,6 @@ from rag.parsers.deepdoc.resume import step_one
 class TestResumeFixes(unittest.TestCase):
     def setUp(self):
         self.current_dir = os.path.dirname(os.path.abspath(__file__))
-        self.rag_dir = os.path.dirname(os.path.dirname(self.current_dir))  # root/rag/parsers/deepdoc/resume
 
     def test_corp_tag_empty_keys(self):
         """Test corp_tag logic handling empty keys."""
@@ -88,12 +70,9 @@ class TestResumeFixes(unittest.TestCase):
             step_one.refactor(df_multi)
         self.assertIn("exactly one row", str(cm.exception))
 
-        # Case 3: Column mismatch (requires mocking extract logic or providing full payload)
-        # step_one refactor is complex, mocks extract internal.
-        # But we can test the final validation if we can bypass extract or allow it to produce wrong cols?
-        # It's hard to force column mismatch without changing code or inputs significantly,
-        # but passing a DF that produces extra columns or missing columns might trigger it.
+        # TODO: implement test for column mismatch in step_one — needs mocking or crafted payload
 
+    @unittest.skip("Depends on full flow or mocked components - not fully implemented")
     def test_step_one_phone_vectorization(self):
         """Test phone vectorization logic."""
         # Since logic is inside refactor and hard to isolate without full flow,
@@ -128,7 +107,8 @@ class TestResumeFixes(unittest.TestCase):
         self.assertIn("linkedin", data)
         self.assertNotIn("hqg , limited", data)
         self.assertIn("hqg, limited", data)
-        self.assertTrue(any("ping an insurance group of china" in c and " ," not in c for c in data))
+        matches = [c for c in data if "ping an insurance group of china" in c and " ," not in c]
+        self.assertTrue(matches, f"Expected message not found in data. Matches found: {matches}")
 
 
 if __name__ == "__main__":

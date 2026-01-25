@@ -120,7 +120,7 @@ class UniversalRouter:
             )
             return ParseResult(sections=sections, tables=tables, pdf_parser=pdf_parser, urls=urls)
 
-        if re.search(r"\.(csv|xlsx?)$", filename, re.IGNORECASE):
+        elif re.search(r"\.(csv|xlsx?)$", filename, re.IGNORECASE):
             layout_recognizer, _ = normalize_layout_recognizer(layout_recognizer_val)
             if isinstance(layout_recognizer, bool):
                 layout_recognizer = "DeepDOC" if layout_recognizer else "Plain Text"

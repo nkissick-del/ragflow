@@ -52,6 +52,10 @@ class TestOrchestrator(OrchestratorTestBase):
         mock_router.route.return_value = self.ParseResult(sections=["section1"])
         mock_general.chunk.return_value = [{"content": "result"}]
 
+        # Reset counts for this test
+        mock_router.route.reset_mock()
+        mock_general.chunk.reset_mock()
+
         # Test call
         filename = "test.docx"
         binary = b"content"

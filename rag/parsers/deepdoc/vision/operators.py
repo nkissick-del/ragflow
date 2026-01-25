@@ -481,7 +481,7 @@ class KieResize:
 
     def resize_image(self, img):
         norm_img = np.zeros([1024, 1024, 3], dtype="float32")
-        scale = [512, 1024]
+        scale = [self.max_side, self.min_side]
         h, w = img.shape[:2]
         max_long_edge = max(scale)
         max_short_edge = min(scale)

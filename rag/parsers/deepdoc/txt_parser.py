@@ -36,7 +36,7 @@ class RAGFlowTxtParser:
         if isinstance(delimiter, str):
             try:
                 delimiter = codecs.decode(delimiter, "unicode_escape")
-            except Exception:
+            except UnicodeDecodeError:
                 pass
 
         def add_chunk(t):

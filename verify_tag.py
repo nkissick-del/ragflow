@@ -57,3 +57,4 @@ try:
         os.remove("test_tag.txt")
 except Exception as e:
     print(f"Error during cleanup: {e}")
+    traceback.print_exc()

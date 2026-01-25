@@ -68,7 +68,14 @@ def adapt_docling_output(sections, tables, parser_config) -> StandardizedDocumen
         StandardizedDocument: Normalized document ready for template processing
     """
     # If sections is already a string (new Docling format), use it directly
-    content = sections if isinstance(sections, str) else ""
+    if isinstance(sections, str):
+        content = sections
+    elif isinstance(sections, list):
+        # Legacy fallback: Join list of strings
+        content = "\n".join(sections)
+        logging.warning("[Docling] Received legacy list sections in adapt_docling_output, joining with newlines.")
+    else:
+        content = ""
 
     return StandardizedDocument(
         content_input=content,

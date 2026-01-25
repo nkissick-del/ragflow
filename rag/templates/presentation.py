@@ -37,15 +37,24 @@ class Ppt(PptParser):
             callback(0.5, "Text extraction finished.")
         import aspose.slides as slides
         import aspose.pydrawing as drawing
+        from contextlib import contextmanager
+
+        @contextmanager
+        def presentation_stream_context(fnm):
+            if isinstance(fnm, str):
+                f = open(fnm, "rb")
+                try:
+                    yield f
+                finally:
+                    f.close()
+            elif isinstance(fnm, bytes):
+                yield BytesIO(fnm)
+            else:
+                yield fnm
 
         imgs = []
 
-        if isinstance(fnm, str):
-            presentation_stream = open(fnm, "rb")
-        else:
-            presentation_stream = BytesIO(fnm) if isinstance(fnm, bytes) else fnm
-
-        try:
+        with presentation_stream_context(fnm) as presentation_stream:
             with slides.Presentation(presentation_stream) as presentation:
                 for i, slide in enumerate(presentation.slides[from_page:to_page]):
                     try:
@@ -55,9 +64,6 @@ class Ppt(PptParser):
                             imgs.append(Image.open(buffered).copy())
                     except RuntimeError as e:
                         raise RuntimeError(f"ppt parse error at page {i + 1}, original error: {str(e)}") from e
-        finally:
-            if isinstance(fnm, str) and hasattr(presentation_stream, "close"):
-                presentation_stream.close()
         if len(imgs) != len(txts):
             raise ValueError("Slides text and image do not match: {} vs. {}".format(len(imgs), len(txts)))
         if callback:
@@ -122,7 +128,7 @@ class Pdf(PdfParser):
 
                 # pn_index in tbls is absolute page number
                 current_page_num = int(pn_index) + 1
-            except Exception as e:
+            except Exception:
                 logging.getLogger(__name__).exception("Error parsing position")
                 continue
 

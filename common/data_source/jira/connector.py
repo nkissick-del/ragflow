@@ -148,25 +148,21 @@ class JiraConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermSync
         options: dict[str, Any] = {"rest_api_version": rest_api_version}
 
         try:
-            if user_email and api_token:
-                from jira import JIRA
+            from jira import JIRA
 
+            if user_email and api_token:
                 self.jira_client = JIRA(
                     server=jira_url_for_client,
                     basic_auth=(user_email, api_token),
                     options=options,
                 )
             elif api_token:
-                from jira import JIRA
-
                 self.jira_client = JIRA(
                     server=jira_url_for_client,
                     token_auth=api_token,
                     options=options,
                 )
             elif user_email and password:
-                from jira import JIRA
-
                 self.jira_client = JIRA(
                     server=jira_url_for_client,
                     basic_auth=(user_email, password),

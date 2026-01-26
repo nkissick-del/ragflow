@@ -189,6 +189,8 @@ class TextRecognizer:
         return resized_image
 
     def resize_norm_img_srn(self, img, image_shape):
+        import cv2
+
         imgC, imgH, imgW = image_shape
 
         img_black = np.zeros((imgH, imgW))
@@ -196,25 +198,15 @@ class TextRecognizer:
         im_wid = img.shape[1]
 
         if im_wid <= im_hei * 1:
-            import cv2
-
             img_new = cv2.resize(img, (imgH * 1, imgH))
         elif im_wid <= im_hei * 2:
-            import cv2
-
             img_new = cv2.resize(img, (imgH * 2, imgH))
         elif im_wid <= im_hei * 3:
-            import cv2
-
             img_new = cv2.resize(img, (imgH * 3, imgH))
         else:
-            import cv2
-
             img_new = cv2.resize(img, (imgW, imgH))
 
         img_np = np.asarray(img_new)
-        import cv2
-
         img_np = cv2.cvtColor(img_np, cv2.COLOR_BGR2GRAY)
         img_black[:, 0 : img_np.shape[1]] = img_np
         img_black = img_black[:, :, np.newaxis]

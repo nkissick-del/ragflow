@@ -281,9 +281,10 @@ class Recognizer:
                 inputs.append({"image": np.array((im,)).astype("float32"), "scale_factor": np.array((im_info["scale_factor"],)).astype("float32")})
         else:
             hh, ww = self.input_shape
+            import cv2
+
             for img in image_list:
                 h, w = img.shape[:2]
-                import cv2
 
                 img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
                 img = cv2.resize(np.array(img).astype("float32"), (ww, hh))

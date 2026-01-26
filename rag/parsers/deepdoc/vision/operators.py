@@ -38,7 +38,6 @@ class DecodeImage:
         else:
             assert isinstance(img, bytes) and len(img) > 0, "invalid input 'img' in DecodeImage"
         img = np.frombuffer(img, dtype="uint8")
-        img = np.frombuffer(img, dtype="uint8")
         import cv2
 
         if self.ignore_orientation:
@@ -196,6 +195,7 @@ class LinearResize:
         self.target_size = target_size
         self.keep_ratio = keep_ratio
         self.interp = interp
+        self._cv2 = None
 
     def __call__(self, im, im_info):
         """
@@ -209,9 +209,12 @@ class LinearResize:
         assert len(self.target_size) == 2
         assert self.target_size[0] > 0 and self.target_size[1] > 0
         im_scale_y, im_scale_x = self.generate_scale(im)
-        import cv2
+        if self._cv2 is None:
+            import cv2
 
-        im = cv2.resize(im, None, None, fx=im_scale_x, fy=im_scale_y, interpolation=self.interp)
+            self._cv2 = cv2
+
+        im = self._cv2.resize(im, None, None, fx=im_scale_x, fy=im_scale_y, interpolation=self.interp)
         im_info["im_shape"] = np.array(im.shape[:2]).astype("float32")
         im_info["scale_factor"] = np.array([im_scale_y, im_scale_x]).astype("float32")
         return im, im_info

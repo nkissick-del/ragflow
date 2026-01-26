@@ -10,7 +10,6 @@ from urllib.error import URLError
 
 if TYPE_CHECKING:
     from slack_sdk import WebClient
-    from slack_sdk.errors import SlackApiError
 
 
 from common.data_source.config import INDEX_BATCH_SIZE, SLACK_NUM_THREADS, ENABLE_EXPENSIVE_EXPERT_CALLS, _SLACK_LIMIT, FAST_TIMEOUT, MAX_RETRIES, MAX_CHANNELS_TO_LOG
@@ -49,9 +48,7 @@ _DISALLOWED_MSG_SUBTYPES = {
     "group_leave",
     "group_archive",
     "group_unarchive",
-    "channel_leave",
     "channel_name",
-    "channel_join",
 }
 
 
@@ -111,7 +108,7 @@ def get_channels(
         from slack_sdk.errors import SlackApiError
 
         if not isinstance(e, SlackApiError):
-            raise e
+            raise
         msg = f"Unable to fetch private channels due to: {e}."
         if not get_public:
             logging.warning(msg + " Public channels are not enabled.")
@@ -370,7 +367,7 @@ def _process_message(
             failure=None,
         )
     except Exception as e:
-        (logging.exception(f"Error processing message {message['ts']}"))
+        logging.exception(f"Error processing message {message['ts']}")
         return ProcessedSlackMessage(
             doc=None,
             thread_or_message_ts=thread_or_message_ts,
@@ -576,11 +573,10 @@ class SlackConnector(
                 elif slack_error == "not_authed":
                     raise CredentialExpiredError(f"Invalid or expired Slack bot token ({slack_error}).")
                 raise UnexpectedValidationError(f"Unexpected Slack error '{slack_error}' during settings validation.")
-            raise e
-        except ConnectorValidationError as e:
-            raise e
-        except Exception as e:
-            raise UnexpectedValidationError(f"Unexpected error during Slack settings validation: {e}")
+            elif isinstance(e, ConnectorValidationError):
+                raise e
+            else:
+                raise UnexpectedValidationError(f"Unexpected error during Slack settings validation: {e}")
 
 
 if __name__ == "__main__":

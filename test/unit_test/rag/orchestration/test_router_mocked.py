@@ -64,6 +64,8 @@ def test_router_dispatch(mock_heavy_deps):
     # reload might be necessary, but patch.dict handles safe rollback.
     try:
         from rag.orchestration.router import UniversalRouter
+
+        assert UniversalRouter is not None
         # Ensure we can import it without error
     except ImportError as e:
         pytest.fail(f"Import failed with mocked dependencies: {e}")
@@ -75,21 +77,29 @@ def test_router_dispatch(mock_heavy_deps):
     # Mock callback
     callback = MagicMock()
 
-    # We expect the router to call DeepDocParser, which will try to use the mocked deepdoc engine.
-    # Since our mocks return MagicMocks (which aren't iterable tuples by default),
-    # the unpacking in the parser will likely fail.
-    # If it fails with TypeError (unpacking), it means the Router -> Parser -> Engine wiring SUCCEEDED.
+    # Verify that UniversalRouter correctly routes to DeepDocParser.
+    # We patch the DeepDocParser class in rag.orchestration.router since it is imported there.
+    # We must ensure rag.orchestration.router is imported first (which we did above).
+    with patch("rag.orchestration.router.DeepDocParser") as MockDeepDocParser:
+        # Configure the mock to return a known structure (sections, tables, pdf_parser)
+        expected_sections = ["mock_section"]
+        expected_tables = ["mock_table"]
+        expected_parser = MagicMock()
+        MockDeepDocParser.return_value.parse_pdf.return_value = (expected_sections, expected_tables, expected_parser)
 
-    try:
-        UniversalRouter.route(filename=filename, binary=binary, parser_config={"layout_recognize": "DeepDOC"}, callback=callback)
-    except (TypeError, ValueError) as e:
-        # Check if the error is due to unpacking the Mock return value
-        # This confirms control flow reached the deepdoc logic
-        msg = str(e)
-        if "iterable" in msg or "unpack" in msg or "not enough values" in msg:
-            # Success! The wiring is correct.
-            pass
-        else:
-            pytest.fail(f"Router failed unexpectedly: {e}")
-    except Exception as e:
-        pytest.fail(f"Router failed with unexpected exception type: {type(e)}: {e}")
+        res = UniversalRouter.route(filename=filename, binary=binary, parser_config={"layout_recognize": "DeepDOC"}, callback=callback)
+
+        # Assertions
+        # 1. Check if DeepDocParser was instantiated and used
+        MockDeepDocParser.assert_called()
+        # 2. Check if parse_pdf was called with correct arguments
+        MockDeepDocParser.return_value.parse_pdf.assert_called_once()
+        call_args = MockDeepDocParser.return_value.parse_pdf.call_args
+        assert call_args.kwargs.get("filepath") == filename
+        assert call_args.kwargs.get("binary") == binary
+        assert call_args.kwargs.get("callback") == callback
+
+        # 3. Check if the result from router matches what the parser returned
+        assert res.sections == expected_sections
+        assert res.tables == expected_tables
+        assert res.pdf_parser == expected_parser

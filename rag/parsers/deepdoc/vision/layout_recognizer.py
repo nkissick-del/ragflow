@@ -197,6 +197,8 @@ class LayoutRecognizer4YOLOv10(LayoutRecognizer):
     def preprocess(self, image_list):
         inputs = []
         new_shape = self.input_shape  # height, width
+        import cv2
+
         for img in image_list:
             shape = img.shape[:2]  # current shape [height, width]
             # Scale ratio (new / old)
@@ -208,7 +210,6 @@ class LayoutRecognizer4YOLOv10(LayoutRecognizer):
             dh /= 2
             ww, hh = new_unpad
             img = np.array(img)
-            import cv2
 
             img = np.array(cv2.cvtColor(img, cv2.COLOR_BGR2RGB)).astype(np.float32)
             img = cv2.resize(img, new_unpad, interpolation=cv2.INTER_LINEAR)
@@ -270,9 +271,10 @@ class AscendLayoutRecognizer(LayoutRecognizer):
     def preprocess(self, image_list):
         inputs = []
         H, W = self.input_shape
+        import cv2
+
         for img in image_list:
             h, w = img.shape[:2]
-            import cv2
 
             img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB).astype(np.float32)
 

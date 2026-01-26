@@ -69,7 +69,9 @@ def __getattr__(name):
             import importlib
 
             module = importlib.import_module(module_path, package=__package__)
-            return getattr(module, class_name)
+            cls = getattr(module, class_name)
+            globals()[name] = cls
+            return cls
         except (ImportError, AttributeError) as e:
             raise ImportError(f"Could not lazy load {name} from {module_path}: {e}")
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -25,11 +25,12 @@ from common import settings
 class RAGFlowAzureSpnBlob:
     def __init__(self):
         self.conn = None
-        self.account_url = os.getenv("ACCOUNT_URL", settings.AZURE["account_url"])
-        self.client_id = os.getenv("CLIENT_ID", settings.AZURE["client_id"])
-        self.secret = os.getenv("SECRET", settings.AZURE["secret"])
-        self.tenant_id = os.getenv("TENANT_ID", settings.AZURE["tenant_id"])
-        self.container_name = os.getenv("CONTAINER_NAME", settings.AZURE["container_name"])
+        self.account_url = os.getenv("AZURE_SPN_ACCOUNT_URL", os.getenv("ACCOUNT_URL", settings.AZURE["account_url"]))
+        self.client_id = os.getenv("AZURE_SPN_CLIENT_ID", os.getenv("CLIENT_ID", settings.AZURE["client_id"]))
+        self.secret = os.getenv("AZURE_SPN_SECRET", os.getenv("SECRET", settings.AZURE["secret"]))
+        self.tenant_id = os.getenv("AZURE_SPN_TENANT_ID", os.getenv("TENANT_ID", settings.AZURE["tenant_id"]))
+        self.container_name = os.getenv("AZURE_SPN_CONTAINER_NAME", os.getenv("CONTAINER_NAME", settings.AZURE["container_name"]))
+        self.authority = os.getenv("AZURE_AUTHORITY_HOST", settings.AZURE.get("authority"))
         self.__open__()
 
     def __open__(self):
@@ -40,13 +41,18 @@ class RAGFlowAzureSpnBlob:
             pass
 
         try:
-            from azure.identity import ClientSecretCredential, AzureAuthorityHosts
+            from azure.identity import AzureAuthorityHosts, ClientSecretCredential
             from azure.storage.filedatalake import FileSystemClient
+        except ImportError as e:
+            logging.error(f"Missing azure sdk packages: {e}")
+            raise
 
-            credentials = ClientSecretCredential(tenant_id=self.tenant_id, client_id=self.client_id, client_secret=self.secret, authority=AzureAuthorityHosts.AZURE_CHINA)
+        try:
+            authority = self.authority if self.authority else AzureAuthorityHosts.AZURE_PUBLIC_CLOUD
+            credentials = ClientSecretCredential(tenant_id=self.tenant_id, client_id=self.client_id, client_secret=self.secret, authority=authority)
             self.conn = FileSystemClient(account_url=self.account_url, file_system_name=self.container_name, credential=credentials)
-        except Exception:
-            logging.exception("Fail to connect %s" % self.account_url)
+        except Exception as e:
+            logging.exception(f"Fail to connect {self.account_url}: {e}")
 
     def __close__(self):
         del self.conn

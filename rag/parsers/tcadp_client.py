@@ -23,7 +23,6 @@ import re
 import shutil
 import tempfile
 import time
-import traceback
 import types
 import zipfile
 from datetime import datetime
@@ -154,12 +153,13 @@ class TencentCloudAPIClient:
 
             return parser_result
 
+            return parser_result
+
         except TencentCloudSDKException as err:
-            logging.error(f"[TCADP] Tencent Cloud SDK error: {err}")
+            logging.error(f"[TCADP] Tencent Cloud SDK error: {err}", exc_info=True)
             return None
         except Exception as e:
-            logging.error(f"[TCADP] Unknown error: {e}")
-            logging.error(f"[TCADP] Error stack trace: {traceback.format_exc()}")
+            logging.error(f"[TCADP] Unknown error: {e}", exc_info=True)
             return None
 
     def download_result_file(self, download_url, output_dir):
@@ -184,7 +184,7 @@ class TencentCloudAPIClient:
                         response.raw.decode_content = True
                         shutil.copyfileobj(response.raw, f)
             except (requests.exceptions.Timeout, requests.exceptions.RequestException) as e:
-                logging.error(f"[TCADP] HTTP error downloading result: {e}")
+                logging.error(f"[TCADP] HTTP error downloading result: {e}", exc_info=True)
                 return None
 
             logging.info(f"[TCADP] Document parsing result downloaded to: {os.path.basename(file_path)}")

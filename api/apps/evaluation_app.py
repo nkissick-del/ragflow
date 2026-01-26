@@ -420,8 +420,12 @@ async def compare_runs():
                 message="run_ids must be a list with at least 2 run IDs"
             )
         
-        # TODO: Implement compare_runs in EvaluationService
-        return get_json_result(data={"comparison": {}})
+        success, result = EvaluationService.compare_runs(run_ids)
+
+        if not success:
+            return get_data_error_result(message=result)
+
+        return get_json_result(data=result)
     except Exception as e:
         return server_error_response(e)
 

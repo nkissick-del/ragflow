@@ -210,7 +210,8 @@ export const useFetchFileList = () => {
 };
 
 export const useDeleteFile = () => {
-  const { setPaginationParams } = useSetPaginationParams();
+  const { setPaginationParams, page, size } = useSetPaginationParams();
+  const currentFolderId = useGetFolderId();
   const queryClient = useQueryClient();
   const { t } = useTranslation();
 
@@ -224,7 +225,31 @@ export const useDeleteFile = () => {
       const { data } = await fileManagerService.removeFile(params);
       if (data.code === 0) {
         message.success(t('message.deleted'));
-        setPaginationParams(1); // TODO: There should be a better way to paginate the request list
+        const queries = queryClient.getQueryCache().findAll({
+          queryKey: [FileApiAction.FetchFileList],
+        });
+
+        const match = queries.find((query) => {
+          const queryParams = query.queryKey[1] as any;
+          return (
+            query.isActive() &&
+            queryParams?.id === currentFolderId &&
+            queryParams?.current === page &&
+            queryParams?.pageSize === size
+          );
+        });
+
+        if (match) {
+          const currentData = match.state.data as IFetchFileListResult;
+          if (currentData) {
+            const newTotal = currentData.total - params.fileIds.length;
+            const maxPage = Math.max(1, Math.ceil(newTotal / size));
+            if (page > maxPage) {
+              setPaginationParams(maxPage);
+            }
+          }
+        }
+
         queryClient.invalidateQueries({
           queryKey: [FileApiAction.FetchFileList],
         });

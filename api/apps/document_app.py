@@ -110,7 +110,7 @@ async def web_crawl():
     e, kb = KnowledgebaseService.get_by_id(kb_id)
     if not e:
         raise LookupError("Can't find this dataset!")
-    if check_kb_team_permission(kb, current_user.id):
+    if not check_kb_team_permission(kb, current_user.id):
         return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
 
     try:
@@ -491,7 +491,7 @@ async def change_status():
 
     result = {}
     for doc_id in doc_ids:
-        res = DocumentService.change_document_status(doc_id, status, current_user.id)
+        res = await asyncio.to_thread(DocumentService.change_document_status, doc_id, status, current_user.id)
         result[doc_id] = res
     return get_json_result(data=result)
 
@@ -736,7 +736,7 @@ async def set_meta():
 @manager.route("/upload_info", methods=["POST"])  # noqa: F821
 async def upload_info():
     files = await request.files
-    file = files["file"] if files and files.get("file") else None
+    file = files.get("file")
     try:
         return get_json_result(data=FileService.upload_info(current_user.id, file, request.args.get("url")))
     except Exception as e:

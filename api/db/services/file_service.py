@@ -35,7 +35,7 @@ from common.misc_utils import get_uuid
 from common.constants import TaskStatus, FileSource, ParserType
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.task_service import TaskService
-from api.utils.file_utils import filename_type, read_potential_broken_pdf, thumbnail, thumbnail_img, sanitize_path
+from api.utils.file_utils import filename_type, read_potential_broken_pdf, thumbnail_img, sanitize_path
 from api.utils.web_utils import html2pdf
 from rag.llm.cv_model import GptV4
 from common import settings
@@ -671,7 +671,7 @@ class FileService(CommonService):
         return errors
 
     @staticmethod
-    def upload_info(user_id, file, url: str | None = None):
+    async def upload_info(user_id, file, url: str | None = None):
         def structured(filename, filetype, blob, content_type):
             nonlocal user_id
             if filetype == FileType.PDF.value:
@@ -692,27 +692,30 @@ class FileService(CommonService):
             }
 
         if url:
-            from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, DefaultMarkdownGenerator, PruningContentFilter, CrawlResult
+            try:
+                from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, DefaultMarkdownGenerator, PruningContentFilter, CrawlResult
 
-            filename = re.sub(r"\?.*", "", url.split("/")[-1])
+                filename = re.sub(r"\?.*", "", url.split("/")[-1])
 
-            async def adownload():
-                browser_config = BrowserConfig(
-                    headless=True,
-                    verbose=False,
-                )
-                async with AsyncWebCrawler(config=browser_config) as crawler:
-                    crawler_config = CrawlerRunConfig(markdown_generator=DefaultMarkdownGenerator(content_filter=PruningContentFilter()), pdf=True, screenshot=False)
-                    result: CrawlResult = await crawler.arun(url=url, config=crawler_config)
-                    return result
+                async def adownload():
+                    browser_config = BrowserConfig(
+                        headless=True,
+                        verbose=False,
+                    )
+                    async with AsyncWebCrawler(config=browser_config) as crawler:
+                        crawler_config = CrawlerRunConfig(markdown_generator=DefaultMarkdownGenerator(content_filter=PruningContentFilter()), pdf=True, screenshot=False)
+                        result: CrawlResult = await crawler.arun(url=url, config=crawler_config)
+                        return result
 
-            page = asyncio.run(adownload())
-            if page.pdf:
-                if filename.split(".")[-1].lower() != "pdf":
-                    filename += ".pdf"
-                return structured(filename, "pdf", page.pdf, page.response_headers["content-type"])
+                page = asyncio.run(adownload())
+                if page.pdf:
+                    if filename.split(".")[-1].lower() != "pdf":
+                        filename += ".pdf"
+                    return structured(filename, "pdf", page.pdf, page.response_headers["content-type"])
 
-            return structured(filename, "html", str(page.markdown).encode("utf-8"), page.response_headers["content-type"], user_id)
+                return structured(filename, "html", str(page.markdown).encode("utf-8"), page.response_headers["content-type"], user_id)
+            except Exception as e:
+                raise ValueError(f"Download failure: {e}")
 
         DocumentService.check_doc_health(user_id, file.filename)
         return structured(file.filename, filename_type(file.filename), file.read(), file.content_type)
@@ -737,7 +740,10 @@ class FileService(CommonService):
     @classmethod
     @DB.connection_context()
     def web_crawl_document(cls, kb, url, name, user_id):
-        blob = html2pdf(url)
+        try:
+            blob = html2pdf(url)
+        except Exception as e:
+            raise ValueError(f"Download failure: {e}")
         if not blob:
             raise ValueError("Download failure.")
 
@@ -747,6 +753,7 @@ class FileService(CommonService):
         kb_root_folder = cls.get_kb_folder(user_id)
         kb_folder = cls.new_a_file_from_kb(kb.tenant_id, kb.name, kb_root_folder["id"])
 
+        name = name if not name.lower().endswith(".pdf") else name[:-4]
         filename = duplicate_name(DocumentService.query, name=name + ".pdf", kb_id=kb.id)
         filetype = filename_type(filename)
         if filetype == FileType.OTHER.value:
@@ -756,26 +763,34 @@ class FileService(CommonService):
         while settings.STORAGE_IMPL.obj_exist(kb.id, location):
             location += "_"
         settings.STORAGE_IMPL.put(kb.id, location, blob)
+
+        img = thumbnail_img(filename, blob)
+        thumbnail_location = ""
+        if img is not None:
+            thumbnail_location = f"thumbnail_{get_uuid()}.png"
+            settings.STORAGE_IMPL.put(kb.id, thumbnail_location, img)
+
         doc = {
             "id": get_uuid(),
             "kb_id": kb.id,
             "parser_id": kb.parser_id,
             "parser_config": kb.parser_config,
+            "pipeline_id": kb.pipeline_id,
             "created_by": user_id,
             "type": filetype,
             "name": filename,
             "location": location,
             "size": len(blob),
-            "thumbnail": thumbnail(filename, blob),
+            "thumbnail": thumbnail_location,
             "suffix": Path(filename).suffix.lstrip("."),
         }
-        if doc["type"] == FileType.VISUAL:
+        if doc["type"] == FileType.VISUAL.value:
             doc["parser_id"] = ParserType.PICTURE.value
-        if doc["type"] == FileType.AURAL:
+        if doc["type"] == FileType.AURAL.value:
             doc["parser_id"] = ParserType.AUDIO.value
         if re.search(r"\.(ppt|pptx|pages)$", filename):
             doc["parser_id"] = ParserType.PRESENTATION.value
-        if re.search(r"\.(eml)$", filename):
+        if re.search(r"\.(eml|msg)$", filename):
             doc["parser_id"] = ParserType.EMAIL.value
         DocumentService.insert(doc)
         cls.add_file_from_kb(doc, kb_folder["id"], kb.tenant_id)

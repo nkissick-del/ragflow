@@ -1008,50 +1008,55 @@ class DocumentService(CommonService):
     @DB.connection_context()
     def handle_run(cls, doc_ids, run_status, delete_flag, apply_kb_flag, user_id):
         from api.db.services.task_service import cancel_all_task_of
+        from api.db.services.task_service import TaskService
 
         kb_table_num_map = {}
         for doc_id in doc_ids:
-            info = {"run": str(run_status), "progress": 0}
-            if str(run_status) == TaskStatus.RUNNING.value and delete_flag:
-                info["progress_msg"] = ""
-                info["chunk_num"] = 0
-                info["token_num"] = 0
+            if not cls.accessible(doc_id, user_id):
+                raise PermissionError("No authorization.")
+            if delete_flag and not cls.accessible4deletion(doc_id, user_id):
+                raise PermissionError("No authorization.")
 
-            tenant_id = cls.get_tenant_id(doc_id)
-            if not tenant_id:
-                raise ValueError("Tenant not found!")
-            e, doc = cls.get_by_id(doc_id)
-            if not e:
-                raise ValueError("Document not found!")
+            with DB.atomic():
+                info = {"run": str(run_status), "progress": 0}
+                if str(run_status) == TaskStatus.RUNNING.value and delete_flag:
+                    info["progress_msg"] = ""
+                    info["chunk_num"] = 0
+                    info["token_num"] = 0
 
-            if str(run_status) == TaskStatus.CANCEL.value:
-                if str(doc.run) == TaskStatus.RUNNING.value:
-                    cancel_all_task_of(doc_id)
-                else:
-                    raise ValueError("Cannot cancel a task that is not in RUNNING status")
+                tenant_id = cls.get_tenant_id(doc_id)
+                if not tenant_id:
+                    raise ValueError("Tenant not found!")
+                e, doc = cls.get_by_id(doc_id)
+                if not e:
+                    raise ValueError("Document not found!")
 
-            if all([delete_flag, str(run_status) == TaskStatus.RUNNING.value, str(doc.run) == TaskStatus.DONE.value]):
-                cls.clear_chunk_num_when_rerun(doc.id)
+                if str(run_status) == TaskStatus.CANCEL.value:
+                    if str(doc.run) == TaskStatus.RUNNING.value:
+                        cancel_all_task_of(doc_id)
+                    else:
+                        raise ValueError("Cannot cancel a task that is not in RUNNING status")
 
-            cls.update_by_id(doc_id, info)
-            if delete_flag:
-                from api.db.services.task_service import TaskService
+                if all([delete_flag, str(run_status) == TaskStatus.RUNNING.value, str(doc.run) == TaskStatus.DONE.value]):
+                    cls.clear_chunk_num_when_rerun(doc.id)
 
-                TaskService.filter_delete([Task.doc_id == doc_id])
-                if settings.docStoreConn.index_exist(search.index_name(tenant_id), doc.kb_id):
-                    settings.docStoreConn.delete({"doc_id": doc_id}, search.index_name(tenant_id), doc.kb_id)
+                cls.update_by_id(doc_id, info)
+                if delete_flag:
+                    TaskService.filter_delete([Task.doc_id == doc_id])
+                    if settings.docStoreConn.index_exist(search.index_name(tenant_id), doc.kb_id):
+                        settings.docStoreConn.delete({"doc_id": doc_id}, search.index_name(tenant_id), doc.kb_id)
 
-            if str(run_status) == TaskStatus.RUNNING.value:
-                if apply_kb_flag:
-                    e, kb = KnowledgebaseService.get_by_id(doc.kb_id)
-                    if not e:
-                        raise LookupError("Can't find this dataset!")
-                    doc.parser_config["llm_id"] = kb.parser_config.get("llm_id")
-                    doc.parser_config["enable_metadata"] = kb.parser_config.get("enable_metadata", False)
-                    doc.parser_config["metadata"] = kb.parser_config.get("metadata", {})
-                    cls.update_parser_config(doc.id, doc.parser_config)
-                doc_dict = doc.to_dict()
-                cls.run(tenant_id, doc_dict, kb_table_num_map)
+                if str(run_status) == TaskStatus.RUNNING.value:
+                    if apply_kb_flag:
+                        e, kb = KnowledgebaseService.get_by_id(doc.kb_id)
+                        if not e:
+                            raise LookupError("Can't find this dataset!")
+                        doc.parser_config["llm_id"] = kb.parser_config.get("llm_id")
+                        doc.parser_config["enable_metadata"] = kb.parser_config.get("enable_metadata", False)
+                        doc.parser_config["metadata"] = kb.parser_config.get("metadata", {})
+                        cls.update_parser_config(doc.id, doc.parser_config)
+                    doc_dict = doc.to_dict()
+                    cls.run(tenant_id, doc_dict, kb_table_num_map)
         return True
 
     @classmethod
@@ -1059,6 +1064,9 @@ class DocumentService(CommonService):
     def rename_document(cls, doc_id, new_name, user_id):
         from api.db.services.file_service import FileService
         from api.db.services.file2document_service import File2DocumentService
+
+        if not cls.accessible(doc_id, user_id):
+            raise PermissionError("No authorization.")
 
         e, doc = cls.get_by_id(doc_id)
         if not e:
@@ -1076,7 +1084,8 @@ class DocumentService(CommonService):
         informs = File2DocumentService.get_by_document_id(doc_id)
         if informs:
             e, file = FileService.get_by_id(informs[0].file_id)
-            FileService.update_by_id(file.id, {"name": new_name})
+            if e and file:
+                FileService.update_by_id(file.id, {"name": new_name})
 
         tenant_id = cls.get_tenant_id(doc_id)
         title_tks = rag_tokenizer.tokenize(new_name)
@@ -1098,24 +1107,24 @@ class DocumentService(CommonService):
     @DB.connection_context()
     def change_document_status(cls, doc_id, status, user_id):
         if not cls.accessible(doc_id, user_id):
-            return {"error": "No authorization."}
+            raise ValueError("No authorization.")
 
         try:
             e, doc = cls.get_by_id(doc_id)
             if not e:
-                return {"error": "No authorization."}
+                raise ValueError("No authorization.")
             e, kb = KnowledgebaseService.get_by_id(doc.kb_id)
             if not e:
-                return {"error": "Can't find this dataset!"}
+                raise RuntimeError("Can't find this dataset!")
             if not cls.update_by_id(doc_id, {"status": str(status)}):
-                return {"error": "Database error (Document update)!"}
+                raise RuntimeError("Database error (Document update)!")
 
             status_int = int(status)
             if not settings.docStoreConn.update({"doc_id": doc_id}, {"available_int": status_int}, search.index_name(kb.tenant_id), doc.kb_id):
-                return {"error": "Database error (docStore update)!"}
+                raise RuntimeError("Database error (docStore update)!")
             return {"status": status}
         except Exception as e:
-            return {"error": f"Internal server error: {str(e)}"}
+            raise RuntimeError(f"Internal server error: {e}")
 
 
 def queue_raptor_o_graphrag_tasks(sample_doc_id, ty, priority, fake_doc_id="", doc_ids=[]):

@@ -38,7 +38,13 @@ from api.db.services.common_service import CommonService
 from api.db.services.dialog_service import DialogService
 from common.misc_utils import get_uuid
 from common.time_utils import current_timestamp
-from common.constants import StatusEnum
+from common.constants import StatusEnum, LLMType
+from api.db.services.llm_service import LLMBundle
+from api.db.services.tenant_llm_service import TenantLLMService
+from rag.prompts.template import load_prompt
+from rag.prompts.generator import PROMPT_JINJA_ENV, message_fit_in
+import json_repair
+import re
 
 
 class EvaluationService(CommonService):
@@ -476,13 +482,96 @@ class EvaluationService(CommonService):
             metrics["answer_length"] = len(generated_answer)
             metrics["has_answer"] = 1.0 if generated_answer.strip() else 0.0
 
-            # TODO: Implement advanced metrics using LLM-as-judge
-            # - Faithfulness (hallucination detection)
-            # - Answer relevance
-            # - Context relevance
-            # - Semantic similarity (if reference answer provided)
+            # Advanced metrics using LLM-as-judge
+            llm_metrics = cls._evaluate_with_llm(
+                question=question,
+                answer=generated_answer,
+                reference=reference_answer,
+                retrieved_chunks=retrieved_chunks,
+                dialog=dialog
+            )
+            metrics.update(llm_metrics)
 
         return metrics
+
+    @classmethod
+    def _evaluate_with_llm(cls, question: str, answer: str, reference: Optional[str],
+                           retrieved_chunks: List[Dict[str, Any]], dialog: Any) -> Dict[str, float]:
+        """
+        Evaluate answer quality using LLM-as-judge.
+
+        Computes:
+        - Faithfulness
+        - Context Relevance
+        - Answer Relevance
+        - Semantic Similarity (if reference provided)
+        """
+        try:
+            # Prepare context from retrieved chunks
+            context_texts = []
+            for chunk in retrieved_chunks:
+                # Try to get content from various common keys
+                text = chunk.get("content_with_weight") or chunk.get("content") or ""
+                if text:
+                    context_texts.append(text)
+            context = "\n\n".join(context_texts)
+
+            # Get LLM configuration from dialog
+            tenant_id = dialog.tenant_id
+            llm_id = dialog.llm_id
+
+            # Use the same LLM as the dialog or a default chat model
+            if TenantLLMService.llm_id2llm_type(llm_id) == LLMType.IMAGE2TEXT:
+                chat_mdl = LLMBundle(tenant_id, LLMType.IMAGE2TEXT, llm_id)
+            else:
+                chat_mdl = LLMBundle(tenant_id, LLMType.CHAT, llm_id)
+
+            # Prepare prompt
+            prompt_template = load_prompt("evaluation_judge")
+            prompt = PROMPT_JINJA_ENV.from_string(prompt_template).render(
+                question=question,
+                context=context,
+                reference=reference if reference else "None",
+                answer=answer
+            )
+
+            # Call LLM
+            messages = [{"role": "user", "content": prompt}]
+
+            # Fit message in context window
+            _, msgs = message_fit_in(messages, chat_mdl.max_length)
+
+            # Execute chat
+            response = chat_mdl._run_coroutine_sync(chat_mdl.async_chat(
+                msgs[0]["content"], msgs[1:], {"temperature": 0.0}
+            ))
+
+            # Clean and parse response
+            response = re.sub(r"^.*</think>", "", response, flags=re.DOTALL)
+            response = re.sub(r"```json\s*", "", response)
+            response = re.sub(r"```", "", response)
+
+            metrics_json = json_repair.loads(response)
+
+            # Validate and extract metrics
+            valid_metrics = {}
+            for key in ["faithfulness", "context_relevance", "answer_relevance", "semantic_similarity"]:
+                val = metrics_json.get(key)
+                if isinstance(val, (int, float)):
+                    valid_metrics[key] = float(val)
+                else:
+                    valid_metrics[key] = 0.0 # Default to 0 if missing/invalid
+
+            return valid_metrics
+
+        except Exception as e:
+            logging.error(f"Error in LLM evaluation: {e}")
+            return {
+                "faithfulness": 0.0,
+                "context_relevance": 0.0,
+                "answer_relevance": 0.0,
+                "semantic_similarity": 0.0
+            }
 
     @classmethod
     def _compute_retrieval_metrics(cls, retrieved_ids: List[str],

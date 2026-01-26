@@ -1,10 +1,22 @@
+import sys
+from unittest.mock import MagicMock
+
+# Mock rag_tokenizer module to avoid tiktoken PermissionError
+# We enter it into sys.modules so it's returning a mock when imported.
+sys.modules["tiktoken"] = MagicMock()
+sys.modules["rag.nlp.rag_tokenizer"] = MagicMock()
+sys.modules["rag.prompts.generator"] = MagicMock()
+sys.modules["valkey"] = MagicMock()
+sys.modules["valkey.lock"] = MagicMock()
+sys.modules["common.settings"] = MagicMock()
 
 import unittest
 from unittest.mock import MagicMock, patch
 from rag.nlp.search import Dealer
 
+
 class TestChunkList(unittest.TestCase):
-    @patch('rag.nlp.search.query.FulltextQueryer')
+    @patch("rag.nlp.search.query.FulltextQueryer")
     def test_chunk_list_termination(self, mock_queryer):
         # Mock dataStore
         mock_store = MagicMock()
@@ -18,7 +30,6 @@ class TestChunkList(unittest.TestCase):
         # Page 2: search returns empty (end of results)
 
         # Mock search results
-        # We simulate the structure that might be returned by ES or handled by get_doc_ids
         res_page_0 = {"hits": {"hits": [{"_id": "1"}]}}
         res_page_1 = {"hits": {"hits": [{"_id": "2"}]}}
         res_page_2 = {"hits": {"hits": []}}
@@ -26,33 +37,56 @@ class TestChunkList(unittest.TestCase):
         mock_store.search.side_effect = [res_page_0, res_page_1, res_page_2]
 
         # Mock get_fields
-        # Page 0: returns empty dict (filtered out)
-        # Page 1: returns some content
-        mock_store.get_fields.side_effect = [
-            {},
-            {"2": {"content_with_weight": "some content"}},
-            {}
-        ]
+        mock_store.get_fields.side_effect = [{}, {"2": {"content_with_weight": "some content"}}, {}]
 
-        # Mock get_doc_ids to behave consistently with search results
-        # This will be used by the fix
         def get_doc_ids_side_effect(res):
             return [d["_id"] for d in res["hits"]["hits"]]
 
         mock_store.get_doc_ids.side_effect = get_doc_ids_side_effect
 
         # Run chunk_list
-        # We simulate a max_count that covers multiple pages (bs=128)
-        # We request 500 items, which is enough for multiple pages
         chunks = list(dealer.chunk_list("doc_id", "tenant_id", ["kb_id"], max_count=500))
-
-        # With FIXED code:
-        # Page 0: get_fields returns {}, but search had hits. Loop continues.
-        # Page 1: get_fields returns {"2": ...}. Added to res.
-        # Page 2: search has no hits. Loop breaks.
-        # chunks will have 1 item.
 
         self.assertEqual(len(chunks), 1, "Should have retrieved chunks from the second page")
 
-if __name__ == '__main__':
+    def test_delegation_to_services(self):
+        """Verify that Dealer delegates to the new services"""
+        mock_store = MagicMock()
+        dealer = Dealer(mock_store)
+
+        # Mock services
+        dealer.citation_service = MagicMock()
+        dealer.rerank_service = MagicMock()
+        dealer.tag_service = MagicMock()
+
+        # Test insert_citations
+        dealer.insert_citations("ans", [], [], MagicMock())
+        dealer.citation_service.insert_citations.assert_called_once()
+
+        # Test rerank
+        dealer.rerank(MagicMock(), "query")
+        dealer.rerank_service.rerank.assert_called_once()
+
+        # Test rerank_by_model
+        dealer.rerank_by_model(MagicMock(), MagicMock(), "query")
+        dealer.rerank_service.rerank_by_model.assert_called_once()
+
+        # Test all_tags
+        dealer.all_tags("tid", ["kb"])
+        dealer.tag_service.all_tags.assert_called_once()
+
+        # Test all_tags_in_portion
+        dealer.all_tags_in_portion("tid", ["kb"])
+        dealer.tag_service.all_tags_in_portion.assert_called_once()
+
+        # Test tag_content
+        dealer.tag_content("tid", ["kb"], {}, {})
+        dealer.tag_service.tag_content.assert_called_once()
+
+        # Test tag_query
+        dealer.tag_query("q", "tid", ["kb"], {})
+        dealer.tag_service.tag_query.assert_called_once()
+
+
+if __name__ == "__main__":
     unittest.main()

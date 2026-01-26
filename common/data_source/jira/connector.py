@@ -9,11 +9,12 @@ import os
 import re
 from collections.abc import Callable, Generator, Iterable, Iterator, Sequence
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, TYPE_CHECKING
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from jira import JIRA
-from jira.resources import Issue
+if TYPE_CHECKING:
+    from jira import JIRA
+    from jira.resources import Issue
 from pydantic import Field
 
 from common.data_source.config import (
@@ -148,18 +149,24 @@ class JiraConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermSync
 
         try:
             if user_email and api_token:
+                from jira import JIRA
+
                 self.jira_client = JIRA(
                     server=jira_url_for_client,
                     basic_auth=(user_email, api_token),
                     options=options,
                 )
             elif api_token:
+                from jira import JIRA
+
                 self.jira_client = JIRA(
                     server=jira_url_for_client,
                     token_auth=api_token,
                     options=options,
                 )
             elif user_email and password:
+                from jira import JIRA
+
                 self.jira_client = JIRA(
                     server=jira_url_for_client,
                     basic_auth=(user_email, password),
@@ -784,6 +791,8 @@ class JiraConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermSync
         response = self.jira_client._session.post(bulk_fetch_path, json=payload)
         response.raise_for_status()
         data = response.json()
+        from jira.resources import Issue
+
         return [Issue(self.jira_client._options, self.jira_client._session, raw=issue) for issue in data.get("issues", [])]
 
     @staticmethod

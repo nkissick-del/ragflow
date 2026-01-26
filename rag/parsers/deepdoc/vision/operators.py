@@ -17,7 +17,7 @@
 import logging
 import ast
 import six
-import cv2
+
 import numpy as np
 import math
 from PIL import Image
@@ -38,6 +38,9 @@ class DecodeImage:
         else:
             assert isinstance(img, bytes) and len(img) > 0, "invalid input 'img' in DecodeImage"
         img = np.frombuffer(img, dtype="uint8")
+        img = np.frombuffer(img, dtype="uint8")
+        import cv2
+
         if self.ignore_orientation:
             img = cv2.imdecode(img, cv2.IMREAD_IGNORE_ORIENTATION | cv2.IMREAD_COLOR)
         else:
@@ -168,6 +171,8 @@ class Pad:
         else:
             resize_h2 = max(int(math.ceil(img.shape[0] / self.size_div) * self.size_div), self.size_div)
             resize_w2 = max(int(math.ceil(img.shape[1] / self.size_div) * self.size_div), self.size_div)
+        import cv2
+
         img = cv2.copyMakeBorder(img, 0, resize_h2 - img_h, 0, resize_w2 - img_w, cv2.BORDER_CONSTANT, value=0)
         data["image"] = img
         return data
@@ -181,7 +186,11 @@ class LinearResize:
         interp (int): method of resize
     """
 
-    def __init__(self, target_size, keep_ratio=True, interp=cv2.INTER_LINEAR):
+    def __init__(self, target_size, keep_ratio=True, interp=None):
+        if interp is None:
+            import cv2
+
+            interp = cv2.INTER_LINEAR
         if isinstance(target_size, int):
             target_size = [target_size, target_size]
         self.target_size = target_size
@@ -200,6 +209,8 @@ class LinearResize:
         assert len(self.target_size) == 2
         assert self.target_size[0] > 0 and self.target_size[1] > 0
         im_scale_y, im_scale_x = self.generate_scale(im)
+        import cv2
+
         im = cv2.resize(im, None, None, fx=im_scale_x, fy=im_scale_y, interpolation=self.interp)
         im_info["im_shape"] = np.array(im.shape[:2]).astype("float32")
         im_info["scale_factor"] = np.array([im_scale_y, im_scale_x]).astype("float32")
@@ -240,6 +251,8 @@ class Resize:
         ori_h, ori_w = img.shape[:2]  # (h, w, c)
         ratio_h = float(resize_h) / ori_h
         ratio_w = float(resize_w) / ori_w
+        import cv2
+
         img = cv2.resize(img, (int(resize_w), int(resize_h)))
         return img, [ratio_h, ratio_w]
 
@@ -314,6 +327,8 @@ class DetResizeForTest:
             resize_w = N * 32
         ratio_h = float(resize_h) / ori_h
         ratio_w = float(resize_w) / ori_w
+        import cv2
+
         img = cv2.resize(img, (int(resize_w), int(resize_h)))
         # return img, np.array([ori_h, ori_w])
         return img, [ratio_h, ratio_w]
@@ -357,6 +372,8 @@ class DetResizeForTest:
         resize_w = max(int(round(resize_w / 32) * 32), 32)
 
         try:
+            import cv2
+
             if int(resize_w) <= 0 or int(resize_h) <= 0:
                 return None, (None, None)
             img = cv2.resize(img, (int(resize_w), int(resize_h)))
@@ -384,6 +401,8 @@ class DetResizeForTest:
         max_stride = 128
         resize_h = (resize_h + max_stride - 1) // max_stride * max_stride
         resize_w = (resize_w + max_stride - 1) // max_stride * max_stride
+        import cv2
+
         img = cv2.resize(img, (int(resize_w), int(resize_h)))
         ratio_h = resize_h / float(h)
         ratio_w = resize_w / float(w)
@@ -423,6 +442,8 @@ class E2EResizeForTest:
         max_stride = 128
         resize_h = (resize_h + max_stride - 1) // max_stride * max_stride
         resize_w = (resize_w + max_stride - 1) // max_stride * max_stride
+        import cv2
+
         im = cv2.resize(im, (int(resize_w), int(resize_h)))
         ratio_h = resize_h / float(h)
         ratio_w = resize_w / float(w)
@@ -452,6 +473,8 @@ class E2EResizeForTest:
         max_stride = 128
         resize_h = (resize_h + max_stride - 1) // max_stride * max_stride
         resize_w = (resize_w + max_stride - 1) // max_stride * max_stride
+        import cv2
+
         im = cv2.resize(im, (int(resize_w), int(resize_h)))
         ratio_h = resize_h / float(h)
         ratio_w = resize_w / float(w)
@@ -490,6 +513,8 @@ class KieResize:
         max_stride = 32
         resize_h = (resize_h + max_stride - 1) // max_stride * max_stride
         resize_w = (resize_w + max_stride - 1) // max_stride * max_stride
+        import cv2
+
         im = cv2.resize(img, (resize_w, resize_h))
         new_h, new_w = im.shape[:2]
         w_scale = new_w / w
@@ -557,6 +582,8 @@ class GrayImageChannelFormat:
 
     def __call__(self, data):
         img = data["image"]
+        import cv2
+
         img_single_channel = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         img_expanded = np.expand_dims(img_single_channel, 0)
 
@@ -631,6 +658,8 @@ def decode_image(im_file, im_info):
         with open(im_file, "rb") as f:
             im_read = f.read()
         data = np.frombuffer(im_read, dtype="uint8")
+        import cv2
+
         im = cv2.imdecode(data, 1)  # BGR mode, but need RGB mode
         if im is None:
             raise ValueError(f"Failed to decode image from {im_file}")

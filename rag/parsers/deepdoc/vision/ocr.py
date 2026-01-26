@@ -27,8 +27,7 @@ from .operators import *  # noqa: F403
 from . import operators
 import math
 import numpy as np
-import cv2
-import onnxruntime as ort
+
 
 from .postprocess import build_post_process
 
@@ -78,6 +77,8 @@ def create_operators(op_param_list, global_config=None):
 
 
 def load_model(model_dir, nm, device_id: int | None = None):
+    import onnxruntime as ort
+
     model_file_path = os.path.join(model_dir, nm + ".onnx")
     model_cached_tag = model_file_path + str(device_id) if device_id is not None else model_file_path
 
@@ -110,6 +111,7 @@ def load_model(model_dir, nm, device_id: int | None = None):
 
     # https://github.com/microsoft/onnxruntime/issues/9509#issuecomment-951546580
     # Shrink GPU memory after execution
+
     run_options = ort.RunOptions()
     if cuda_is_available(device_id):
         gpu_mem_limit_mb = int(os.environ.get("OCR_GPU_MEM_LIMIT_MB", "2048"))
@@ -165,6 +167,8 @@ class TextRecognizer:
         else:
             resized_w = int(math.ceil(imgH * ratio))
 
+        import cv2
+
         resized_image = cv2.resize(img, (resized_w, imgH))
         resized_image = resized_image.astype("float32")
         resized_image = resized_image.transpose((2, 0, 1)) / 255
@@ -177,6 +181,8 @@ class TextRecognizer:
     def resize_norm_img_vl(self, img, image_shape):
         imgC, imgH, imgW = image_shape
         img = img[:, :, ::-1]  # bgr2rgb
+        import cv2
+
         resized_image = cv2.resize(img, (imgW, imgH), interpolation=cv2.INTER_LINEAR)
         resized_image = resized_image.astype("float32")
         resized_image = resized_image.transpose((2, 0, 1)) / 255
@@ -190,15 +196,25 @@ class TextRecognizer:
         im_wid = img.shape[1]
 
         if im_wid <= im_hei * 1:
+            import cv2
+
             img_new = cv2.resize(img, (imgH * 1, imgH))
         elif im_wid <= im_hei * 2:
+            import cv2
+
             img_new = cv2.resize(img, (imgH * 2, imgH))
         elif im_wid <= im_hei * 3:
+            import cv2
+
             img_new = cv2.resize(img, (imgH * 3, imgH))
         else:
+            import cv2
+
             img_new = cv2.resize(img, (imgW, imgH))
 
         img_np = np.asarray(img_new)
+        import cv2
+
         img_np = cv2.cvtColor(img_np, cv2.COLOR_BGR2GRAY)
         img_black[:, 0 : img_np.shape[1]] = img_np
         img_black = img_black[:, :, np.newaxis]
@@ -256,6 +272,8 @@ class TextRecognizer:
         if imgW_max is not None:
             valid_ratio = min(1.0, 1.0 * resize_w / imgW_max)
             resize_w = min(imgW_max, resize_w)
+        import cv2
+
         resized_image = cv2.resize(img, (resize_w, imgH))
         resized_image = resized_image.astype("float32")
         # norm
@@ -274,6 +292,8 @@ class TextRecognizer:
         return padding_im, resize_shape, pad_shape, valid_ratio
 
     def resize_norm_img_spin(self, img):
+        import cv2
+
         img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         # return padding_im
         img = cv2.resize(img, tuple([100, 32]), cv2.INTER_CUBIC)
@@ -292,6 +312,8 @@ class TextRecognizer:
 
     def resize_norm_img_svtr(self, img, image_shape):
         imgC, imgH, imgW = image_shape
+        import cv2
+
         resized_image = cv2.resize(img, (imgW, imgH), interpolation=cv2.INTER_LINEAR)
         resized_image = resized_image.astype("float32")
         resized_image = resized_image.transpose((2, 0, 1)) / 255
@@ -301,6 +323,8 @@ class TextRecognizer:
 
     def resize_norm_img_abinet(self, img, image_shape):
         imgC, imgH, imgW = image_shape
+
+        import cv2
 
         resized_image = cv2.resize(img, (imgW, imgH), interpolation=cv2.INTER_LINEAR)
         resized_image = resized_image.astype("float32")
@@ -315,6 +339,8 @@ class TextRecognizer:
         return resized_image
 
     def norm_img_can(self, img, image_shape):
+        import cv2
+
         img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)  # CAN only predict gray scale image
 
         if self.rec_image_shape[0] == 1:
@@ -537,6 +563,8 @@ class OCR:
         img_crop_width = int(max(np.linalg.norm(points[0] - points[1]), np.linalg.norm(points[2] - points[3])))
         img_crop_height = int(max(np.linalg.norm(points[0] - points[3]), np.linalg.norm(points[1] - points[2])))
         pts_std = np.float32([[0, 0], [img_crop_width, 0], [img_crop_width, img_crop_height], [0, img_crop_height]])
+        import cv2
+
         M = cv2.getPerspectiveTransform(points, pts_std)
         dst_img = cv2.warpPerspective(img, M, (img_crop_width, img_crop_height), borderMode=cv2.BORDER_REPLICATE, flags=cv2.INTER_CUBIC)
         dst_img_height, dst_img_width = dst_img.shape[0:2]

@@ -18,7 +18,7 @@ import logging
 import os
 import math
 import numpy as np
-import cv2
+
 from functools import cmp_to_key
 
 
@@ -283,6 +283,8 @@ class Recognizer:
             hh, ww = self.input_shape
             for img in image_list:
                 h, w = img.shape[:2]
+                import cv2
+
                 img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
                 img = cv2.resize(np.array(img).astype("float32"), (ww, hh))
                 # Scale input pixel values to 0 to 1

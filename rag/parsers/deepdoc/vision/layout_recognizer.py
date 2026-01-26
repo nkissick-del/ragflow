@@ -22,7 +22,7 @@ import re
 from collections import Counter
 from copy import deepcopy
 
-import cv2
+# import cv2 (lazy loaded)
 import numpy as np
 from huggingface_hub import snapshot_download
 
@@ -207,6 +207,9 @@ class LayoutRecognizer4YOLOv10(LayoutRecognizer):
             dw /= 2  # divide padding into 2 sides
             dh /= 2
             ww, hh = new_unpad
+            img = np.array(img)
+            import cv2
+
             img = np.array(cv2.cvtColor(img, cv2.COLOR_BGR2RGB)).astype(np.float32)
             img = cv2.resize(img, new_unpad, interpolation=cv2.INTER_LINEAR)
             top, bottom = int(round(dh - 0.1)) if self.center else 0, int(round(dh + 0.1))
@@ -269,6 +272,8 @@ class AscendLayoutRecognizer(LayoutRecognizer):
         H, W = self.input_shape
         for img in image_list:
             h, w = img.shape[:2]
+            import cv2
+
             img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB).astype(np.float32)
 
             r = min(H / h, W / w)

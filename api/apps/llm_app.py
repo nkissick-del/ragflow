@@ -25,7 +25,7 @@ from api.db.services.llm_service import LLMService
 from api.utils.api_utils import get_allowed_llm_factories, get_data_error_result, get_json_result, get_request_json, server_error_response, validate_request
 from common.constants import StatusEnum, LLMType, RetCode
 from api.db.db_models import TenantLLM
-from rag.utils.base64_image import test_image
+from rag.utils.base64_image import test_image, test_audio
 from rag.llm import EmbeddingModel, ChatModel, RerankModel, CvModel, TTSModel, OcrModel, Seq2txtModel
 
 # Cache refresh rate limiting (in seconds)
@@ -451,8 +451,18 @@ async def add_llm():
         case LLMType.SPEECH2TEXT:
             assert factory in Seq2txtModel, f"Speech model from {factory} is not supported yet."
             try:
+                import tempfile
                 mdl = Seq2txtModel[factory](key=model_api_key, model_name=mdl_nm, base_url=model_base_url)
-                # TODO: check the availability
+                fd, path = tempfile.mkstemp(suffix=".wav")
+                try:
+                    with os.fdopen(fd, 'wb') as tmp:
+                        tmp.write(test_audio)
+                    m, tc = mdl.transcription(path)
+                    if not tc and m.find("**ERROR**:") >= 0:
+                        raise Exception(m)
+                finally:
+                    if os.path.exists(path):
+                        os.remove(path)
             except Exception as e:
                 msg += f"\nFail to access model({factory}/{mdl_nm})." + str(e)
         case _:

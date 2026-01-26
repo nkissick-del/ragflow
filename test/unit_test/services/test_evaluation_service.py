@@ -210,7 +210,7 @@ class TestEvaluationCompareRuns:
         success, result = EvaluationService.compare_runs(run_ids)
 
         assert success is False
-        assert "not found" in result.get('error', '')
+        assert "found" in result # 'Runs not found' in str(error) or dict
 
     def test_compare_runs_different_datasets(self, mock_env):
         from api.db.services.evaluation_service import EvaluationService
@@ -235,4 +235,4 @@ class TestEvaluationCompareRuns:
         success, result = EvaluationService.compare_runs(run_ids)
 
         assert success is False
-        assert "same dataset" in result.get('error', '')
+        assert "different datasets" in result

@@ -93,8 +93,9 @@ def test_evaluate_with_llm(mock_env):
     mock_env["tenant_llm_service"].TenantLLMService.llm_id2llm_type.return_value = "chat"
 
     # Mock LLM response
+    # Mock LLM response
     mock_bundle = mock_env["llm_service"].LLMBundle.return_value
-    mock_bundle._run_coroutine_sync.return_value = '{"faithfulness": 0.9}'  # simplified response string
+    mock_bundle.chat.return_value = '{"faithfulness": 0.9}'  # simplified response string
 
     # Mock json_repair
     mock_env["json_repair"].loads.return_value = {"faithfulness": 0.9, "context_relevance": 0.8, "answer_relevance": 0.95, "semantic_similarity": 0.85}
@@ -107,7 +108,7 @@ def test_evaluate_with_llm(mock_env):
     assert metrics["context_relevance"] == 0.8
 
     mock_env["llm_service"].LLMBundle.assert_called()
-    mock_bundle.async_chat.assert_called()
+    mock_bundle.chat.assert_called()
 
 
 def test_evaluate_with_llm_error(mock_env):
@@ -115,13 +116,15 @@ def test_evaluate_with_llm_error(mock_env):
 
     dialog = MagicMock()
     mock_bundle = mock_env["llm_service"].LLMBundle.return_value
-    mock_bundle._run_coroutine_sync.return_value = "Invalid"
+    mock_bundle.chat.return_value = "Invalid"
 
     mock_env["json_repair"].loads.side_effect = Exception("Fail")
 
     metrics = EvaluationService._evaluate_with_llm("Q", "A", "Ref", [{"content": "Ctx"}], dialog)
 
     assert metrics["faithfulness"] == 0.0
+    assert metrics["semantic_similarity"] is None
+    assert metrics["evaluation_status"] == "failed"
 
 
 @pytest.mark.p1
@@ -175,11 +178,11 @@ class TestEvaluationCompareRuns:
         assert result["comparison"]["avg_recall"]["run2"] == 0.5
 
     def test_compare_runs_missing_run(self, mock_env):
+        """Test error when a run ID is missing."""
         from api.db.services.evaluation_service import EvaluationService
 
         mock_evaluation_run = mock_env["db_models"].EvaluationRun
 
-        """Test error when a run ID is missing."""
         run_ids = ["run1", "run2"]
 
         run1 = MagicMock()
@@ -195,14 +198,13 @@ class TestEvaluationCompareRuns:
         success, result = EvaluationService.compare_runs(run_ids)
 
         assert success is False
-        assert "found" in result  # 'Runs not found' in str(error) or dict
+        assert "Runs not found: run2" in result  # Stronger assertion
 
     def test_compare_runs_different_datasets(self, mock_env):
+        """Test error when runs belong to different datasets."""
         from api.db.services.evaluation_service import EvaluationService
 
         mock_evaluation_run = mock_env["db_models"].EvaluationRun
-
-        """Test error when runs belong to different datasets."""
         run_ids = ["run1", "run2"]
 
         run1 = MagicMock()

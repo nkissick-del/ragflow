@@ -82,10 +82,14 @@ class TestTagService(unittest.TestCase):
 
         # Assert tag1 is NOT in doc because it should be filtered (score < 0.001)
         # Score approx: 0.1 * 1 / 10000000 / 0.0001 = 1e-4 (< 0.001)
+        # Assert tag1 is NOT in doc because it should be filtered (score < 0.001)
+        # Score approx: 0.1 * 1 / 10000000 / 0.0001 = 1e-4 (< 0.001)
         if TAG_FLD in doc:
             self.assertNotIn("tag1", doc[TAG_FLD])
-        else:
-            self.assertTrue(True)
+        # Also strictly verify that if TAG_FLD is missing, it's also acceptable (implied "tag1" not there)
+        # but if it Is present, "tag1" shouldn't be in it.
+        # The previous 'else: assertTrue(True)' was a check that effectively did nothing if key wasn't there.
+        # Here we just ensure "tag1" isn't present in the doc's tag field if it exists.
 
 
 if __name__ == "__main__":

@@ -399,6 +399,9 @@ class LLMBundle(LLM4Tenant):
 
         return txt
 
+    def chat(self, system: str, history: list, gen_conf: dict = {}, **kwargs):
+        return self._run_coroutine_sync(self.async_chat(system, history, gen_conf, **kwargs))
+
     async def async_chat_streamly(self, system: str, history: list, gen_conf: dict = {}, **kwargs):
         total_tokens = 0
         ans = ""

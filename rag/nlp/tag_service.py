@@ -68,7 +68,17 @@ class TagService:
         return True
 
     def _compute_tag_scores(self, aggs, all_tags, cnt, S, topn_tags):
-        return sorted([(a, SCORE_SCALE * (c + 1) / (cnt + S) / max(EPSILON, all_tags.get(a, DEFAULT_TAG_FREQ))) for a, c in aggs], key=lambda x: x[1] * -1)[:topn_tags]
+        scores = []
+        for tag, count in aggs:
+            # Score = SCORE_SCALE * (match_count + 1) / (total_matches + S) / max(EPSILON, global_tag_freq)
+            freq = all_tags.get(tag, DEFAULT_TAG_FREQ)
+            score = SCORE_SCALE * (count + 1) / (cnt + S) / max(EPSILON, freq)
+            scores.append((tag, score))
+
+        # Sort by score descending
+        scores.sort(key=lambda x: x[1], reverse=True)
+
+        return scores[:topn_tags]
 
     def tag_query(self, question: str, tenant_ids: str | list[str], kb_ids: list[str], all_tags, topn_tags=3, S=DEFAULT_S):
         if isinstance(tenant_ids, str):

@@ -45,10 +45,11 @@ class RerankService:
         q_denor = np.sqrt(np.sum([s * s for t, s in query_rfea.items() if t != PAGERANK_FLD]))
         for i in search_res.ids:
             nor, denor = 0, 0
-            if not search_res.field[i].get(TAG_FLD):
+            raw_tag = search_res.field[i].get(TAG_FLD)
+            if not raw_tag:
                 rank_fea.append(0)
                 continue
-            raw_tag = search_res.field[i].get(TAG_FLD, {})
+
             if isinstance(raw_tag, dict):
                 tag_data = raw_tag
             elif isinstance(raw_tag, str):

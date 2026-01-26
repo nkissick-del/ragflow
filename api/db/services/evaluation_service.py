@@ -112,7 +112,9 @@ class EvaluationService(CommonService):
     def list_datasets(cls, tenant_id: str, user_id: str, page: int = 1, page_size: int = 20) -> Dict[str, Any]:
         """List datasets for a tenant"""
         try:
-            query = EvaluationDataset.select().where((EvaluationDataset.tenant_id == tenant_id) & (EvaluationDataset.status == StatusEnum.VALID.value)).order_by(EvaluationDataset.create_time.desc())
+            query = EvaluationDataset.select()
+            query = query.where((EvaluationDataset.tenant_id == tenant_id) & (EvaluationDataset.status == StatusEnum.VALID.value))
+            query = query.order_by(EvaluationDataset.create_time.desc())
 
             total = query.count()
             datasets = query.paginate(page, page_size)
@@ -504,8 +506,12 @@ class EvaluationService(CommonService):
             # Fit message in context window
             _, msgs = message_fit_in(messages, chat_mdl.max_length)
 
+            if not msgs:
+                logging.warning("No messages generated for evaluation prompt.")
+                return {"faithfulness": 0.0, "context_relevance": 0.0, "answer_relevance": 0.0, "semantic_similarity": None, "evaluation_status": "failed", "error": "Empty message list generated"}
+
             # Execute chat
-            response = chat_mdl._run_coroutine_sync(chat_mdl.async_chat(msgs[0]["content"], msgs[1:], {"temperature": 0.0}))
+            response = chat_mdl.chat(msgs[0]["content"], msgs[1:], {"temperature": 0.0})
 
             # Clean and parse response
             response = re.sub(r"^.*</think>", "", response, flags=re.DOTALL)
@@ -516,18 +522,41 @@ class EvaluationService(CommonService):
 
             # Validate and extract metrics
             valid_metrics = {}
-            for key in ["faithfulness", "context_relevance", "answer_relevance", "semantic_similarity"]:
+            # Required float metrics
+            for key in ["faithfulness", "context_relevance", "answer_relevance"]:
                 val = metrics_json.get(key)
                 if isinstance(val, (int, float)):
                     valid_metrics[key] = float(val)
                 else:
-                    valid_metrics[key] = 0.0  # Default to 0 if missing/invalid
+                    valid_metrics[key] = 0.0
+
+            # Optional/Nullable metrics
+            val = metrics_json.get("semantic_similarity")
+            if val is None:
+                valid_metrics["semantic_similarity"] = None
+            elif isinstance(val, (int, float)):
+                valid_metrics["semantic_similarity"] = float(val)
+            else:
+                # If invalid type but not None, default to None seems safer given we want to avoid misleading 0.0
+                valid_metrics["semantic_similarity"] = None
+
+            # Optional explanations
+            for key in ["faithfulness", "context_relevance", "answer_relevance", "semantic_similarity"]:
+                expl_key = f"{key}_explanation"
+                if expl_key in metrics_json:
+                    valid_metrics[expl_key] = metrics_json[expl_key]
+
+            # Status
+            if "evaluation_status" in metrics_json:
+                valid_metrics["evaluation_status"] = metrics_json["evaluation_status"]
+            if "error" in metrics_json:
+                valid_metrics["error"] = metrics_json["error"]
 
             return valid_metrics
 
         except Exception as e:
-            logging.error(f"Error in LLM evaluation: {e}")
-            return {"faithfulness": 0.0, "context_relevance": 0.0, "answer_relevance": 0.0, "semantic_similarity": 0.0}
+            logging.exception(f"Error in LLM evaluation: {e}")
+            return {"faithfulness": 0.0, "context_relevance": 0.0, "answer_relevance": 0.0, "semantic_similarity": None, "evaluation_status": "failed", "error": str(e)}
 
     @classmethod
     def _compute_retrieval_metrics(cls, retrieved_ids: List[str], relevant_ids: List[str]) -> Dict[str, float]:

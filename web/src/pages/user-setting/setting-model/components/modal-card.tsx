@@ -112,7 +112,6 @@ export const ModelProviderCard: FC<IModelCardProps> = ({
           <ConfirmDeleteDialog
             onOk={() => deleteFactory({ llm_factory: item.name })}
             title={t('deleteModel')}
-            tooltip={t('deleteModel')}
             content={{
               node: (
                 <ConfirmDeleteDialogNode>

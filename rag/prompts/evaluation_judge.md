@@ -7,6 +7,7 @@ Your task is to rate the quality of the generated answer based on the provided q
 - **Retrieved Context**: {{ context }}
 - **Reference Answer**: {{ reference }}
 - **Generated Answer**: {{ answer }}
+- **Evaluation Goal**: {{ evaluation_goal }}
 
 ### Evaluation Criteria
 Please score the following metrics. All float scores must be between 0.0 and 1.0, rounded to two decimal places.
@@ -17,24 +18,34 @@ Please score the following metrics. All float scores must be between 0.0 and 1.0
    - If no context/empty context, score 0.0 unless the answer explicitly states it cannot answer from context (in which case, score 1.0 for faithfulness).
 
 2. **Context Relevance**: The extent to which the retrieved context contains information relevant to the user question.
-   - Score rules: Consider both precision (how much of the context is useful) and recall (does it contain the necessary info). If evaluation goal = fact-checking or legal/medical content, set priority to recall; if evaluation goal = creative generation or safety-critical hallucination reduction, set to precision.
-   - Example - High Recall/Low Precision: Context has the answer but also 90% irrelevant text -> Score 0.5 (balanced), 0.8 (recall priority), or 0.2 (precision priority).
-   - Example - High Precision/Low Recall: Context has only relevant text but misses key parts of the answer -> Score 0.5 (balanced), 0.2 (recall priority), or 0.8 (precision priority).
+   - Score rules: Consider both precision (how much of the context is useful) and recall (does it contain the necessary info). Consume `evaluation_goal`:
+     - **Recall Priority**: Use for "fact-checking", "legal", "medical", "safety-critical". (Favor including all info).
+     - **Precision Priority**: Use for "creative". (Favor concise, exact info).
+     - **Balanced**: Use if `evaluation_goal` is missing, unrecognized, or "balanced".
+     - *Ambiguous/Mixed*: Choose the dominant goal; if unclear, default to "balanced".
+   - Example (High Recall/Low Precision): Context has the answer but also 90% irrelevant text -> Score 0.5 (balanced), 0.8 (Recall Priority), or 0.2 (Precision Priority).
+   - Example (High Precision/Low Recall): Context has only relevant text but misses key parts of the answer -> Score 0.5 (balanced), 0.2 (Recall Priority), or 0.8 (Precision Priority).
    - 1.0: Context contains all necessary information and little irrelevant noise.
    - 0.0: Context is completely irrelevant.
 
 3. **Answer Relevance**: The extent to which the generated answer addresses the user question.
    - Score rules: Judge both completeness (answers all parts of the question) and directness.
-   - Refusals: Refusals must (a) state a clear reason, (b) map to: insufficient context, safety, ambiguous, or out-of-scope, and (c) demonstrate validity (e.g., cite missing info or policy). Refusal Template: "I cannot answer because [Reason] which falls under [Category]."
-   - 1.0: Fully answers the question directly OR correctly refuses meeting all refusal criteria (reason, category, validity).
-   - 0.0: Completely irrelevant, refuses without meeting criteria, or refuses when it should have answered.
+   - Refusals: Valid refusals must: (1) State a clear reason, (2) Map to a named category (e.g., insufficient context, safety, ambiguous, out-of-scope, legal/privacy, harmful request, or user constraints), and (3) Demonstrate validity (e.g., cite missing info or policy).
+   - *Note*: Flexible, natural-language refusals are accepted; a strict template is NOT required, provided the refusal is valid and categorized.
+   - 1.0: Fully answers the question directly OR correctly refuses meeting all validity criteria.
+   - 0.0: Completely irrelevant, refuses without meeting criteria (invalid refusal), or refuses when it should have answered.
 
 4. **Semantic Similarity**: The semantic closeness between the generated answer and the reference answer.
    - (1.0 = very similar meaning).
-   - **Important**: If reference answer is not provided (i.e., the literal string "None" (case-insensitive), a null/missing value in JSON/Python, an empty string "", or a string containing only whitespace), output `null` for this metric. Normalize reference (trim whitespace, lowercase) to check for "none". Do not output 0.0.
+   - **Important**: Normalize the reference by trimming whitespace and lowercasing. Then treat as missing if:
+     1. It equals the literal string "none".
+     2. It is an empty or whitespace-only string.
+     3. It is null/missing.
+   - If missing, return `null` for this metric (do NOT return 0.0).
 
 ### Edge Cases
-- If evaluation cannot be performed for a valid judge-relevant reason (e.g., empty inputs, malformed/unparseable inputs, unsupported languages), set field "evaluation_status" to "failed" and populate the "reason" field with a descriptive string. System-level failures (errors/timeouts) should be handled upstream.
+- **Judge-Relevant Failures**: Issues with input content/format preventing meaningful evaluation (e.g., empty inputs, malformed/partially parseable inputs, unsupported language). Set "evaluation_status" to "failed" and "reason" to a descriptive string (e.g., "malformed_input", "missing_field_X").
+- **System-Level Failures**: Resource/runtime errors (e.g., timeouts, memory exhaustion, upstream service errors). These should be handled upstream and NOT marked as judge failures.
 
 ### Output Format
 Return a valid JSON object with the following keys. Ensure numeric values are floats [0.0, 1.0] or null where permitted.

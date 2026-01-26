@@ -44,7 +44,7 @@ class TestChunkList(unittest.TestCase):
         # Run chunk_list
         # We simulate a max_count that covers multiple pages (bs=128)
         # We request 500 items, which is enough for multiple pages
-        chunks = dealer.chunk_list("doc_id", "tenant_id", ["kb_id"], max_count=500)
+        chunks = list(dealer.chunk_list("doc_id", "tenant_id", ["kb_id"], max_count=500))
 
         # With FIXED code:
         # Page 0: get_fields returns {}, but search had hits. Loop continues.

@@ -651,3 +651,54 @@ class EvaluationService(CommonService):
         except Exception as e:
             logging.error(f"Error generating recommendations for run {run_id}: {e}")
             return []
+
+    @classmethod
+    def compare_runs(cls, run_ids: List[str]) -> Tuple[bool, Dict[str, Any] | str]:
+        """
+        Compare multiple evaluation runs.
+
+        Args:
+            run_ids: List of run IDs to compare
+
+        Returns:
+            (success, result_dict)
+        """
+        try:
+            # Fetch runs
+            runs = list(EvaluationRun.select().where(EvaluationRun.id.in_(run_ids)))
+
+            # Check if all runs exist
+            found_ids = {r.id for r in runs}
+            missing_ids = set(run_ids) - found_ids
+            if missing_ids:
+                return False, f"Runs not found: {', '.join(missing_ids)}"
+
+            # Check if all runs belong to the same dataset
+            dataset_ids = {r.dataset_id_id for r in runs}
+            if len(dataset_ids) > 1:
+                return False, "Cannot compare runs from different datasets"
+
+            # Prepare result structure
+            run_details = [r.to_dict() for r in runs]
+            comparison = {}
+
+            # Pivot metrics
+            all_metric_keys = set()
+            for run in runs:
+                if run.metrics_summary:
+                    all_metric_keys.update(run.metrics_summary.keys())
+
+            for key in all_metric_keys:
+                comparison[key] = {}
+                for run in runs:
+                    if run.metrics_summary and key in run.metrics_summary:
+                        comparison[key][run.id] = run.metrics_summary[key]
+
+            return True, {
+                "runs": run_details,
+                "comparison": comparison
+            }
+
+        except Exception as e:
+            logging.error(f"Error comparing runs: {e}")
+            return False, str(e)

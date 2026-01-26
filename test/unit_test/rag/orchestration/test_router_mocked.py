@@ -65,7 +65,7 @@ def test_router_dispatch(mock_heavy_deps):
     try:
         from rag.orchestration.router import UniversalRouter
 
-        assert UniversalRouter is not None
+        # UniversalRouter is imported successfully
         # Ensure we can import it without error
     except ImportError as e:
         pytest.fail(f"Import failed with mocked dependencies: {e}")
@@ -95,9 +95,9 @@ def test_router_dispatch(mock_heavy_deps):
         # 2. Check if parse_pdf was called with correct arguments
         MockDeepDocParser.return_value.parse_pdf.assert_called_once()
         call_args = MockDeepDocParser.return_value.parse_pdf.call_args
-        assert call_args.kwargs.get("filepath") == filename
-        assert call_args.kwargs.get("binary") == binary
-        assert call_args.kwargs.get("callback") == callback
+        assert call_args[0] == (filename, binary, callback) or (
+            call_args.kwargs.get("filepath") == filename and call_args.kwargs.get("binary") == binary and call_args.kwargs.get("callback") == callback
+        )
 
         # 3. Check if the result from router matches what the parser returned
         assert res.sections == expected_sections

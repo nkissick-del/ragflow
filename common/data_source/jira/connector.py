@@ -903,7 +903,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--batch-size", dest="batch_size", type=int, default=int(os.environ.get("JIRA_BATCH_SIZE", INDEX_BATCH_SIZE)))
     parser.add_argument("--include_comments", dest="include_comments", type=bool, default=True)
     parser.add_argument("--include_attachments", dest="include_attachments", type=bool, default=True)
-    parser.add_argument("--attachment_size_limit", dest="attachment_size_limit", type=float, default=_DEFAULT_ATTACHMENT_SIZE_LIMIT)
+    parser.add_argument("--attachment_size_limit", dest="attachment_size_limit", type=int, default=_DEFAULT_ATTACHMENT_SIZE_LIMIT)
     parser.add_argument("--start-ts", dest="start_ts", type=float, default=None, help="Epoch seconds inclusive lower bound for updated issues.")
     parser.add_argument("--end-ts", dest="end_ts", type=float, default=9999999999, help="Epoch seconds inclusive upper bound for updated issues.")
     return parser

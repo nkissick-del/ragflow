@@ -190,12 +190,14 @@ class LinearResize:
             import cv2
 
             interp = cv2.INTER_LINEAR
+            self._cv2 = cv2
+        else:
+            self._cv2 = None
         if isinstance(target_size, int):
             target_size = [target_size, target_size]
         self.target_size = target_size
         self.keep_ratio = keep_ratio
         self.interp = interp
-        self._cv2 = None
 
     def __call__(self, im, im_info):
         """

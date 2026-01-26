@@ -2,6 +2,12 @@ from __future__ import annotations
 import itertools
 import logging
 import re
+
+try:
+    from slack_sdk.errors import SlackApiError
+except ImportError:
+    SlackApiError = None
+
 from collections.abc import Callable, Generator
 from datetime import datetime, timezone
 from http.client import IncompleteRead, RemoteDisconnected
@@ -68,6 +74,10 @@ def default_msg_filter(message: MessageType) -> SlackMessageFilterReason | None:
     return None
 
 
+def is_slack_api_error(exc: Exception) -> bool:
+    return SlackApiError is not None and isinstance(exc, SlackApiError)
+
+
 def _collect_paginated_channels(
     client: WebClient,
     exclude_archived: bool,
@@ -105,22 +115,32 @@ def get_channels(
             channel_types=channel_types,
         )
     except Exception as e:
-        from slack_sdk.errors import SlackApiError
-
-        if not isinstance(e, SlackApiError):
+        if not is_slack_api_error(e):
             raise
-        msg = f"Unable to fetch private channels due to: {e}."
+
+        error_code = e.response.get("error", "unknown_error")
+        msg = f"Unable to fetch channels due to Slack API error: {error_code}. Full error: {e}"
+
+        # Only retry with public channels if it's a permission issue regarding private channels
+        # "missing_scope" usually means we don't have groups:read for private channels
+        # "restricted_action" or others might also apply, but missing_scope is the most common for this case.
+        is_permission_error = error_code in ["missing_scope", "restricted_action", "channel_not_found", "is_archived"]
+
         if not get_public:
-            logging.warning(msg + " Public channels are not enabled.")
+            logging.warning(msg + " Public channels are not enabled, cannot retry.")
             return []
 
-        logging.warning(msg + " Trying again with public channels only.")
-        channel_types = ["public_channel"]
-        channels = _collect_paginated_channels(
-            client=client,
-            exclude_archived=exclude_archived,
-            channel_types=channel_types,
-        )
+        if is_permission_error:
+            logging.warning(msg + " Retrying with public channels only.")
+            channel_types = ["public_channel"]
+            channels = _collect_paginated_channels(
+                client=client,
+                exclude_archived=exclude_archived,
+                channel_types=channel_types,
+            )
+        else:
+            logging.error(msg + " Not a permission error, re-raising.")
+            raise
     return channels
 
 
@@ -261,9 +281,7 @@ def _get_messages(
                 is_private=channel["is_private"],
             )
         except Exception as e:
-            from slack_sdk.errors import SlackApiError
-
-            if not isinstance(e, SlackApiError):
+            if not is_slack_api_error(e):
                 raise e
             if e.response["error"] == "is_archived":
                 logging.warning(f"Channel {channel['name']} is archived. Skipping.")
@@ -554,9 +572,7 @@ class SlackConnector(
                 raise UnexpectedValidationError(f"Slack API returned a failure: {error_msg}")
 
         except Exception as e:
-            from slack_sdk.errors import SlackApiError
-
-            if isinstance(e, SlackApiError):
+            if is_slack_api_error(e):
                 slack_error = e.response.get("error", "")
                 if slack_error == "ratelimited":
                     retry_after = int(e.response.headers.get("Retry-After", 1))

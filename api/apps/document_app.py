@@ -48,6 +48,42 @@ from deepdoc.parser.html_parser import RAGFlowHtmlParser
 from rag.nlp import search, rag_tokenizer
 from common import settings
 
+class _LocalFile:
+    filename: str
+    filepath: str
+
+    def __init__(self, filename, filepath):
+        self.filename = filename
+        self.filepath = filepath
+
+    def read(self):
+        with open(self.filepath, "rb") as f:
+            return f.read()
+
+def _parse_url(url, download_path, user_id):
+    from seleniumwire.webdriver import Chrome, ChromeOptions
+
+    options = ChromeOptions()
+    options.add_argument("--headless")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_experimental_option("prefs", {"download.default_directory": download_path, "download.prompt_for_download": False, "download.directory_upgrade": True, "safebrowsing.enabled": True})
+    driver = Chrome(options=options)
+    driver.get(url)
+    res_headers = [r.response.headers for r in driver.requests if r and r.response]
+    if len(res_headers) > 1:
+        sections = RAGFlowHtmlParser().parser_txt(driver.page_source)
+        driver.quit()
+        return "\n".join(sections)
+
+    r = re.search(r"filename=\"([^\"]+)\"", str(res_headers))
+    if not r or not r.group(1):
+        raise ValueError("Can't not identify downloaded file")
+
+    filename = r.group(1)
+    f = _LocalFile(filename, os.path.join(download_path, filename))
+    return FileService.parse_docs([f], user_id)
 
 @manager.route("/upload", methods=["POST"])  # noqa: F821
 @login_required
@@ -832,47 +868,21 @@ async def parse():
             return get_json_result(data=False, message="The URL format is invalid", code=RetCode.ARGUMENT_ERROR)
         download_path = os.path.join(get_project_base_directory(), "logs/downloads")
         os.makedirs(download_path, exist_ok=True)
-        from seleniumwire.webdriver import Chrome, ChromeOptions
 
-        options = ChromeOptions()
-        options.add_argument("--headless")
-        options.add_argument("--disable-gpu")
-        options.add_argument("--no-sandbox")
-        options.add_argument("--disable-dev-shm-usage")
-        options.add_experimental_option("prefs", {"download.default_directory": download_path, "download.prompt_for_download": False, "download.directory_upgrade": True, "safebrowsing.enabled": True})
-        driver = Chrome(options=options)
-        driver.get(url)
-        res_headers = [r.response.headers for r in driver.requests if r and r.response]
-        if len(res_headers) > 1:
-            sections = RAGFlowHtmlParser().parser_txt(driver.page_source)
-            driver.quit()
-            return get_json_result(data="\n".join(sections))
-
-        class File:
-            filename: str
-            filepath: str
-
-            def __init__(self, filename, filepath):
-                self.filename = filename
-                self.filepath = filepath
-
-            def read(self):
-                with open(self.filepath, "rb") as f:
-                    return f.read()
-
-        r = re.search(r"filename=\"([^\"]+)\"", str(res_headers))
-        if not r or not r.group(1):
-            return get_json_result(data=False, message="Can't not identify downloaded file", code=RetCode.ARGUMENT_ERROR)
-        f = File(r.group(1), os.path.join(download_path, r.group(1)))
-        txt = FileService.parse_docs([f], current_user.id)
-        return get_json_result(data=txt)
+        try:
+            txt = await asyncio.to_thread(_parse_url, url, download_path, current_user.id)
+            return get_json_result(data=txt)
+        except ValueError as e:
+            return get_json_result(data=False, message=str(e), code=RetCode.ARGUMENT_ERROR)
+        except Exception as e:
+            return server_error_response(e)
 
     files = await request.files
     if "file" not in files:
         return get_json_result(data=False, message="No file part!", code=RetCode.ARGUMENT_ERROR)
 
     file_objs = files.getlist("file")
-    txt = FileService.parse_docs(file_objs, current_user.id)
+    txt = await asyncio.to_thread(FileService.parse_docs, file_objs, current_user.id)
 
     return get_json_result(data=txt)
 

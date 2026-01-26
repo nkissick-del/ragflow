@@ -12,3 +12,7 @@
 ## 2026-01-23 - Avoiding Ghost Clicks on Accessible Hover Elements
 **Learning:** Replacing `invisible` with `opacity-0` for keyboard accessibility (so elements remain in the tab order) has a side effect: the element remains clickable even when visually hidden ("ghost clicks").
 **Action:** Always pair `opacity-0` with `pointer-events-none`, and restore both `opacity-100` and `pointer-events-auto` on `focus-visible` and `group-hover`. This ensures the element is only interactive when it is perceivable.
+
+## 2026-02-27 - Manual Close Buttons in Dialogs
+**Learning:** `ConfirmDeleteDialog` manually implements a close button using `AlertDialogCancel` with an icon-only `X`. This bypasses default accessibility features if developers forget to add `aria-label`.
+**Action:** When componentizing dialogs with custom close buttons, explicitly check that icon-only buttons have localized `aria-label`s.

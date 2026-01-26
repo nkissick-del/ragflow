@@ -153,8 +153,6 @@ class TencentCloudAPIClient:
 
             return parser_result
 
-            return parser_result
-
         except TencentCloudSDKException as err:
             logging.error(f"[TCADP] Tencent Cloud SDK error: {err}", exc_info=True)
             return None
@@ -191,7 +189,7 @@ class TencentCloudAPIClient:
             return file_path
 
         except Exception as e:
-            logging.error(f"[TCADP] Failed to download file: {e}")
+            logging.error(f"[TCADP] Failed to download file: {e}", exc_info=True)
             try:
                 if "file_path" in locals() and os.path.exists(file_path):
                     os.unlink(file_path)

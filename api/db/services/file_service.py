@@ -35,7 +35,8 @@ from common.misc_utils import get_uuid
 from common.constants import TaskStatus, FileSource, ParserType
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.task_service import TaskService
-from api.utils.file_utils import filename_type, read_potential_broken_pdf, thumbnail_img, sanitize_path
+from api.utils.file_utils import filename_type, read_potential_broken_pdf, thumbnail, thumbnail_img, sanitize_path
+from api.utils.web_utils import html2pdf
 from rag.llm.cv_model import GptV4
 from common import settings
 
@@ -732,3 +733,50 @@ class FileService(CommonService):
                 continue
             threads.append(exe.submit(FileService.parse, file["name"], FileService.get_blob(file["created_by"], file["id"]), True, file["created_by"]))
         return [th.result() for th in threads]
+
+    @classmethod
+    @DB.connection_context()
+    def web_crawl_document(cls, kb, url, name, user_id):
+        blob = html2pdf(url)
+        if not blob:
+            raise ValueError("Download failure.")
+
+        root_folder = cls.get_root_folder(user_id)
+        pf_id = root_folder["id"]
+        cls.init_knowledgebase_docs(pf_id, user_id)
+        kb_root_folder = cls.get_kb_folder(user_id)
+        kb_folder = cls.new_a_file_from_kb(kb.tenant_id, kb.name, kb_root_folder["id"])
+
+        filename = duplicate_name(DocumentService.query, name=name + ".pdf", kb_id=kb.id)
+        filetype = filename_type(filename)
+        if filetype == FileType.OTHER.value:
+            raise RuntimeError("This type of file has not been supported yet!")
+
+        location = filename
+        while settings.STORAGE_IMPL.obj_exist(kb.id, location):
+            location += "_"
+        settings.STORAGE_IMPL.put(kb.id, location, blob)
+        doc = {
+            "id": get_uuid(),
+            "kb_id": kb.id,
+            "parser_id": kb.parser_id,
+            "parser_config": kb.parser_config,
+            "created_by": user_id,
+            "type": filetype,
+            "name": filename,
+            "location": location,
+            "size": len(blob),
+            "thumbnail": thumbnail(filename, blob),
+            "suffix": Path(filename).suffix.lstrip("."),
+        }
+        if doc["type"] == FileType.VISUAL:
+            doc["parser_id"] = ParserType.PICTURE.value
+        if doc["type"] == FileType.AURAL:
+            doc["parser_id"] = ParserType.AUDIO.value
+        if re.search(r"\.(ppt|pptx|pages)$", filename):
+            doc["parser_id"] = ParserType.PRESENTATION.value
+        if re.search(r"\.(eml)$", filename):
+            doc["parser_id"] = ParserType.EMAIL.value
+        DocumentService.insert(doc)
+        cls.add_file_from_kb(doc, kb_folder["id"], kb.tenant_id)
+        return True

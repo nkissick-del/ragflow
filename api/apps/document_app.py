@@ -16,7 +16,6 @@
 import asyncio
 import json
 import os.path
-import pathlib
 import re
 from pathlib import Path
 from quart import request, make_response
@@ -24,66 +23,28 @@ from api.apps import current_user, login_required
 from api.common.check_team_permission import check_kb_team_permission
 from api.constants import FILE_NAME_LEN_LIMIT, IMG_BASE64_PREFIX
 from api.db import VALID_FILE_TYPES, FileType
-from api.db.db_models import Task
-from api.db.services import duplicate_name
 from api.db.services.document_service import DocumentService, doc_upload_and_parse
 from common.metadata_utils import meta_filter, convert_conditions
-from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
+from api.db.services.file2document_service import File2DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.db.services.task_service import TaskService, cancel_all_task_of
 from api.db.services.user_service import UserTenantService
 from common.misc_utils import get_uuid
 from api.utils.api_utils import (
     get_data_error_result,
     get_json_result,
     server_error_response,
-    validate_request, get_request_json,
+    validate_request,
+    get_request_json,
 )
-from api.utils.file_utils import filename_type, thumbnail
+
 from common.file_utils import get_project_base_directory
-from common.constants import RetCode, VALID_TASK_STATUS, ParserType, TaskStatus
-from api.utils.web_utils import CONTENT_TYPE_MAP, html2pdf, is_valid_url
-from deepdoc.parser.html_parser import RAGFlowHtmlParser
-from rag.nlp import search, rag_tokenizer
+from api.utils.web_utils import CONTENT_TYPE_MAP, is_valid_url
+from rag.nlp import search
+from rag.utils.selenium_crawler import SeleniumCrawler
+from common.constants import RetCode, VALID_TASK_STATUS, TaskStatus
 from common import settings
 
-class _LocalFile:
-    filename: str
-    filepath: str
-
-    def __init__(self, filename, filepath):
-        self.filename = filename
-        self.filepath = filepath
-
-    def read(self):
-        with open(self.filepath, "rb") as f:
-            return f.read()
-
-def _parse_url(url, download_path, user_id):
-    from seleniumwire.webdriver import Chrome, ChromeOptions
-
-    options = ChromeOptions()
-    options.add_argument("--headless")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_experimental_option("prefs", {"download.default_directory": download_path, "download.prompt_for_download": False, "download.directory_upgrade": True, "safebrowsing.enabled": True})
-    driver = Chrome(options=options)
-    driver.get(url)
-    res_headers = [r.response.headers for r in driver.requests if r and r.response]
-    if len(res_headers) > 1:
-        sections = RAGFlowHtmlParser().parser_txt(driver.page_source)
-        driver.quit()
-        return "\n".join(sections)
-
-    r = re.search(r"filename=\"([^\"]+)\"", str(res_headers))
-    if not r or not r.group(1):
-        raise ValueError("Can't not identify downloaded file")
-
-    filename = r.group(1)
-    f = _LocalFile(filename, os.path.join(download_path, filename))
-    return FileService.parse_docs([f], user_id)
 
 @manager.route("/upload", methods=["POST"])  # noqa: F821
 @login_required
@@ -98,6 +59,7 @@ async def upload():
         return get_json_result(data=False, message="No file part!", code=RetCode.ARGUMENT_ERROR)
 
     file_objs = files.getlist("file")
+
     def _close_file_objs(objs):
         for obj in objs:
             try:
@@ -107,6 +69,7 @@ async def upload():
                     obj.stream.close()
                 except Exception:
                     pass
+
     for file_obj in file_objs:
         if file_obj.filename == "":
             _close_file_objs(file_objs)
@@ -150,49 +113,8 @@ async def web_crawl():
     if check_kb_team_permission(kb, current_user.id):
         return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
 
-    blob = html2pdf(url)
-    if not blob:
-        return server_error_response(ValueError("Download failure."))
-
-    root_folder = FileService.get_root_folder(current_user.id)
-    pf_id = root_folder["id"]
-    FileService.init_knowledgebase_docs(pf_id, current_user.id)
-    kb_root_folder = FileService.get_kb_folder(current_user.id)
-    kb_folder = FileService.new_a_file_from_kb(kb.tenant_id, kb.name, kb_root_folder["id"])
-
     try:
-        filename = duplicate_name(DocumentService.query, name=name + ".pdf", kb_id=kb.id)
-        filetype = filename_type(filename)
-        if filetype == FileType.OTHER.value:
-            raise RuntimeError("This type of file has not been supported yet!")
-
-        location = filename
-        while settings.STORAGE_IMPL.obj_exist(kb_id, location):
-            location += "_"
-        settings.STORAGE_IMPL.put(kb_id, location, blob)
-        doc = {
-            "id": get_uuid(),
-            "kb_id": kb.id,
-            "parser_id": kb.parser_id,
-            "parser_config": kb.parser_config,
-            "created_by": current_user.id,
-            "type": filetype,
-            "name": filename,
-            "location": location,
-            "size": len(blob),
-            "thumbnail": thumbnail(filename, blob),
-            "suffix": Path(filename).suffix.lstrip("."),
-        }
-        if doc["type"] == FileType.VISUAL:
-            doc["parser_id"] = ParserType.PICTURE.value
-        if doc["type"] == FileType.AURAL:
-            doc["parser_id"] = ParserType.AUDIO.value
-        if re.search(r"\.(ppt|pptx|pages)$", filename):
-            doc["parser_id"] = ParserType.PRESENTATION.value
-        if re.search(r"\.(eml)$", filename):
-            doc["parser_id"] = ParserType.EMAIL.value
-        DocumentService.insert(doc)
-        FileService.add_file_from_kb(doc, kb_folder["id"], kb.tenant_id)
+        await asyncio.to_thread(FileService.web_crawl_document, kb, url, name, current_user.id)
     except Exception as e:
         return server_error_response(e)
     return get_json_result(data=True)
@@ -569,30 +491,8 @@ async def change_status():
 
     result = {}
     for doc_id in doc_ids:
-        if not DocumentService.accessible(doc_id, current_user.id):
-            result[doc_id] = {"error": "No authorization."}
-            continue
-
-        try:
-            e, doc = DocumentService.get_by_id(doc_id)
-            if not e:
-                result[doc_id] = {"error": "No authorization."}
-                continue
-            e, kb = KnowledgebaseService.get_by_id(doc.kb_id)
-            if not e:
-                result[doc_id] = {"error": "Can't find this dataset!"}
-                continue
-            if not DocumentService.update_by_id(doc_id, {"status": str(status)}):
-                result[doc_id] = {"error": "Database error (Document update)!"}
-                continue
-
-            status_int = int(status)
-            if not settings.docStoreConn.update({"doc_id": doc_id}, {"available_int": status_int}, search.index_name(kb.tenant_id), doc.kb_id):
-                result[doc_id] = {"error": "Database error (docStore update)!"}
-            result[doc_id] = {"status": status}
-        except Exception as e:
-            result[doc_id] = {"error": f"Internal server error: {str(e)}"}
-
+        res = DocumentService.change_document_status(doc_id, status, current_user.id)
+        result[doc_id] = res
     return get_json_result(data=result)
 
 
@@ -623,55 +523,8 @@ async def rm():
 async def run():
     req = await get_request_json()
     try:
-        def _run_sync():
-            for doc_id in req["doc_ids"]:
-                if not DocumentService.accessible(doc_id, current_user.id):
-                    return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
-
-            kb_table_num_map = {}
-            for id in req["doc_ids"]:
-                info = {"run": str(req["run"]), "progress": 0}
-                if str(req["run"]) == TaskStatus.RUNNING.value and req.get("delete", False):
-                    info["progress_msg"] = ""
-                    info["chunk_num"] = 0
-                    info["token_num"] = 0
-
-                tenant_id = DocumentService.get_tenant_id(id)
-                if not tenant_id:
-                    return get_data_error_result(message="Tenant not found!")
-                e, doc = DocumentService.get_by_id(id)
-                if not e:
-                    return get_data_error_result(message="Document not found!")
-
-                if str(req["run"]) == TaskStatus.CANCEL.value:
-                    if str(doc.run) == TaskStatus.RUNNING.value:
-                        cancel_all_task_of(id)
-                    else:
-                        return get_data_error_result(message="Cannot cancel a task that is not in RUNNING status")
-                if all([("delete" not in req or req["delete"]), str(req["run"]) == TaskStatus.RUNNING.value, str(doc.run) == TaskStatus.DONE.value]):
-                    DocumentService.clear_chunk_num_when_rerun(doc.id)
-
-                DocumentService.update_by_id(id, info)
-                if req.get("delete", False):
-                    TaskService.filter_delete([Task.doc_id == id])
-                    if settings.docStoreConn.index_exist(search.index_name(tenant_id), doc.kb_id):
-                        settings.docStoreConn.delete({"doc_id": id}, search.index_name(tenant_id), doc.kb_id)
-
-                if str(req["run"]) == TaskStatus.RUNNING.value:
-                    if req.get("apply_kb"):
-                        e, kb = KnowledgebaseService.get_by_id(doc.kb_id)
-                        if not e:
-                            raise LookupError("Can't find this dataset!")
-                        doc.parser_config["llm_id"] = kb.parser_config.get("llm_id")
-                        doc.parser_config["enable_metadata"] = kb.parser_config.get("enable_metadata", False)
-                        doc.parser_config["metadata"] = kb.parser_config.get("metadata", {})
-                        DocumentService.update_parser_config(doc.id, doc.parser_config)
-                    doc_dict = doc.to_dict()
-                    DocumentService.run(tenant_id, doc_dict, kb_table_num_map)
-
-            return get_json_result(data=True)
-
-        return await asyncio.to_thread(_run_sync)
+        await asyncio.to_thread(DocumentService.handle_run, req["doc_ids"], req["run"], req.get("delete", False), req.get("apply_kb"), current_user.id)
+        return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)
 
@@ -682,48 +535,8 @@ async def run():
 async def rename():
     req = await get_request_json()
     try:
-        def _rename_sync():
-            if not DocumentService.accessible(req["doc_id"], current_user.id):
-                return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
-
-            e, doc = DocumentService.get_by_id(req["doc_id"])
-            if not e:
-                return get_data_error_result(message="Document not found!")
-            if pathlib.Path(req["name"].lower()).suffix != pathlib.Path(doc.name.lower()).suffix:
-                return get_json_result(data=False, message="The extension of file can't be changed", code=RetCode.ARGUMENT_ERROR)
-            if len(req["name"].encode("utf-8")) > FILE_NAME_LEN_LIMIT:
-                return get_json_result(data=False, message=f"File name must be {FILE_NAME_LEN_LIMIT} bytes or less.", code=RetCode.ARGUMENT_ERROR)
-
-            for d in DocumentService.query(name=req["name"], kb_id=doc.kb_id):
-                if d.name == req["name"]:
-                    return get_data_error_result(message="Duplicated document name in the same dataset.")
-
-            if not DocumentService.update_by_id(req["doc_id"], {"name": req["name"]}):
-                return get_data_error_result(message="Database error (Document rename)!")
-
-            informs = File2DocumentService.get_by_document_id(req["doc_id"])
-            if informs:
-                e, file = FileService.get_by_id(informs[0].file_id)
-                FileService.update_by_id(file.id, {"name": req["name"]})
-
-            tenant_id = DocumentService.get_tenant_id(req["doc_id"])
-            title_tks = rag_tokenizer.tokenize(req["name"])
-            es_body = {
-                "docnm_kwd": req["name"],
-                "title_tks": title_tks,
-                "title_sm_tks": rag_tokenizer.fine_grained_tokenize(title_tks),
-            }
-            if settings.docStoreConn.index_exist(search.index_name(tenant_id), doc.kb_id):
-                settings.docStoreConn.update(
-                    {"doc_id": req["doc_id"]},
-                    es_body,
-                    search.index_name(tenant_id),
-                    doc.kb_id,
-                )
-            return get_json_result(data=True)
-
-        return await asyncio.to_thread(_rename_sync)
-
+        await asyncio.to_thread(DocumentService.rename_document, req["doc_id"], req["name"], current_user.id)
+        return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)
 
@@ -744,7 +557,6 @@ async def get(doc_id):
         ext = ext.group(1) if ext else None
         if ext:
             if doc.type == FileType.VISUAL.value:
-
                 content_type = CONTENT_TYPE_MAP.get(ext, f"image/{ext}")
             else:
                 content_type = CONTENT_TYPE_MAP.get(ext, f"application/{ext}")
@@ -773,7 +585,6 @@ async def download_attachment(attachment_id):
 @login_required
 @validate_request("doc_id")
 async def change_parser():
-
     req = await get_request_json()
     if not DocumentService.accessible(req["doc_id"], current_user.id):
         return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
@@ -870,7 +681,7 @@ async def parse():
         os.makedirs(download_path, exist_ok=True)
 
         try:
-            txt = await asyncio.to_thread(_parse_url, url, download_path, current_user.id)
+            txt = await asyncio.to_thread(SeleniumCrawler.parse_url, url, download_path, current_user.id)
             return get_json_result(data=txt)
         except ValueError as e:
             return get_json_result(data=False, message=str(e), code=RetCode.ARGUMENT_ERROR)
@@ -925,8 +736,8 @@ async def set_meta():
 @manager.route("/upload_info", methods=["POST"])  # noqa: F821
 async def upload_info():
     files = await request.files
-    file = files['file'] if files and files.get("file") else None
+    file = files["file"] if files and files.get("file") else None
     try:
         return get_json_result(data=FileService.upload_info(current_user.id, file, request.args.get("url")))
     except Exception as e:
-        return  server_error_response(e)
+        return server_error_response(e)

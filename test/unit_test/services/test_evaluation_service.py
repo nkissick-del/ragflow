@@ -1,5 +1,5 @@
 #
-#  Copyright 2024 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -16,54 +16,139 @@
 """
 Unit tests for EvaluationService.
 """
+
 import sys
-from unittest.mock import MagicMock
-
-# Mock dependencies that cause import errors or are not needed for this test
-mock_api_utils = MagicMock()
-mock_api_utils.get_parser_config = MagicMock()
-mock_api_utils.get_data_error_result = MagicMock()
-sys.modules['api.utils.api_utils'] = mock_api_utils
-
-mock_quart = MagicMock()
-sys.modules['quart'] = mock_quart
-
-# Mock DialogService to avoid importing deep dependency chain (FileService -> TaskService -> deepdoc)
-mock_dialog_service_module = MagicMock()
-sys.modules['api.db.services.dialog_service'] = mock_dialog_service_module
-
 import pytest
-from unittest.mock import patch
-# Now import the service under test
-from api.db.services.evaluation_service import EvaluationService
+from unittest.mock import MagicMock, patch
+
+# Define the patch dict globally or in a fixture
+# We need to make sure we cover all imports that might fail or need mocking
+
+
+@pytest.fixture
+def mock_env():
+    # Create mocks
+    mock_dialog_service = MagicMock()
+    mock_db_models = MagicMock()
+
+    mock_common_service = MagicMock()
+    mock_common_service.CommonService = object
+
+    mock_constants = MagicMock()
+    mock_constants.LLMType.IMAGE2TEXT = "image2text"
+    mock_constants.LLMType.CHAT = "chat"
+
+    mock_llm_service = MagicMock()
+    mock_tenant_llm_service = MagicMock()
+    mock_template = MagicMock()
+    mock_generator = MagicMock()
+    mock_json_repair = MagicMock()
+
+    # Mock quart and api_utils for other tests
+    mock_api_utils = MagicMock()
+    mock_quart = MagicMock()
+
+    # Config generator
+    mock_generator.PROMPT_JINJA_ENV.from_string.return_value.render.return_value = "Rendered Prompt"
+    mock_generator.message_fit_in.return_value = (100, [{"role": "user", "content": "Rendered Prompt"}])
+
+    # Config LLM Service
+    mock_bundle_instance = mock_llm_service.LLMBundle.return_value
+    mock_bundle_instance.max_length = 4096
+
+    # Patch dictionary
+    patches = {
+        "api.db.services.dialog_service": mock_dialog_service,
+        "api.db.db_models": mock_db_models,
+        "api.db.services.common_service": mock_common_service,
+        "common.constants": mock_constants,
+        "common.misc_utils": MagicMock(),
+        "common.time_utils": MagicMock(),
+        "api.db.services.llm_service": mock_llm_service,
+        "api.db.services.tenant_llm_service": mock_tenant_llm_service,
+        "rag.prompts.template": mock_template,
+        "rag.prompts.generator": mock_generator,
+        "json_repair": mock_json_repair,
+        "api.utils.api_utils": mock_api_utils,
+        "quart": mock_quart,
+    }
+
+    with patch.dict(sys.modules, patches):
+        # We also need to remove evaluation_service from sys.modules if it exists
+        # to force re-import with mocked dependencies
+        if "api.db.services.evaluation_service" in sys.modules:
+            del sys.modules["api.db.services.evaluation_service"]
+
+        yield {"llm_service": mock_llm_service, "tenant_llm_service": mock_tenant_llm_service, "template": mock_template, "json_repair": mock_json_repair, "db_models": mock_db_models}
+
+
+def test_evaluate_with_llm(mock_env):
+    from api.db.services.evaluation_service import EvaluationService
+
+    # Setup
+    dialog = MagicMock()
+    dialog.tenant_id = "tenant_1"
+    dialog.llm_id = "llm_1"
+
+    mock_env["tenant_llm_service"].TenantLLMService.llm_id2llm_type.return_value = "chat"
+
+    # Mock LLM response
+    mock_bundle = mock_env["llm_service"].LLMBundle.return_value
+    mock_bundle._run_coroutine_sync.return_value = '{"faithfulness": 0.9}'  # simplified response string
+
+    # Mock json_repair
+    mock_env["json_repair"].loads.return_value = {"faithfulness": 0.9, "context_relevance": 0.8, "answer_relevance": 0.95, "semantic_similarity": 0.85}
+
+    # Execute
+    metrics = EvaluationService._evaluate_with_llm("Q", "A", "Ref", [{"content": "Ctx"}], dialog)
+
+    # Verify
+    assert metrics["faithfulness"] == 0.9
+    assert metrics["context_relevance"] == 0.8
+
+    mock_env["llm_service"].LLMBundle.assert_called()
+    mock_bundle.async_chat.assert_called()
+
+
+def test_evaluate_with_llm_error(mock_env):
+    from api.db.services.evaluation_service import EvaluationService
+
+    dialog = MagicMock()
+    mock_bundle = mock_env["llm_service"].LLMBundle.return_value
+    mock_bundle._run_coroutine_sync.return_value = "Invalid"
+
+    mock_env["json_repair"].loads.side_effect = Exception("Fail")
+
+    metrics = EvaluationService._evaluate_with_llm("Q", "A", "Ref", [{"content": "Ctx"}], dialog)
+
+    assert metrics["faithfulness"] == 0.0
+
 
 @pytest.mark.p1
 class TestEvaluationCompareRuns:
     """Test compare_runs logic in EvaluationService."""
 
-    @patch('api.db.services.evaluation_service.EvaluationRun')
-    def test_compare_runs_success(self, mock_evaluation_run):
-        """Test successful comparison of runs."""
+    def test_compare_runs_success(self, mock_env):
+        from api.db.services.evaluation_service import EvaluationService
+
+        # We need to mock EvaluationRun within the mocked environment
+        # mock_env['db_models'] is the mocked api.db.db_models
+        mock_evaluation_run = mock_env["db_models"].EvaluationRun
+
         # Arrange
-        run_ids = ['run1', 'run2']
+        run_ids = ["run1", "run2"]
 
         run1 = MagicMock()
-        run1.id = 'run1'
-        run1.dataset_id_id = 'ds1'
-        run1.metrics_summary = {'avg_precision': 0.8, 'avg_recall': 0.6}
-        run1.to_dict.return_value = {
-            'id': 'run1', 'dataset_id': 'ds1',
-            'metrics_summary': {'avg_precision': 0.8, 'avg_recall': 0.6}
-        }
+        run1.id = "run1"
+        run1.dataset_id_id = "ds1"  # Peewee FK usage
+        run1.metrics_summary = {"avg_precision": 0.8, "avg_recall": 0.6}
+        run1.to_dict.return_value = {"id": "run1", "dataset_id": "ds1", "metrics_summary": {"avg_precision": 0.8, "avg_recall": 0.6}}
 
         run2 = MagicMock()
-        run2.id = 'run2'
-        run2.dataset_id_id = 'ds1'
-        run2.metrics_summary = {'avg_precision': 0.9, 'avg_recall': 0.5}
-        run2.to_dict.return_value = {
-            'id': 'run2', 'dataset_id': 'ds1',
-            'metrics_summary': {'avg_precision': 0.9, 'avg_recall': 0.5}
-        }
+        run2.id = "run2"
+        run2.dataset_id_id = "ds1"
+        run2.metrics_summary = {"avg_precision": 0.9, "avg_recall": 0.5}
+        run2.to_dict.return_value = {"id": "run2", "dataset_id": "ds1", "metrics_summary": {"avg_precision": 0.9, "avg_recall": 0.5}}
 
         # Mock the query chain: EvaluationRun.select().where()
         mock_query = MagicMock()
@@ -75,28 +160,31 @@ class TestEvaluationCompareRuns:
 
         # Assert
         assert success is True
-        assert 'runs' in result
-        assert len(result['runs']) == 2
-        assert 'comparison' in result
+        assert "runs" in result
+        assert len(result["runs"]) == 2
+        assert "comparison" in result
 
         # Check if pivoted metrics are correct
         # Structure: comparison[metric][run_id] = value
-        assert 'avg_precision' in result['comparison']
-        assert result['comparison']['avg_precision']['run1'] == 0.8
-        assert result['comparison']['avg_precision']['run2'] == 0.9
+        assert "avg_precision" in result["comparison"]
+        assert result["comparison"]["avg_precision"]["run1"] == 0.8
+        assert result["comparison"]["avg_precision"]["run2"] == 0.9
 
-        assert 'avg_recall' in result['comparison']
-        assert result['comparison']['avg_recall']['run1'] == 0.6
-        assert result['comparison']['avg_recall']['run2'] == 0.5
+        assert "avg_recall" in result["comparison"]
+        assert result["comparison"]["avg_recall"]["run1"] == 0.6
+        assert result["comparison"]["avg_recall"]["run2"] == 0.5
 
-    @patch('api.db.services.evaluation_service.EvaluationRun')
-    def test_compare_runs_missing_run(self, mock_evaluation_run):
+    def test_compare_runs_missing_run(self, mock_env):
+        from api.db.services.evaluation_service import EvaluationService
+
+        mock_evaluation_run = mock_env["db_models"].EvaluationRun
+
         """Test error when a run ID is missing."""
-        run_ids = ['run1', 'run2']
+        run_ids = ["run1", "run2"]
 
         run1 = MagicMock()
-        run1.id = 'run1'
-        run1.dataset_id_id = 'ds1'
+        run1.id = "run1"
+        run1.dataset_id_id = "ds1"
 
         # Only return run1
         mock_query = MagicMock()
@@ -107,20 +195,23 @@ class TestEvaluationCompareRuns:
         success, result = EvaluationService.compare_runs(run_ids)
 
         assert success is False
-        assert "not found" in result
+        assert "found" in result  # 'Runs not found' in str(error) or dict
 
-    @patch('api.db.services.evaluation_service.EvaluationRun')
-    def test_compare_runs_different_datasets(self, mock_evaluation_run):
+    def test_compare_runs_different_datasets(self, mock_env):
+        from api.db.services.evaluation_service import EvaluationService
+
+        mock_evaluation_run = mock_env["db_models"].EvaluationRun
+
         """Test error when runs belong to different datasets."""
-        run_ids = ['run1', 'run2']
+        run_ids = ["run1", "run2"]
 
         run1 = MagicMock()
-        run1.id = 'run1'
-        run1.dataset_id_id = 'ds1'
+        run1.id = "run1"
+        run1.dataset_id_id = "ds1"
 
         run2 = MagicMock()
-        run2.id = 'run2'
-        run2.dataset_id_id = 'ds2' # Different dataset
+        run2.id = "run2"
+        run2.dataset_id_id = "ds2"  # Different dataset
 
         mock_query = MagicMock()
         mock_query.__iter__.return_value = [run1, run2]

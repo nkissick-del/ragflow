@@ -76,10 +76,17 @@ class CitationService:
 
         # Create a local copy to avoid mutating the input list
         local_chunk_v = list(chunk_v)
+        all_replaced = True
         for i in range(len(local_chunk_v)):
             if len(ans_v[0]) != len(local_chunk_v[i]):
                 local_chunk_v[i] = [0.0] * len(ans_v[0])
                 logging.warning("The dimension of query and chunk do not match: {} vs. {}".format(len(ans_v[0]), len(local_chunk_v[i])))
+            else:
+                all_replaced = False
+
+        if all_replaced:
+            logging.warning("All chunks have mismatched dimensions and were replaced with zero vectors. Returning early.")
+            return answer, set()
 
         assert len(ans_v[0]) == len(local_chunk_v[0]), "The dimension of query and chunk do not match: {} vs. {}".format(len(ans_v[0]), len(local_chunk_v[0]))
 
@@ -93,7 +100,7 @@ class CitationService:
                 logging.debug("{} SIM: {}".format(pieces_[i], mx))
                 if mx < thr:
                     continue
-                cites[idx[i]] = list([ii for ii in range(len(local_chunk_v)) if sim[ii] > mx])[:4]
+                cites[idx[i]] = [ii for ii in range(len(local_chunk_v)) if sim[ii] > mx][:4]
             thr *= self.THRESHOLD_DECAY
 
         res = ""

@@ -48,9 +48,15 @@ class RerankService:
             if not search_res.field[i].get(TAG_FLD):
                 rank_fea.append(0)
                 continue
-            try:
-                tag_data = ast.literal_eval(search_res.field[i].get(TAG_FLD, "{}"))
-            except (ValueError, SyntaxError):
+            raw_tag = search_res.field[i].get(TAG_FLD, {})
+            if isinstance(raw_tag, dict):
+                tag_data = raw_tag
+            elif isinstance(raw_tag, str):
+                try:
+                    tag_data = ast.literal_eval(raw_tag)
+                except (ValueError, SyntaxError, TypeError):
+                    tag_data = {}
+            else:
                 tag_data = {}
 
             for t, sc in tag_data.items():
@@ -100,7 +106,7 @@ class RerankService:
         self._normalize_important_kwd(sres)
         ins_tw = []
         for i in sres.ids:
-            content_ltks = sres.field[i].get(cfield, "").split()
+            content_ltks = list(OrderedDict.fromkeys(sres.field[i].get(cfield, "").split()))
             title_tks = [t for t in sres.field[i].get("title_tks", "").split() if t]
             important_kwd = sres.field[i].get("important_kwd", [])
             tks = content_ltks + title_tks + important_kwd

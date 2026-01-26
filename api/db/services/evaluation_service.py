@@ -42,6 +42,13 @@ from api.db.services.dialog_service import DialogService
 from common.misc_utils import get_uuid
 from common.time_utils import current_timestamp
 from common.constants import StatusEnum
+from common.constants import LLMType
+from api.db.services.llm_service import LLMBundle
+from api.db.services.tenant_llm_service import TenantLLMService
+from rag.prompts.template import load_prompt
+from rag.prompts.generator import PROMPT_JINJA_ENV, message_fit_in
+import json_repair
+import re
 
 
 class EvaluationService(CommonService):
@@ -52,8 +59,7 @@ class EvaluationService(CommonService):
     # ==================== Dataset Management ====================
 
     @classmethod
-    def create_dataset(cls, name: str, description: str, kb_ids: List[str],
-                      tenant_id: str, user_id: str) -> Tuple[bool, str]:
+    def create_dataset(cls, name: str, description: str, kb_ids: List[str], tenant_id: str, user_id: str) -> Tuple[bool, str]:
         """
         Create a new evaluation dataset.
 
@@ -68,7 +74,7 @@ class EvaluationService(CommonService):
             (success, dataset_id or error_message)
         """
         try:
-            timestamp= current_timestamp()
+            timestamp = current_timestamp()
             dataset_id = get_uuid()
             dataset = {
                 "id": dataset_id,
@@ -79,7 +85,7 @@ class EvaluationService(CommonService):
                 "created_by": user_id,
                 "create_time": timestamp,
                 "update_time": timestamp,
-                "status": StatusEnum.VALID.value
+                "status": StatusEnum.VALID.value,
             }
 
             if not EvaluationDataset.create(**dataset):
@@ -103,22 +109,15 @@ class EvaluationService(CommonService):
             return None
 
     @classmethod
-    def list_datasets(cls, tenant_id: str, user_id: str,
-                     page: int = 1, page_size: int = 20) -> Dict[str, Any]:
+    def list_datasets(cls, tenant_id: str, user_id: str, page: int = 1, page_size: int = 20) -> Dict[str, Any]:
         """List datasets for a tenant"""
         try:
-            query = EvaluationDataset.select().where(
-                (EvaluationDataset.tenant_id == tenant_id) &
-                (EvaluationDataset.status == StatusEnum.VALID.value)
-            ).order_by(EvaluationDataset.create_time.desc())
+            query = EvaluationDataset.select().where((EvaluationDataset.tenant_id == tenant_id) & (EvaluationDataset.status == StatusEnum.VALID.value)).order_by(EvaluationDataset.create_time.desc())
 
             total = query.count()
             datasets = query.paginate(page, page_size)
 
-            return {
-                "total": total,
-                "datasets": [d.to_dict() for d in datasets]
-            }
+            return {"total": total, "datasets": [d.to_dict() for d in datasets]}
         except Exception as e:
             logging.error(f"Error listing datasets: {e}")
             return {"total": 0, "datasets": []}
@@ -128,9 +127,7 @@ class EvaluationService(CommonService):
         """Update dataset"""
         try:
             kwargs["update_time"] = current_timestamp()
-            return EvaluationDataset.update(**kwargs).where(
-                EvaluationDataset.id == dataset_id
-            ).execute() > 0
+            return EvaluationDataset.update(**kwargs).where(EvaluationDataset.id == dataset_id).execute() > 0
         except Exception as e:
             logging.error(f"Error updating dataset {dataset_id}: {e}")
             return False
@@ -139,10 +136,7 @@ class EvaluationService(CommonService):
     def delete_dataset(cls, dataset_id: str) -> bool:
         """Soft delete dataset"""
         try:
-            return EvaluationDataset.update(
-                status=StatusEnum.INVALID.value,
-                update_time=current_timestamp()
-            ).where(EvaluationDataset.id == dataset_id).execute() > 0
+            return EvaluationDataset.update(status=StatusEnum.INVALID.value, update_time=current_timestamp()).where(EvaluationDataset.id == dataset_id).execute() > 0
         except Exception as e:
             logging.error(f"Error deleting dataset {dataset_id}: {e}")
             return False
@@ -150,11 +144,15 @@ class EvaluationService(CommonService):
     # ==================== Test Case Management ====================
 
     @classmethod
-    def add_test_case(cls, dataset_id: str, question: str,
-                     reference_answer: Optional[str] = None,
-                     relevant_doc_ids: Optional[List[str]] = None,
-                     relevant_chunk_ids: Optional[List[str]] = None,
-                     metadata: Optional[Dict[str, Any]] = None) -> Tuple[bool, str]:
+    def add_test_case(
+        cls,
+        dataset_id: str,
+        question: str,
+        reference_answer: Optional[str] = None,
+        relevant_doc_ids: Optional[List[str]] = None,
+        relevant_chunk_ids: Optional[List[str]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Tuple[bool, str]:
         """
         Add a test case to a dataset.
 
@@ -179,7 +177,7 @@ class EvaluationService(CommonService):
                 "relevant_doc_ids": relevant_doc_ids,
                 "relevant_chunk_ids": relevant_chunk_ids,
                 "metadata": metadata,
-                "create_time": current_timestamp()
+                "create_time": current_timestamp(),
             }
 
             if not EvaluationCase.create(**case):
@@ -194,9 +192,7 @@ class EvaluationService(CommonService):
     def get_test_cases(cls, dataset_id: str) -> List[Dict[str, Any]]:
         """Get all test cases for a dataset"""
         try:
-            cases = EvaluationCase.select().where(
-                EvaluationCase.dataset_id == dataset_id
-            ).order_by(EvaluationCase.create_time)
+            cases = EvaluationCase.select().where(EvaluationCase.dataset_id == dataset_id).order_by(EvaluationCase.create_time)
 
             return [c.to_dict() for c in cases]
         except Exception as e:
@@ -207,9 +203,7 @@ class EvaluationService(CommonService):
     def delete_test_case(cls, case_id: str) -> bool:
         """Delete a test case"""
         try:
-            return EvaluationCase.delete().where(
-                EvaluationCase.id == case_id
-            ).execute() > 0
+            return EvaluationCase.delete().where(EvaluationCase.id == case_id).execute() > 0
         except Exception as e:
             logging.error(f"Error deleting test case {case_id}: {e}")
             return False
@@ -229,10 +223,10 @@ class EvaluationService(CommonService):
         success_count = 0
         failure_count = 0
         case_instances = []
-        
+
         if not cases:
             return success_count, failure_count
-        
+
         cur_timestamp = current_timestamp()
 
         try:
@@ -246,7 +240,7 @@ class EvaluationService(CommonService):
                     "relevant_doc_ids": case_data.get("relevant_doc_ids"),
                     "relevant_chunk_ids": case_data.get("relevant_chunk_ids"),
                     "metadata": case_data.get("metadata"),
-                    "create_time": cur_timestamp
+                    "create_time": cur_timestamp,
                 }
 
                 case_instances.append(EvaluationCase(**case_info))
@@ -264,8 +258,7 @@ class EvaluationService(CommonService):
     # ==================== Evaluation Execution ====================
 
     @classmethod
-    def start_evaluation(cls, dataset_id: str, dialog_id: str,
-                        user_id: str, name: Optional[str] = None) -> Tuple[bool, str]:
+    def start_evaluation(cls, dataset_id: str, dialog_id: str, user_id: str, name: Optional[str] = None) -> Tuple[bool, str]:
         """
         Start an evaluation run.
 
@@ -299,7 +292,7 @@ class EvaluationService(CommonService):
                 "status": "RUNNING",
                 "created_by": user_id,
                 "create_time": current_timestamp(),
-                "complete_time": None
+                "complete_time": None,
             }
 
             if not EvaluationRun.create(**run):
@@ -326,10 +319,7 @@ class EvaluationService(CommonService):
             test_cases = cls.get_test_cases(dataset_id)
 
             if not test_cases:
-                EvaluationRun.update(
-                    status="FAILED",
-                    complete_time=current_timestamp()
-                ).where(EvaluationRun.id == run_id).execute()
+                EvaluationRun.update(status="FAILED", complete_time=current_timestamp()).where(EvaluationRun.id == run_id).execute()
                 return
 
             # Execute each test case
@@ -343,22 +333,14 @@ class EvaluationService(CommonService):
             metrics_summary = cls._compute_summary_metrics(results)
 
             # Update run status
-            EvaluationRun.update(
-                status="COMPLETED",
-                metrics_summary=metrics_summary,
-                complete_time=current_timestamp()
-            ).where(EvaluationRun.id == run_id).execute()
+            EvaluationRun.update(status="COMPLETED", metrics_summary=metrics_summary, complete_time=current_timestamp()).where(EvaluationRun.id == run_id).execute()
 
         except Exception as e:
             logging.error(f"Error executing evaluation {run_id}: {e}")
-            EvaluationRun.update(
-                status="FAILED",
-                complete_time=current_timestamp()
-            ).where(EvaluationRun.id == run_id).execute()
+            EvaluationRun.update(status="FAILED", complete_time=current_timestamp()).where(EvaluationRun.id == run_id).execute()
 
     @classmethod
-    def _evaluate_single_case(cls, run_id: str, case: Dict[str, Any],
-                             dialog: Any) -> Optional[Dict[str, Any]]:
+    def _evaluate_single_case(cls, run_id: str, case: Dict[str, Any], dialog: Any) -> Optional[Dict[str, Any]]:
         """
         Evaluate a single test case.
 
@@ -378,7 +360,6 @@ class EvaluationService(CommonService):
             start_time = timer()
             answer = ""
             retrieved_chunks = []
-
 
             def _sync_from_async_gen(async_gen):
                 result_queue: queue.Queue = queue.Queue()
@@ -409,7 +390,6 @@ class EvaluationService(CommonService):
                         raise item
                     yield item
 
-
             def chat(dialog, messages, stream=True, **kwargs):
                 from api.db.services.dialog_service import async_chat
 
@@ -430,7 +410,7 @@ class EvaluationService(CommonService):
                 reference_answer=case.get("reference_answer"),
                 retrieved_chunks=retrieved_chunks,
                 relevant_chunk_ids=case.get("relevant_chunk_ids"),
-                dialog=dialog
+                dialog=dialog,
             )
 
             # Save result
@@ -444,7 +424,7 @@ class EvaluationService(CommonService):
                 "metrics": metrics,
                 "execution_time": execution_time,
                 "token_usage": None,  # TODO: Track token usage
-                "create_time": current_timestamp()
+                "create_time": current_timestamp(),
             }
 
             EvaluationResult.create(**result)
@@ -455,11 +435,9 @@ class EvaluationService(CommonService):
             return None
 
     @classmethod
-    def _compute_metrics(cls, question: str, generated_answer: str,
-                        reference_answer: Optional[str],
-                        retrieved_chunks: List[Dict[str, Any]],
-                        relevant_chunk_ids: Optional[List[str]],
-                        dialog: Any) -> Dict[str, float]:
+    def _compute_metrics(
+        cls, question: str, generated_answer: str, reference_answer: Optional[str], retrieved_chunks: List[Dict[str, Any]], relevant_chunk_ids: Optional[List[str]], dialog: Any
+    ) -> Dict[str, float]:
         """
         Compute evaluation metrics for a single test case.
 
@@ -479,17 +457,80 @@ class EvaluationService(CommonService):
             metrics["answer_length"] = len(generated_answer)
             metrics["has_answer"] = 1.0 if generated_answer.strip() else 0.0
 
-            # TODO: Implement advanced metrics using LLM-as-judge
-            # - Faithfulness (hallucination detection)
-            # - Answer relevance
-            # - Context relevance
-            # - Semantic similarity (if reference answer provided)
+            # Advanced metrics using LLM-as-judge
+            llm_metrics = cls._evaluate_with_llm(question=question, answer=generated_answer, reference=reference_answer, retrieved_chunks=retrieved_chunks, dialog=dialog)
+            metrics.update(llm_metrics)
 
         return metrics
 
     @classmethod
-    def _compute_retrieval_metrics(cls, retrieved_ids: List[str],
-                                   relevant_ids: List[str]) -> Dict[str, float]:
+    def _evaluate_with_llm(cls, question: str, answer: str, reference: Optional[str], retrieved_chunks: List[Dict[str, Any]], dialog: Any) -> Dict[str, float]:
+        """
+        Evaluate answer quality using LLM-as-judge.
+
+        Computes:
+        - Faithfulness
+        - Context Relevance
+        - Answer Relevance
+        - Semantic Similarity (if reference provided)
+        """
+        try:
+            # Prepare context from retrieved chunks
+            context_texts = []
+            for chunk in retrieved_chunks:
+                # Try to get content from various common keys
+                text = chunk.get("content_with_weight") or chunk.get("content") or ""
+                if text:
+                    context_texts.append(text)
+            context = "\n\n".join(context_texts)
+
+            # Get LLM configuration from dialog
+            tenant_id = dialog.tenant_id
+            llm_id = dialog.llm_id
+
+            # Use the same LLM as the dialog or a default chat model
+            if TenantLLMService.llm_id2llm_type(llm_id) == LLMType.IMAGE2TEXT:
+                chat_mdl = LLMBundle(tenant_id, LLMType.IMAGE2TEXT, llm_id)
+            else:
+                chat_mdl = LLMBundle(tenant_id, LLMType.CHAT, llm_id)
+
+            # Prepare prompt
+            prompt_template = load_prompt("evaluation_judge")
+            prompt = PROMPT_JINJA_ENV.from_string(prompt_template).render(question=question, context=context, reference=reference if reference else "None", answer=answer)
+
+            # Call LLM
+            messages = [{"role": "user", "content": prompt}]
+
+            # Fit message in context window
+            _, msgs = message_fit_in(messages, chat_mdl.max_length)
+
+            # Execute chat
+            response = chat_mdl._run_coroutine_sync(chat_mdl.async_chat(msgs[0]["content"], msgs[1:], {"temperature": 0.0}))
+
+            # Clean and parse response
+            response = re.sub(r"^.*</think>", "", response, flags=re.DOTALL)
+            response = re.sub(r"```json\s*", "", response)
+            response = re.sub(r"```", "", response)
+
+            metrics_json = json_repair.loads(response)
+
+            # Validate and extract metrics
+            valid_metrics = {}
+            for key in ["faithfulness", "context_relevance", "answer_relevance", "semantic_similarity"]:
+                val = metrics_json.get(key)
+                if isinstance(val, (int, float)):
+                    valid_metrics[key] = float(val)
+                else:
+                    valid_metrics[key] = 0.0  # Default to 0 if missing/invalid
+
+            return valid_metrics
+
+        except Exception as e:
+            logging.error(f"Error in LLM evaluation: {e}")
+            return {"faithfulness": 0.0, "context_relevance": 0.0, "answer_relevance": 0.0, "semantic_similarity": 0.0}
+
+    @classmethod
+    def _compute_retrieval_metrics(cls, retrieved_ids: List[str], relevant_ids: List[str]) -> Dict[str, float]:
         """
         Compute retrieval metrics.
 
@@ -525,13 +566,7 @@ class EvaluationService(CommonService):
                 mrr = 1.0 / i
                 break
 
-        return {
-            "precision": precision,
-            "recall": recall,
-            "f1_score": f1,
-            "hit_rate": hit_rate,
-            "mrr": mrr
-        }
+        return {"precision": precision, "recall": recall, "f1_score": f1, "hit_rate": hit_rate, "mrr": mrr}
 
     @classmethod
     def _compute_summary_metrics(cls, results: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -559,10 +594,7 @@ class EvaluationService(CommonService):
                     metric_counts[key] = metric_counts.get(key, 0) + 1
 
         # Compute averages
-        summary = {
-            "total_cases": len(results),
-            "avg_execution_time": sum(r.get("execution_time", 0) for r in results) / len(results)
-        }
+        summary = {"total_cases": len(results), "avg_execution_time": sum(r.get("execution_time", 0) for r in results) / len(results)}
 
         for key in metric_sums:
             summary[f"avg_{key}"] = metric_sums[key] / metric_counts[key]
@@ -579,14 +611,9 @@ class EvaluationService(CommonService):
             if not run:
                 return {}
 
-            results = EvaluationResult.select().where(
-                EvaluationResult.run_id == run_id
-            ).order_by(EvaluationResult.create_time)
+            results = EvaluationResult.select().where(EvaluationResult.run_id == run_id).order_by(EvaluationResult.create_time)
 
-            return {
-                "run": run.to_dict(),
-                "results": [r.to_dict() for r in results]
-            }
+            return {"run": run.to_dict(), "results": [r.to_dict() for r in results]}
         except Exception as e:
             logging.error(f"Error getting run results {run_id}: {e}")
             return {}
@@ -609,11 +636,12 @@ class EvaluationService(CommonService):
                 return None
 
             # Query results joined with case info
-            query = (EvaluationResult
-                    .select(EvaluationResult, EvaluationCase)
-                    .join(EvaluationCase, on=(EvaluationResult.case_id == EvaluationCase.id))
-                    .where(EvaluationResult.run_id == run_id)
-                    .order_by(EvaluationResult.create_time))
+            query = (
+                EvaluationResult.select(EvaluationResult, EvaluationCase)
+                .join(EvaluationCase, on=(EvaluationResult.case_id == EvaluationCase.id))
+                .where(EvaluationResult.run_id == run_id)
+                .order_by(EvaluationResult.create_time)
+            )
 
             # Fetch data to memory to determine all metric keys
             rows = []
@@ -630,7 +658,7 @@ class EvaluationService(CommonService):
                     "Generated Answer": result_dict.get("generated_answer", ""),
                     "Execution Time": result_dict.get("execution_time", 0),
                     "Retrieved Chunks": json.dumps(result_dict.get("retrieved_chunks", []), ensure_ascii=False),
-                    "Relevant Chunk IDs": json.dumps(case_dict.get("relevant_chunk_ids", []), ensure_ascii=False)
+                    "Relevant Chunk IDs": json.dumps(case_dict.get("relevant_chunk_ids", []), ensure_ascii=False),
                 }
 
                 # Handle metrics
@@ -644,12 +672,7 @@ class EvaluationService(CommonService):
                 rows.append(row)
 
             # Define CSV fields
-            fieldnames = [
-                "Question",
-                "Reference Answer",
-                "Generated Answer",
-                "Execution Time"
-            ]
+            fieldnames = ["Question", "Reference Answer", "Generated Answer", "Execution Time"]
 
             # Add sorted metric keys
             fieldnames.extend(sorted(list(all_metric_keys)))
@@ -692,43 +715,41 @@ class EvaluationService(CommonService):
 
             # Low precision: retrieving irrelevant chunks
             if metrics.get("avg_precision", 1.0) < 0.7:
-                recommendations.append({
-                    "issue": "Low Precision",
-                    "severity": "high",
-                    "description": "System is retrieving many irrelevant chunks",
-                    "suggestions": [
-                        "Increase similarity_threshold to filter out less relevant chunks",
-                        "Enable reranking to improve chunk ordering",
-                        "Reduce top_k to return fewer chunks"
-                    ]
-                })
+                recommendations.append(
+                    {
+                        "issue": "Low Precision",
+                        "severity": "high",
+                        "description": "System is retrieving many irrelevant chunks",
+                        "suggestions": ["Increase similarity_threshold to filter out less relevant chunks", "Enable reranking to improve chunk ordering", "Reduce top_k to return fewer chunks"],
+                    }
+                )
 
             # Low recall: missing relevant chunks
             if metrics.get("avg_recall", 1.0) < 0.7:
-                recommendations.append({
-                    "issue": "Low Recall",
-                    "severity": "high",
-                    "description": "System is missing relevant chunks",
-                    "suggestions": [
-                        "Increase top_k to retrieve more chunks",
-                        "Lower similarity_threshold to be more inclusive",
-                        "Enable hybrid search (keyword + semantic)",
-                        "Check chunk size - may be too large or too small"
-                    ]
-                })
+                recommendations.append(
+                    {
+                        "issue": "Low Recall",
+                        "severity": "high",
+                        "description": "System is missing relevant chunks",
+                        "suggestions": [
+                            "Increase top_k to retrieve more chunks",
+                            "Lower similarity_threshold to be more inclusive",
+                            "Enable hybrid search (keyword + semantic)",
+                            "Check chunk size - may be too large or too small",
+                        ],
+                    }
+                )
 
             # Slow response time
             if metrics.get("avg_execution_time", 0) > 5.0:
-                recommendations.append({
-                    "issue": "Slow Response Time",
-                    "severity": "medium",
-                    "description": f"Average response time is {metrics['avg_execution_time']:.2f}s",
-                    "suggestions": [
-                        "Reduce top_k to retrieve fewer chunks",
-                        "Optimize embedding model selection",
-                        "Consider caching frequently asked questions"
-                    ]
-                })
+                recommendations.append(
+                    {
+                        "issue": "Slow Response Time",
+                        "severity": "medium",
+                        "description": f"Average response time is {metrics['avg_execution_time']:.2f}s",
+                        "suggestions": ["Reduce top_k to retrieve fewer chunks", "Optimize embedding model selection", "Consider caching frequently asked questions"],
+                    }
+                )
 
             return recommendations
         except Exception as e:
@@ -777,10 +798,7 @@ class EvaluationService(CommonService):
                     if run.metrics_summary and key in run.metrics_summary:
                         comparison[key][run.id] = run.metrics_summary[key]
 
-            return True, {
-                "runs": run_details,
-                "comparison": comparison
-            }
+            return True, {"runs": run_details, "comparison": comparison}
 
         except Exception as e:
             logging.error(f"Error comparing runs: {e}")

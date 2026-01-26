@@ -5,9 +5,11 @@ from unittest.mock import MagicMock, patch
 _original_modules = {}
 
 
+MODULES_TO_MOCK = ["tiktoken", "rag.nlp.rag_tokenizer", "rag.prompts.generator", "valkey", "valkey.lock", "common.settings"]
+
+
 def setUpModule():
-    modules_to_mock = ["tiktoken", "rag.nlp.rag_tokenizer", "rag.prompts.generator", "valkey", "valkey.lock", "common.settings"]
-    for mod in modules_to_mock:
+    for mod in MODULES_TO_MOCK:
         if mod in sys.modules:
             _original_modules[mod] = sys.modules[mod]
         sys.modules[mod] = MagicMock()
@@ -18,8 +20,7 @@ def tearDownModule():
         sys.modules[mod] = original
 
     # Remove mocks for modules that weren't originally present
-    mocked_modules = ["tiktoken", "rag.nlp.rag_tokenizer", "rag.prompts.generator", "valkey", "valkey.lock", "common.settings"]
-    for mod in mocked_modules:
+    for mod in MODULES_TO_MOCK:
         if mod not in _original_modules and mod in sys.modules:
             del sys.modules[mod]
 
@@ -74,6 +75,13 @@ class TestChunkList(unittest.TestCase):
         dealer.tag_service = MagicMock()
 
         # Test insert_citations
+        # Verify default parameters:
+        # - insert_citations: tkweight=0.1, vtweight=0.9
+        # - rerank: weights=0.3/0.7, chunk_id_name="content_ltks", match_ids=None
+        # - rerank_by_model: weights=0.3/0.7, chunk_id_name="content_ltks", match_ids=None
+        # - all_tags/all_tags_in_portion: num=1000
+        # - tag_content: top_n=3, top_k=30, num=1000
+        # - tag_query: top_n=3, num=1000
         ans = "ans"
         docs = []
         meta = []

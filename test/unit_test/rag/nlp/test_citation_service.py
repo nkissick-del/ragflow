@@ -4,11 +4,12 @@ from unittest.mock import MagicMock
 
 
 class TestCitationService(unittest.TestCase):
+    MODULES_TO_MOCK = ["tiktoken", "rag.nlp.rag_tokenizer", "valkey", "valkey.lock", "common.settings"]
+
     @classmethod
     def setUpClass(cls):
         cls.original_modules = {}
-        modules_to_mock = ["tiktoken", "rag.nlp.rag_tokenizer", "valkey", "valkey.lock", "common.settings"]
-        for mod in modules_to_mock:
+        for mod in cls.MODULES_TO_MOCK:
             if mod in sys.modules:
                 cls.original_modules[mod] = sys.modules[mod]
             sys.modules[mod] = MagicMock()
@@ -24,8 +25,7 @@ class TestCitationService(unittest.TestCase):
             sys.modules[mod] = original
 
         # Remove mocks that weren't there before
-        modules_to_mock = ["tiktoken", "rag.nlp.rag_tokenizer", "valkey", "valkey.lock", "common.settings"]
-        for mod in modules_to_mock:
+        for mod in cls.MODULES_TO_MOCK:
             if mod not in cls.original_modules and mod in sys.modules:
                 del sys.modules[mod]
 

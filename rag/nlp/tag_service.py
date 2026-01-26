@@ -13,15 +13,15 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import numpy as np
+
 from common.doc_store.doc_store_base import OrderByExpr
 from common.constants import TAG_FLD
 
 
-SCORE_SCALE = 0.1
-EPSILON = 1e-6
-DEFAULT_TAG_FREQ = 0.0001
-DEFAULT_S = 1000
+SCORE_SCALE = 0.1  # Scales raw tag scores to final score range
+EPSILON = 1e-6  # Prevents division-by-zero
+DEFAULT_TAG_FREQ = 0.0001  # Fallback tag frequency used in smoothing
+DEFAULT_S = 1000  # Smoothing constant in the smoothing formula
 
 
 def index_name(uid):
@@ -48,7 +48,7 @@ class TagService:
             return {}
         res = self.dataStore.search([], [], {}, [], OrderByExpr(), 0, 0, index_name(tenant_id), kb_ids, ["tag_kwd"])
         res = self.dataStore.get_aggregation(res, "tag_kwd")
-        total = np.sum([c for _, c in res])
+        total = sum(c for _, c in res)
         return {t: (c + 1) / (total + S) for t, c in res}
 
     def tag_content(self, tenant_id: str, kb_ids: list[str], doc, all_tags, topn_tags=3, keywords_topn=30, S=DEFAULT_S):
@@ -62,10 +62,13 @@ class TagService:
         aggs = self.dataStore.get_aggregation(res, "tag_kwd")
         if not aggs:
             return False
-        cnt = np.sum([c for _, c in aggs])
-        tag_fea = sorted([(a, round(SCORE_SCALE * (c + 1) / (cnt + S) / max(EPSILON, all_tags.get(a, DEFAULT_TAG_FREQ)))) for a, c in aggs], key=lambda x: x[1] * -1)[:topn_tags]
-        doc[TAG_FLD] = {a.replace(".", "_"): c for a, c in tag_fea if c > 0}
+        cnt = sum(c for _, c in aggs)
+        tag_fea = self._compute_tag_scores(aggs, all_tags, cnt, S, topn_tags)
+        doc[TAG_FLD] = {a.replace(".", "_"): c for a, c in tag_fea if c >= 0.001}
         return True
+
+    def _compute_tag_scores(self, aggs, all_tags, cnt, S, topn_tags):
+        return sorted([(a, SCORE_SCALE * (c + 1) / (cnt + S) / max(EPSILON, all_tags.get(a, DEFAULT_TAG_FREQ))) for a, c in aggs], key=lambda x: x[1] * -1)[:topn_tags]
 
     def tag_query(self, question: str, tenant_ids: str | list[str], kb_ids: list[str], all_tags, topn_tags=3, S=DEFAULT_S):
         if isinstance(tenant_ids, str):
@@ -77,6 +80,6 @@ class TagService:
         aggs = self.dataStore.get_aggregation(res, "tag_kwd")
         if not aggs:
             return {}
-        cnt = np.sum([c for _, c in aggs])
-        tag_fea = sorted([(a, round(SCORE_SCALE * (c + 1) / (cnt + S) / max(EPSILON, all_tags.get(a, DEFAULT_TAG_FREQ)))) for a, c in aggs], key=lambda x: x[1] * -1)[:topn_tags]
-        return {a.replace(".", "_"): c for a, c in tag_fea if c > 0}
+        cnt = sum(c for _, c in aggs)
+        tag_fea = self._compute_tag_scores(aggs, all_tags, cnt, S, topn_tags)
+        return {a.replace(".", "_"): c for a, c in tag_fea if c >= 0.001}

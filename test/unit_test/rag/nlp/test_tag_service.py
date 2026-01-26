@@ -25,6 +25,8 @@ class TestTagService(unittest.TestCase):
         mock_store.search.assert_called_once()
         args, kwargs = mock_store.search.call_args
         # signature: search(selectFields, highlightFields, condition, matchText, orderBy, offset, limit, indexName, knowledgebaseIds, aggFields)
+        # Using a safer assertion for indexName (arg 7) and knowledgebaseIds (arg 8)
+        self.assertGreaterEqual(len(args), 9)
         self.assertEqual(args[7], "ragflow_tenant1")  # indexName
         self.assertEqual(args[8], ["kb1"])  # knowledgebaseIds
         self.assertEqual(res, [("tag1", 10)])
@@ -40,6 +42,8 @@ class TestTagService(unittest.TestCase):
         # index not exist
         mock_store.index_exist.return_value = False
         self.assertEqual(service.all_tags("tenant1", ["kb1"]), [])
+        # Should verify search not called when index doesn't exist
+        mock_store.search.assert_not_called()
 
     def test_tag_content(self):
         mock_store = MagicMock()
@@ -68,20 +72,20 @@ class TestTagService(unittest.TestCase):
         doc = {"title_tks": "t", "content_ltks": "c"}
         self.assertFalse(service.tag_content("tenant1", ["kb1"], doc, {}))
 
-        # Case: Tags with 0 score (filtered out) - though logic calculates score > 0 usually unless scale/inputs are 0
-        # If we force a low score by high S or small constant?
-        # Actually logic is `if c > 0` and `round(...)`.
+        # Case: Tags with 0 score (filtered out)
+        mock_store.get_aggregation.return_value = [("tag1", 0)]
+        doc = {"title_tks": "t", "content_ltks": "c"}  # Fresh doc
 
-        mock_store.get_aggregation.return_value = [("tag1", 0)]  # count 0 -> score matches logic
-        # score = 0.1 * (0+1) / (0+1000) / ... small
-        # round might make it 0
-
+        # Call with HIGH smoothing to force low score
         success = service.tag_content("tenant1", ["kb1"], doc, {"tag1": 0.1}, S=10000000)
-        self.assertTrue(success)  # It returns True even if no tags are added to doc[TAG_FLD] if aggs exist
-        # Verify tag1 not in doc if score rounds to 0
+        self.assertTrue(success)
+
+        # Assert tag1 is NOT in doc because it should be filtered (score < 0.001)
+        # Score approx: 0.1 * 1 / 10000000 / 0.0001 = 1e-4 (< 0.001)
         if TAG_FLD in doc:
-            # It might be there if score > 0, but check filter logic
-            pass
+            self.assertNotIn("tag1", doc[TAG_FLD])
+        else:
+            self.assertTrue(True)
 
 
 if __name__ == "__main__":

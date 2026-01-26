@@ -7,7 +7,14 @@ class TestRerankService(unittest.TestCase):
     def setUp(self):
         self.modules_patcher = patch.dict(
             sys.modules,
-            {"tiktoken": MagicMock(), "rag.nlp.rag_tokenizer": MagicMock(), "rag.prompts.generator": MagicMock(), "valkey": MagicMock(), "valkey.lock": MagicMock(), "common.settings": MagicMock()},
+            {
+                "tiktoken": MagicMock(),
+                "rag.nlp.rag_tokenizer": MagicMock(),
+                "rag.prompts.generator": MagicMock(),
+                "valkey": MagicMock(),
+                "valkey.lock": MagicMock(),
+                "common.settings": MagicMock(),
+            },
         )
         self.modules_patcher.start()
         # Re-import to ensure mocks are used

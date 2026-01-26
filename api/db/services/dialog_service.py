@@ -321,7 +321,10 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         attachments_ = "\n\n".join(FileService.get_files(messages[-1]["files"]))
 
     prompt_config = dialog.prompt_config
-    field_map = KnowledgebaseService.get_field_map(dialog.kb_ids)
+    field_map = {}
+    for k in kbs:
+        if k.parser_config and "field_map" in k.parser_config:
+            field_map.update(k.parser_config["field_map"])
     # try to use sql if field mapping is good to go
     if field_map:
         logging.debug("Use SQL to retrieval:{}".format(questions[-1]))

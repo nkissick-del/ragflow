@@ -38,7 +38,8 @@ from api.db.services.common_service import CommonService
 from api.db.services.dialog_service import DialogService
 from common.misc_utils import get_uuid
 from common.time_utils import current_timestamp
-from common.constants import StatusEnum, LLMType
+from common.constants import StatusEnum
+from common.constants import LLMType
 from api.db.services.llm_service import LLMBundle
 from api.db.services.tenant_llm_service import TenantLLMService
 from rag.prompts.template import load_prompt

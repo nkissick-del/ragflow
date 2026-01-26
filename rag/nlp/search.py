@@ -534,7 +534,6 @@ class Dealer:
             orderBy.asc("position_int")
             orderBy.asc("top_int")
 
-        res = []
         bs = 128
         for p in range(offset, max_count, bs):
             es_res = self.dataStore.search(fields, [], condition, [], orderBy, p, bs, index_name(tenant_id),
@@ -543,12 +542,12 @@ class Dealer:
             for id, doc in dict_chunks.items():
                 doc["id"] = id
             if dict_chunks:
-                res.extend(dict_chunks.values())
+                for chunk in dict_chunks.values():
+                    yield chunk
             # Only terminate if there are no hits in the search result,
             # not if the chunks are empty (which could happen due to field filtering).
             if len(self.dataStore.get_doc_ids(es_res)) == 0:
                 break
-        return res
 
     def all_tags(self, tenant_id: str, kb_ids: list[str], S=1000):
         if not self.dataStore.index_exist(index_name(tenant_id), kb_ids[0]):

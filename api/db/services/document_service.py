@@ -212,17 +212,23 @@ class DocumentService(CommonService):
         if suffix:
             query = query.where(cls.model.suffix.in_(suffix))
 
-        rows = query.select(cls.model.run, cls.model.suffix, cls.model.meta_fields)
-        total = rows.count()
+        total = query.count()
 
         suffix_counter = {}
+        for row in query.select(cls.model.suffix, fn.COUNT(cls.model.id).alias('count')).group_by(cls.model.suffix).dicts():
+            suffix_counter[row['suffix']] = row['count']
+
         run_status_counter = {}
+        for row in query.select(cls.model.run, fn.COUNT(cls.model.id).alias('count')).group_by(cls.model.run).dicts():
+            run_status_counter[str(row['run'])] = row['count']
+
         metadata_counter = {}
         empty_metadata_count = 0
 
-        for row in rows:
-            suffix_counter[row.suffix] = suffix_counter.get(row.suffix, 0) + 1
-            run_status_counter[str(row.run)] = run_status_counter.get(str(row.run), 0) + 1
+        # We select only meta_fields to minimize data transfer for the loop
+        meta_rows = query.select(cls.model.meta_fields)
+
+        for row in meta_rows:
             meta_fields = row.meta_fields or {}
             if not meta_fields:
                 empty_metadata_count += 1

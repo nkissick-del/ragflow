@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import ast
 import numpy as np
 from collections import OrderedDict
 from common.float_utils import get_float
@@ -24,6 +25,11 @@ from rag.nlp import rag_tokenizer
 class RerankService:
     def __init__(self, qryr):
         self.qryr = qryr
+
+    def _normalize_important_kwd(self, sres):
+        for i in sres.ids:
+            if isinstance(sres.field[i].get("important_kwd", []), str):
+                sres.field[i]["important_kwd"] = [sres.field[i]["important_kwd"]]
 
     def _rank_feature_scores(self, query_rfea, search_res):
         ## For rank feature(tag_fea) scores.
@@ -42,11 +48,16 @@ class RerankService:
             if not search_res.field[i].get(TAG_FLD):
                 rank_fea.append(0)
                 continue
-            for t, sc in eval(search_res.field[i].get(TAG_FLD, "{}")).items():
+            try:
+                tag_data = ast.literal_eval(search_res.field[i].get(TAG_FLD, "{}"))
+            except (ValueError, SyntaxError):
+                tag_data = {}
+
+            for t, sc in tag_data.items():
                 if t in query_rfea:
                     nor += query_rfea[t] * sc
                 denor += sc * sc
-            if denor == 0:
+            if denor == 0 or q_denor == 0:
                 rank_fea.append(0)
             else:
                 rank_fea.append(nor / np.sqrt(denor) / q_denor)
@@ -66,12 +77,10 @@ class RerankService:
         if not ins_embd:
             return [], [], []
 
-        for i in sres.ids:
-            if isinstance(sres.field[i].get("important_kwd", []), str):
-                sres.field[i]["important_kwd"] = [sres.field[i]["important_kwd"]]
+        self._normalize_important_kwd(sres)
         ins_tw = []
         for i in sres.ids:
-            content_ltks = list(OrderedDict.fromkeys(sres.field[i][cfield].split()))
+            content_ltks = list(OrderedDict.fromkeys(sres.field[i].get(cfield, "").split()))
             title_tks = [t for t in sres.field[i].get("title_tks", "").split() if t]
             question_tks = [t for t in sres.field[i].get("question_tks", "").split() if t]
             important_kwd = sres.field[i].get("important_kwd", [])
@@ -88,12 +97,10 @@ class RerankService:
     def rerank_by_model(self, rerank_mdl, sres, query, tkweight=0.3, vtweight=0.7, cfield="content_ltks", rank_feature: dict | None = None):
         _, keywords = self.qryr.question(query)
 
-        for i in sres.ids:
-            if isinstance(sres.field[i].get("important_kwd", []), str):
-                sres.field[i]["important_kwd"] = [sres.field[i]["important_kwd"]]
+        self._normalize_important_kwd(sres)
         ins_tw = []
         for i in sres.ids:
-            content_ltks = sres.field[i][cfield].split()
+            content_ltks = sres.field[i].get(cfield, "").split()
             title_tks = [t for t in sres.field[i].get("title_tks", "").split() if t]
             important_kwd = sres.field[i].get("important_kwd", [])
             tks = content_ltks + title_tks + important_kwd

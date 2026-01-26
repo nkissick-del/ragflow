@@ -1,23 +1,34 @@
 import sys
-from unittest.mock import MagicMock
-
-# Mock rag_tokenizer module to avoid tiktoken PermissionError
-# We enter it into sys.modules so it's returning a mock when imported.
-sys.modules["tiktoken"] = MagicMock()
-sys.modules["rag.nlp.rag_tokenizer"] = MagicMock()
-sys.modules["rag.prompts.generator"] = MagicMock()
-sys.modules["valkey"] = MagicMock()
-sys.modules["valkey.lock"] = MagicMock()
-sys.modules["common.settings"] = MagicMock()
-
 import unittest
 from unittest.mock import MagicMock, patch
-from rag.nlp.search import Dealer
+
+_original_modules = {}
+
+
+def setUpModule():
+    modules_to_mock = ["tiktoken", "rag.nlp.rag_tokenizer", "rag.prompts.generator", "valkey", "valkey.lock", "common.settings"]
+    for mod in modules_to_mock:
+        if mod in sys.modules:
+            _original_modules[mod] = sys.modules[mod]
+        sys.modules[mod] = MagicMock()
+
+
+def tearDownModule():
+    for mod, original in _original_modules.items():
+        sys.modules[mod] = original
+
+    # Remove mocks for modules that weren't originally present
+    mocked_modules = ["tiktoken", "rag.nlp.rag_tokenizer", "rag.prompts.generator", "valkey", "valkey.lock", "common.settings"]
+    for mod in mocked_modules:
+        if mod not in _original_modules and mod in sys.modules:
+            del sys.modules[mod]
 
 
 class TestChunkList(unittest.TestCase):
-    @patch("rag.nlp.search.query.FulltextQueryer")
+    @patch("rag.nlp.search.query.FulltextQueryer", autospec=True)
     def test_chunk_list_termination(self, mock_queryer):
+        from rag.nlp.search import Dealer
+
         # Mock dataStore
         mock_store = MagicMock()
 
@@ -51,7 +62,10 @@ class TestChunkList(unittest.TestCase):
 
     def test_delegation_to_services(self):
         """Verify that Dealer delegates to the new services"""
+        from rag.nlp.search import Dealer
+
         mock_store = MagicMock()
+
         dealer = Dealer(mock_store)
 
         # Mock services
@@ -60,32 +74,43 @@ class TestChunkList(unittest.TestCase):
         dealer.tag_service = MagicMock()
 
         # Test insert_citations
-        dealer.insert_citations("ans", [], [], MagicMock())
-        dealer.citation_service.insert_citations.assert_called_once()
+        ans = "ans"
+        docs = []
+        meta = []
+        caller = MagicMock()
+        dealer.insert_citations(ans, docs, meta, caller)
+        dealer.citation_service.insert_citations.assert_called_once_with(ans, docs, meta, caller, 0.1, 0.9)
 
         # Test rerank
-        dealer.rerank(MagicMock(), "query")
-        dealer.rerank_service.rerank.assert_called_once()
+        query = "query"
+        sres = MagicMock()
+        dealer.rerank(sres, query)
+        dealer.rerank_service.rerank.assert_called_once_with(sres, query, 0.3, 0.7, "content_ltks", None)
 
         # Test rerank_by_model
-        dealer.rerank_by_model(MagicMock(), MagicMock(), "query")
-        dealer.rerank_service.rerank_by_model.assert_called_once()
+        model = MagicMock()
+        dealer.rerank_by_model(model, sres, query)
+        dealer.rerank_service.rerank_by_model.assert_called_once_with(model, sres, query, 0.3, 0.7, "content_ltks", None)
 
         # Test all_tags
-        dealer.all_tags("tid", ["kb"])
-        dealer.tag_service.all_tags.assert_called_once()
+        tid = "tid"
+        kbs = ["kb"]
+        dealer.all_tags(tid, kbs)
+        dealer.tag_service.all_tags.assert_called_once_with(tid, kbs, 1000)
 
         # Test all_tags_in_portion
-        dealer.all_tags_in_portion("tid", ["kb"])
-        dealer.tag_service.all_tags_in_portion.assert_called_once()
+        dealer.all_tags_in_portion(tid, kbs)
+        dealer.tag_service.all_tags_in_portion.assert_called_once_with(tid, kbs, 1000)
 
         # Test tag_content
-        dealer.tag_content("tid", ["kb"], {}, {})
-        dealer.tag_service.tag_content.assert_called_once()
+        doc = {}
+        all_tags = {}
+        dealer.tag_content(tid, kbs, doc, all_tags)
+        dealer.tag_service.tag_content.assert_called_once_with(tid, kbs, doc, all_tags, 3, 30, 1000)
 
         # Test tag_query
-        dealer.tag_query("q", "tid", ["kb"], {})
-        dealer.tag_service.tag_query.assert_called_once()
+        dealer.tag_query(query, tid, kbs, all_tags)
+        dealer.tag_service.tag_query.assert_called_once_with(query, tid, kbs, all_tags, 3, 1000)
 
 
 if __name__ == "__main__":

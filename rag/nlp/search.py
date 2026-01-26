@@ -209,8 +209,10 @@ class Dealer:
         aggs=True,
         rerank_mdl=None,
         highlight=False,
-        rank_feature: dict | None = {PAGERANK_FLD: 10},
+        rank_feature: dict | None = None,
     ):
+        if rank_feature is None:
+            rank_feature = {PAGERANK_FLD: 10}
         ranks = {"total": 0, "chunks": [], "doc_aggs": {}}
         if not question:
             return ranks
@@ -466,9 +468,6 @@ class Dealer:
 
         if not mom_chunks:
             return chunks
-
-        if not chunks:
-            chunks = []
 
         vector_size = 1024
         for id, cks in mom_chunks.items():

@@ -18,6 +18,12 @@ from common.doc_store.doc_store_base import OrderByExpr
 from common.constants import TAG_FLD
 
 
+SCORE_SCALE = 0.1
+EPSILON = 1e-6
+DEFAULT_TAG_FREQ = 0.0001
+DEFAULT_S = 1000
+
+
 def index_name(uid):
     return f"ragflow_{uid}"
 
@@ -27,19 +33,29 @@ class TagService:
         self.dataStore = dataStore
         self.qryr = qryr
 
-    def all_tags(self, tenant_id: str, kb_ids: list[str], S=1000):
+    def all_tags(self, tenant_id: str, kb_ids: list[str]):
+        if not kb_ids:
+            return []
         if not self.dataStore.index_exist(index_name(tenant_id), kb_ids[0]):
             return []
         res = self.dataStore.search([], [], {}, [], OrderByExpr(), 0, 0, index_name(tenant_id), kb_ids, ["tag_kwd"])
         return self.dataStore.get_aggregation(res, "tag_kwd")
 
-    def all_tags_in_portion(self, tenant_id: str, kb_ids: list[str], S=1000):
+    def all_tags_in_portion(self, tenant_id: str, kb_ids: list[str], S=DEFAULT_S):
+        if not kb_ids:
+            return {}
+        if not self.dataStore.index_exist(index_name(tenant_id), kb_ids[0]):
+            return {}
         res = self.dataStore.search([], [], {}, [], OrderByExpr(), 0, 0, index_name(tenant_id), kb_ids, ["tag_kwd"])
         res = self.dataStore.get_aggregation(res, "tag_kwd")
         total = np.sum([c for _, c in res])
         return {t: (c + 1) / (total + S) for t, c in res}
 
-    def tag_content(self, tenant_id: str, kb_ids: list[str], doc, all_tags, topn_tags=3, keywords_topn=30, S=1000):
+    def tag_content(self, tenant_id: str, kb_ids: list[str], doc, all_tags, topn_tags=3, keywords_topn=30, S=DEFAULT_S):
+        """
+        Calculate tags for a document based on content matching and tag frequency.
+        Score = SCORE_SCALE * (match_count + 1) / (total_matches + S) / max(EPSILON, global_tag_freq)
+        """
         idx_nm = index_name(tenant_id)
         match_txt = self.qryr.paragraph(doc["title_tks"] + " " + doc["content_ltks"], doc.get("important_kwd", []), keywords_topn)
         res = self.dataStore.search([], [], {}, [match_txt], OrderByExpr(), 0, 0, idx_nm, kb_ids, ["tag_kwd"])
@@ -47,11 +63,11 @@ class TagService:
         if not aggs:
             return False
         cnt = np.sum([c for _, c in aggs])
-        tag_fea = sorted([(a, round(0.1 * (c + 1) / (cnt + S) / max(1e-6, all_tags.get(a, 0.0001)))) for a, c in aggs], key=lambda x: x[1] * -1)[:topn_tags]
+        tag_fea = sorted([(a, round(SCORE_SCALE * (c + 1) / (cnt + S) / max(EPSILON, all_tags.get(a, DEFAULT_TAG_FREQ)))) for a, c in aggs], key=lambda x: x[1] * -1)[:topn_tags]
         doc[TAG_FLD] = {a.replace(".", "_"): c for a, c in tag_fea if c > 0}
         return True
 
-    def tag_query(self, question: str, tenant_ids: str | list[str], kb_ids: list[str], all_tags, topn_tags=3, S=1000):
+    def tag_query(self, question: str, tenant_ids: str | list[str], kb_ids: list[str], all_tags, topn_tags=3, S=DEFAULT_S):
         if isinstance(tenant_ids, str):
             idx_nms = index_name(tenant_ids)
         else:
@@ -62,5 +78,5 @@ class TagService:
         if not aggs:
             return {}
         cnt = np.sum([c for _, c in aggs])
-        tag_fea = sorted([(a, round(0.1 * (c + 1) / (cnt + S) / max(1e-6, all_tags.get(a, 0.0001)))) for a, c in aggs], key=lambda x: x[1] * -1)[:topn_tags]
-        return {a.replace(".", "_"): max(1, c) for a, c in tag_fea}
+        tag_fea = sorted([(a, round(SCORE_SCALE * (c + 1) / (cnt + S) / max(EPSILON, all_tags.get(a, DEFAULT_TAG_FREQ)))) for a, c in aggs], key=lambda x: x[1] * -1)[:topn_tags]
+        return {a.replace(".", "_"): c for a, c in tag_fea if c > 0}

@@ -363,7 +363,9 @@ class LLMBundle(LLM4Tenant):
         threading.Thread(target=worker, daemon=True).start()
         return queue
 
-    async def async_chat(self, system: str, history: list, gen_conf: dict = {}, **kwargs):
+    async def async_chat(self, system: str, history: list, gen_conf: dict = None, **kwargs):
+        if gen_conf is None:
+            gen_conf = {}
         if self.is_tools and getattr(self.mdl, "is_tools", False) and hasattr(self.mdl, "async_chat_with_tools"):
             base_fn = self.mdl.async_chat_with_tools
         elif hasattr(self.mdl, "async_chat"):
@@ -399,10 +401,14 @@ class LLMBundle(LLM4Tenant):
 
         return txt
 
-    def chat(self, system: str, history: list, gen_conf: dict = {}, **kwargs):
+    def chat(self, system: str, history: list, gen_conf: dict = None, **kwargs):
+        if gen_conf is None:
+            gen_conf = {}
         return self._run_coroutine_sync(self.async_chat(system, history, gen_conf, **kwargs))
 
-    async def async_chat_streamly(self, system: str, history: list, gen_conf: dict = {}, **kwargs):
+    async def async_chat_streamly(self, system: str, history: list, gen_conf: dict = None, **kwargs):
+        if gen_conf is None:
+            gen_conf = {}
         total_tokens = 0
         ans = ""
         if self.is_tools and getattr(self.mdl, "is_tools", False) and hasattr(self.mdl, "async_chat_streamly_with_tools"):
@@ -445,7 +451,9 @@ class LLMBundle(LLM4Tenant):
                 generation.end()
             return
 
-    async def async_chat_streamly_delta(self, system: str, history: list, gen_conf: dict = {}, **kwargs):
+    async def async_chat_streamly_delta(self, system: str, history: list, gen_conf: dict = None, **kwargs):
+        if gen_conf is None:
+            gen_conf = {}
         total_tokens = 0
         ans = ""
         if self.is_tools and getattr(self.mdl, "is_tools", False) and hasattr(self.mdl, "async_chat_streamly_with_tools"):

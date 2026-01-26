@@ -93,7 +93,6 @@ def test_evaluate_with_llm(mock_env):
     mock_env["tenant_llm_service"].TenantLLMService.llm_id2llm_type.return_value = "chat"
 
     # Mock LLM response
-    # Mock LLM response
     mock_bundle = mock_env["llm_service"].LLMBundle.return_value
     mock_bundle.chat.return_value = '{"faithfulness": 0.9}'  # simplified response string
 

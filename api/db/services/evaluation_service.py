@@ -26,6 +26,9 @@ Provides functionality for evaluating RAG system performance including:
 """
 
 import asyncio
+import csv
+import io
+import json
 import logging
 import queue
 import threading
@@ -587,6 +590,86 @@ class EvaluationService(CommonService):
         except Exception as e:
             logging.error(f"Error getting run results {run_id}: {e}")
             return {}
+
+    @classmethod
+    def get_run_results_csv(cls, run_id: str) -> Optional[str]:
+        """
+        Get evaluation results as a CSV string.
+
+        Args:
+            run_id: Evaluation run ID
+
+        Returns:
+            CSV string or None if not found/error
+        """
+        try:
+            # Verify run exists
+            run = EvaluationRun.get_by_id(run_id)
+            if not run:
+                return None
+
+            # Query results joined with case info
+            query = (EvaluationResult
+                    .select(EvaluationResult, EvaluationCase)
+                    .join(EvaluationCase, on=(EvaluationResult.case_id == EvaluationCase.id))
+                    .where(EvaluationResult.run_id == run_id)
+                    .order_by(EvaluationResult.create_time))
+
+            # Fetch data to memory to determine all metric keys
+            rows = []
+            all_metric_keys = set()
+
+            for result in query:
+                result_dict = result.to_dict()
+                case_dict = result.case_id.to_dict()
+
+                # Combine info
+                row = {
+                    "Question": case_dict.get("question", ""),
+                    "Reference Answer": case_dict.get("reference_answer", ""),
+                    "Generated Answer": result_dict.get("generated_answer", ""),
+                    "Execution Time": result_dict.get("execution_time", 0),
+                    "Retrieved Chunks": json.dumps(result_dict.get("retrieved_chunks", []), ensure_ascii=False),
+                    "Relevant Chunk IDs": json.dumps(case_dict.get("relevant_chunk_ids", []), ensure_ascii=False)
+                }
+
+                # Handle metrics
+                metrics = result_dict.get("metrics", {})
+                if metrics:
+                    for k, v in metrics.items():
+                        metric_key = f"metric_{k}"
+                        row[metric_key] = v
+                        all_metric_keys.add(metric_key)
+
+                rows.append(row)
+
+            # Define CSV fields
+            fieldnames = [
+                "Question",
+                "Reference Answer",
+                "Generated Answer",
+                "Execution Time"
+            ]
+
+            # Add sorted metric keys
+            fieldnames.extend(sorted(list(all_metric_keys)))
+
+            # Add complex fields at the end
+            fieldnames.extend(["Retrieved Chunks", "Relevant Chunk IDs"])
+
+            # Generate CSV
+            output = io.StringIO()
+            writer = csv.DictWriter(output, fieldnames=fieldnames)
+
+            writer.writeheader()
+            for row in rows:
+                writer.writerow(row)
+
+            return output.getvalue()
+
+        except Exception as e:
+            logging.error(f"Error generating CSV for run {run_id}: {e}")
+            return None
 
     @classmethod
     def get_recommendations(cls, run_id: str) -> List[Dict[str, Any]]:

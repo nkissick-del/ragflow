@@ -25,7 +25,7 @@ Provides REST API for RAG evaluation functionality including:
 - Configuration recommendations
 """
 
-from quart import request
+from quart import request, Response
 from api.apps import login_required, current_user
 from api.db.services.evaluation_service import EvaluationService
 from api.utils.api_utils import (
@@ -431,8 +431,24 @@ async def compare_runs():
 async def export_results(run_id):
     """Export evaluation results as JSON/CSV"""
     try:
-        # format_type = request.args.get("format", "json")  # TODO: Use for CSV export
-        
+        format_type = request.args.get("format", "json")
+
+        if format_type.lower() == "csv":
+            csv_data = EvaluationService.get_run_results_csv(run_id)
+            if not csv_data:
+                return get_data_error_result(
+                    message="Evaluation run not found or failed to generate CSV",
+                    code=RetCode.DATA_ERROR
+                )
+
+            return Response(
+                csv_data,
+                mimetype="text/csv",
+                headers={
+                    "Content-Disposition": f"attachment; filename=evaluation_run_{run_id}.csv"
+                }
+            )
+
         result = EvaluationService.get_run_results(run_id)
         
         if not result:
@@ -441,7 +457,6 @@ async def export_results(run_id):
                 code=RetCode.DATA_ERROR
             )
         
-        # TODO: Implement CSV export
         return get_json_result(data=result)
     except Exception as e:
         return server_error_response(e)

@@ -210,7 +210,10 @@ class TestEvaluationCompareRuns:
         success, result = EvaluationService.compare_runs(run_ids)
 
         assert success is False
-        assert "found" in result # 'Runs not found' in str(error) or dict
+        # The upstream code might return (False, "error message") instead of (False, {"error": "..."})
+        # Checking implementation: return False, f"Runs not found: {', '.join(missing_ids)}"
+        # So 'result' is a string.
+        assert "found" in result
 
     def test_compare_runs_different_datasets(self, mock_env):
         from api.db.services.evaluation_service import EvaluationService
@@ -235,4 +238,6 @@ class TestEvaluationCompareRuns:
         success, result = EvaluationService.compare_runs(run_ids)
 
         assert success is False
+        # Checking implementation: return False, "Cannot compare runs from different datasets"
+        # So 'result' is a string.
         assert "different datasets" in result

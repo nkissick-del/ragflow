@@ -71,6 +71,7 @@ export function ConfirmDeleteDialog({
               <AlertDialogCancel
                 onClick={onCancel}
                 className="border-none bg-transparent hover:border-none hover:bg-transparent absolute right-3 top-3 hover:text-text-primary"
+                aria-label={t('common.close')}
               >
                 <X size={16} />
               </AlertDialogCancel>

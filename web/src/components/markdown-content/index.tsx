@@ -3,7 +3,7 @@ import SvgIcon from '@/components/svg-icon';
 import { IReference, IReferenceChunk } from '@/interfaces/database/chat';
 import { getExtension } from '@/utils/document-util';
 import DOMPurify from 'dompurify';
-import { useCallback, useEffect, useMemo } from 'react';
+import { memo, useCallback, useEffect, useMemo } from 'react';
 import Markdown from 'react-markdown';
 import SyntaxHighlighter from 'react-syntax-highlighter';
 import rehypeKatex from 'rehype-katex';
@@ -37,6 +37,23 @@ import styles from './index.module.less';
 
 const getChunkIndex = (match: string) => Number(match);
 
+const rehypeWrapReference = () => {
+  return function wrapTextTransform(tree: any) {
+    visitParents(tree, 'text', (node, ancestors) => {
+      const latestAncestor = ancestors.at(-1);
+      if (
+        latestAncestor.tagName !== 'custom-typography' &&
+        latestAncestor.tagName !== 'code'
+      ) {
+        node.type = 'element';
+        node.tagName = 'custom-typography';
+        node.properties = {};
+        node.children = [{ type: 'text', value: node.value }];
+      }
+    });
+  };
+};
+
 // TODO: The display of the table is inconsistent with the display previously placed in the MessageItem.
 const MarkdownContent = ({
   reference,
@@ -44,7 +61,6 @@ const MarkdownContent = ({
   content,
 }: {
   content: string;
-  loading: boolean;
   reference: IReference;
   clickDocumentButton?: (documentId: string, chunk: IReferenceChunk) => void;
 }) => {
@@ -89,23 +105,6 @@ const MarkdownContent = ({
       },
     [clickDocumentButton],
   );
-
-  const rehypeWrapReference = () => {
-    return function wrapTextTransform(tree: any) {
-      visitParents(tree, 'text', (node, ancestors) => {
-        const latestAncestor = ancestors.at(-1);
-        if (
-          latestAncestor.tagName !== 'custom-typography' &&
-          latestAncestor.tagName !== 'code'
-        ) {
-          node.type = 'element';
-          node.tagName = 'custom-typography';
-          node.properties = {};
-          node.children = [{ type: 'text', value: node.value }];
-        }
-      });
-    };
-  };
 
   const getReferenceInfo = useCallback(
     (chunkIndex: number) => {
@@ -229,43 +228,50 @@ const MarkdownContent = ({
     [getPopoverContent],
   );
 
+  const rehypePlugins = useMemo(
+    () => [rehypeWrapReference, rehypeKatex, rehypeRaw],
+    [],
+  );
+  const remarkPlugins = useMemo(() => [remarkGfm, remarkMath], []);
+
+  const components = useMemo(
+    () =>
+      ({
+        'custom-typography': ({ children }: { children: string }) =>
+          renderReference(children),
+        code(props: any) {
+          const { children, className, ...rest } = props;
+          const restProps = omit(rest, 'node');
+          const match = /language-(\w+)/.exec(className || '');
+          return match ? (
+            <SyntaxHighlighter
+              {...restProps}
+              PreTag="div"
+              language={match[1]}
+              wrapLongLines
+            >
+              {String(children).replace(/\n$/, '')}
+            </SyntaxHighlighter>
+          ) : (
+            <code {...restProps} className={classNames(className, 'text-wrap')}>
+              {children}
+            </code>
+          );
+        },
+      }) as any,
+    [renderReference],
+  );
+
   return (
     <Markdown
-      rehypePlugins={[rehypeWrapReference, rehypeKatex, rehypeRaw]}
-      remarkPlugins={[remarkGfm, remarkMath]}
+      rehypePlugins={rehypePlugins}
+      remarkPlugins={remarkPlugins}
       className={styles.markdownContentWrapper}
-      components={
-        {
-          'custom-typography': ({ children }: { children: string }) =>
-            renderReference(children),
-          code(props: any) {
-            const { children, className, ...rest } = props;
-            const restProps = omit(rest, 'node');
-            const match = /language-(\w+)/.exec(className || '');
-            return match ? (
-              <SyntaxHighlighter
-                {...restProps}
-                PreTag="div"
-                language={match[1]}
-                wrapLongLines
-              >
-                {String(children).replace(/\n$/, '')}
-              </SyntaxHighlighter>
-            ) : (
-              <code
-                {...restProps}
-                className={classNames(className, 'text-wrap')}
-              >
-                {children}
-              </code>
-            );
-          },
-        } as any
-      }
+      components={components}
     >
       {contentWithCursor}
     </Markdown>
   );
 };
 
-export default MarkdownContent;
+export default memo(MarkdownContent);

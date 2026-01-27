@@ -16,3 +16,7 @@
 ## 2026-02-27 - Manual Close Buttons in Dialogs
 **Learning:** `ConfirmDeleteDialog` manually implements a close button using `AlertDialogCancel` with an icon-only `X`. This bypasses default accessibility features if developers forget to add `aria-label`.
 **Action:** When componentizing dialogs with custom close buttons, explicitly check that icon-only buttons have localized `aria-label`s.
+
+## 2026-02-28 - Keyboard Inaccessible Icons
+**Learning:** Found interactive actions (like "delete tag") implemented as raw SVG icons with `onClick` handlers. These are completely invisible to keyboard users and screen readers.
+**Action:** Always wrap interactive icons in a `<button>` element (or use a `Button` component) with `type="button"`, `aria-label`, and visible focus styles to ensure they are accessible.

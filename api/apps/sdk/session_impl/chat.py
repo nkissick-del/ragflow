@@ -25,7 +25,7 @@ def register_chat_routes(manager):
             "id": get_uuid(),
             "dialog_id": req["dialog_id"],
             "name": req.get("name", "New session"),
-            "message": [{"role": "assistant", "content": dia[0].prompt_config.get("prologue")}],
+            "message": [{"role": "assistant", "content": (dia[0].prompt_config or {}).get("prologue")}],
             "user_id": req.get("user_id", ""),
             "reference": [],
         }
@@ -45,7 +45,6 @@ def register_chat_routes(manager):
     @token_required
     async def update(tenant_id, chat_id, session_id):
         req = await get_request_json()
-        req["dialog_id"] = chat_id
         conv_id = session_id
         conv = ConversationService.query(id=conv_id, dialog_id=chat_id)
         if not conv:
@@ -53,12 +52,17 @@ def register_chat_routes(manager):
         if not DialogService.query(id=chat_id, tenant_id=tenant_id, status=StatusEnum.VALID.value):
             return get_error_data_result(message="You do not own the session")
         if "message" in req or "messages" in req:
-            return get_error_data_result(message="`message` can not be change")
+            return get_error_data_result(message="`message` cannot be changed")
         if "reference" in req:
-            return get_error_data_result(message="`reference` can not be change")
+            return get_error_data_result(message="`reference` cannot be changed")
         if "name" in req and not req.get("name"):
-            return get_error_data_result(message="`name` can not be empty.")
-        if not ConversationService.update_by_id(conv_id, req):
+            return get_error_data_result(message="`name` cannot be empty.")
+
+        update_payload = {"dialog_id": chat_id}
+        if "name" in req:
+            update_payload["name"] = req["name"]
+
+        if not ConversationService.update_by_id(conv_id, update_payload):
             return get_error_data_result(message="Session updates error")
         return get_result()
 
@@ -110,6 +114,8 @@ def register_chat_routes(manager):
             async for ans in rag_completion(tenant_id, chat_id, **req):
                 answer = ans
                 break
+            if not answer:
+                return get_error_data_result(message="No response from rag_completion")
             return get_result(data=answer)
 
     @manager.route("/chats_openai/<chat_id>/chat/completions", methods=["POST"])
@@ -165,9 +171,6 @@ def register_chat_routes(manager):
                 continue
             msg.append(m)
 
-        tools = None
-        toolcall_session = None
-
         if req.get("stream", True):
 
             async def streamed_response_generator(chat_id, dia, msg):
@@ -202,7 +205,7 @@ def register_chat_routes(manager):
                 }
 
                 try:
-                    chat_kwargs = {"toolcall_session": toolcall_session, "tools": tools, "quote": need_reference}
+                    chat_kwargs = {"quote": need_reference}
                     if doc_ids_str:
                         chat_kwargs["doc_ids"] = doc_ids_str
                     async for ans in async_chat(dia, msg, True, **chat_kwargs):
@@ -256,13 +259,15 @@ def register_chat_routes(manager):
             return resp
         else:
             answer = None
-            chat_kwargs = {"toolcall_session": toolcall_session, "tools": tools, "quote": need_reference}
+            chat_kwargs = {"quote": need_reference}
             if doc_ids_str:
                 chat_kwargs["doc_ids"] = doc_ids_str
             async for ans in async_chat(dia, msg, False, **chat_kwargs):
                 # focus answer content only
                 answer = ans
                 break
+            if answer is None:
+                return get_error_data_result(message="No response from async_chat")
             content = answer["answer"]
 
             response = {
@@ -304,8 +309,13 @@ def register_chat_routes(manager):
             return get_error_data_result(message=f"You don't own the assistant {chat_id}.")
         id = request.args.get("id")
         name = request.args.get("name")
-        page_number = int(request.args.get("page", 1))
-        items_per_page = int(request.args.get("page_size", 30))
+        try:
+            page_number = int(request.args.get("page", 1))
+            items_per_page = int(request.args.get("page_size", 30))
+            if page_number < 1 or items_per_page < 1:
+                raise ValueError("Page and page_size must be positive integers")
+        except ValueError:
+            return get_error_data_result(message="Invalid page or page_size parameters")
         orderby = request.args.get("orderby", "create_time")
         user_id = request.args.get("user_id")
         if request.args.get("desc") == "False" or request.args.get("desc") == "false":
@@ -380,19 +390,17 @@ def register_chat_routes(manager):
             if not conv:
                 errors.append(f"The chat doesn't own the session {id}")
                 continue
-            ConversationService.delete_by_id(id)
-            success_count += 1
+            try:
+                ConversationService.delete_by_id(id)
+                success_count += 1
+            except Exception as e:
+                errors.append(f"Failed to delete session {id}: {str(e)}")
 
-        if errors:
+        combined_errors = errors + duplicate_messages
+        if combined_errors:
             if success_count > 0:
-                return get_result(data={"success_count": success_count, "errors": errors}, message=f"Partially deleted {success_count} sessions with {len(errors)} errors")
+                return get_result(data={"success_count": success_count, "errors": combined_errors}, message=f"Partially deleted {success_count} sessions with {len(combined_errors)} errors")
             else:
-                return get_error_data_result(message="; ".join(errors))
-
-        if duplicate_messages:
-            if success_count > 0:
-                return get_result(message=f"Partially deleted {success_count} sessions with {len(duplicate_messages)} errors", data={"success_count": success_count, "errors": duplicate_messages})
-            else:
-                return get_error_data_result(message=";".join(duplicate_messages))
+                return get_error_data_result(message="; ".join(combined_errors))
 
         return get_result()

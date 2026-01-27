@@ -1,4 +1,3 @@
-from urllib.parse import urljoin
 from openai import OpenAI
 from .base import Base
 
@@ -11,6 +10,6 @@ class LocalAIChat(Base):
 
         if not base_url:
             raise ValueError("Local llm url cannot be None")
-        base_url = urljoin(base_url, "v1")
+        base_url = base_url.rstrip("/") + "/v1"
         self.client = OpenAI(api_key="empty", base_url=base_url)
         self.model_name = model_name.split("___")[0]

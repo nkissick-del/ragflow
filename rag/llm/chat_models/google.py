@@ -15,7 +15,8 @@ class GoogleChat(Base):
         from google.oauth2 import service_account
 
         key = json.loads(key)
-        access_token = json.loads(base64.b64decode(key.get("google_service_account_key", "")))
+        raw_key = key.get("google_service_account_key")
+        service_account_info = json.loads(base64.b64decode(raw_key)) if raw_key else None
         project_id = key.get("google_project_id", "")
         region = key.get("google_region", "")
 
@@ -26,20 +27,20 @@ class GoogleChat(Base):
             from anthropic import AnthropicVertex
             from google.auth.transport.requests import Request
 
-            if access_token:
-                credits = service_account.Credentials.from_service_account_info(access_token, scopes=scopes)
+            if service_account_info:
+                credentials = service_account.Credentials.from_service_account_info(service_account_info, scopes=scopes)
                 request = Request()
-                credits.refresh(request)
-                token = credits.token
+                credentials.refresh(request)
+                token = credentials.token
                 self.client = AnthropicVertex(region=region, project_id=project_id, access_token=token)
             else:
                 self.client = AnthropicVertex(region=region, project_id=project_id)
         else:
             from google import genai
 
-            if access_token:
-                credits = service_account.Credentials.from_service_account_info(access_token, scopes=scopes)
-                self.client = genai.Client(vertexai=True, project=project_id, location=region, credentials=credits)
+            if service_account_info:
+                credentials = service_account.Credentials.from_service_account_info(service_account_info, scopes=scopes)
+                self.client = genai.Client(vertexai=True, project=project_id, location=region, credentials=credentials)
             else:
                 self.client = genai.Client(vertexai=True, project=project_id, location=region)
 
@@ -56,7 +57,8 @@ class GoogleChat(Base):
                     del gen_conf[k]
         return gen_conf
 
-    def _chat(self, history, gen_conf={}, **kwargs):
+    def _chat(self, history, gen_conf=None, **kwargs):
+        gen_conf = {} if gen_conf is None else gen_conf.copy()
         system = history[0]["content"] if history and history[0]["role"] == "system" else ""
 
         if "claude" in self.model_name:
@@ -78,9 +80,6 @@ class GoogleChat(Base):
 
         # Gemini models with google-genai SDK
         # Set default thinking_budget=0 if not specified
-        if "thinking_budget" not in gen_conf:
-            gen_conf["thinking_budget"] = 0
-
         thinking_budget = gen_conf.pop("thinking_budget", 0)
         gen_conf = self._clean_conf(gen_conf)
 
@@ -134,16 +133,16 @@ class GoogleChat(Base):
 
         return ans, total_tokens
 
-    def chat_streamly(self, system, history, gen_conf={}, **kwargs):
+    def chat_streamly(self, system, history, gen_conf=None, **kwargs):
+        gen_conf = {} if gen_conf is None else gen_conf.copy()
         if "claude" in self.model_name:
-            if "max_tokens" in gen_conf:
-                del gen_conf["max_tokens"]
+            gen_conf = self._clean_conf(gen_conf)
             ans = ""
             total_tokens = 0
             try:
                 response = self.client.messages.create(
                     model=self.model_name,
-                    messages=history,
+                    messages=[h for h in history if h["role"] != "system"],
                     system=system,
                     stream=True,
                     **gen_conf,
@@ -154,6 +153,7 @@ class GoogleChat(Base):
                         text = json.loads(res[6:])["delta"]["text"]
                         ans = text
                         total_tokens += num_tokens_from_string(text)
+                        yield ans
             except Exception as e:
                 yield ans + "\n**ERROR**: " + str(e)
 
@@ -164,9 +164,7 @@ class GoogleChat(Base):
             total_tokens = 0
 
             # Set default thinking_budget=0 if not specified
-            if "thinking_budget" not in gen_conf:
-                gen_conf["thinking_budget"] = 0
-
+            # Set default thinking_budget=0 if not specified
             thinking_budget = gen_conf.pop("thinking_budget", 0)
             gen_conf = self._clean_conf(gen_conf)
 
@@ -195,6 +193,8 @@ class GoogleChat(Base):
             # Convert history to google-genai Content format
             contents = []
             for item in history:
+                if item["role"] == "system":
+                    continue
                 # google-genai uses 'model' instead of 'assistant'
                 role = "model" if item["role"] == "assistant" else item["role"]
                 content = Content(

@@ -53,7 +53,7 @@ class ConfluencePaginationMixin:
 
                 if not latest_results:
                     # no more results, break out of the loop
-                    logging.info(f"No results found for call '{temp_url_suffix}'Stopping pagination.")
+                    logging.info(f"No results found for call '{temp_url_suffix}' Stopping pagination.")
                     found_empty_page = True
                     break
             except Exception:
@@ -72,6 +72,7 @@ class ConfluencePaginationMixin:
         # Called with the next url to use to get the next page
         next_page_callback: Callable[[str], None] | None = None,
         force_offset_pagination: bool = False,
+        include_body_format: bool = False,
     ) -> Iterator[dict[str, Any]]:
         """
         This will paginate through the top level query.
@@ -82,15 +83,17 @@ class ConfluencePaginationMixin:
         url_suffix = update_param_in_path(url_suffix, "limit", str(limit))
 
         while url_suffix:
+            params = {}
+            if include_body_format:
+                params["body-format"] = "atlas_doc_format"
+                params["expand"] = "body.atlas_doc_format"
+
             logging.debug(f"Making confluence call to {url_suffix}")
             try:
                 raw_response = self.get(
                     path=url_suffix,
                     advanced_mode=True,
-                    params={
-                        "body-format": "atlas_doc_format",
-                        "expand": "body.atlas_doc_format",
-                    },
+                    params=params,
                 )
             except Exception as e:
                 logging.exception(f"Error in confluence call to {url_suffix}")
@@ -177,6 +180,8 @@ class ConfluencePaginationMixin:
             updated_start = get_start_param_from_url(old_url_suffix)
             url_suffix = cast(str, next_response.get("_links", {}).get("next", ""))
             for i, result in enumerate(results):
+                if updated_start is None:
+                    updated_start = 0
                 updated_start += 1
                 if url_suffix and next_page_callback and i == len(results) - 1:
                     # update the url if we're on the last result in the page
@@ -200,7 +205,8 @@ class ConfluencePaginationMixin:
                 break
 
     def build_cql_url(self, cql: str, expand: str | None = None) -> str:
-        expand_string = f"&expand={expand}" if expand else ""
+        cql = quote(cql)
+        expand_string = f"&expand={quote(expand)}" if expand else ""
         return f"rest/api/content/search?cql={cql}{expand_string}"
 
     def paginated_cql_retrieval(
@@ -213,7 +219,7 @@ class ConfluencePaginationMixin:
         The content/search endpoint can be used to fetch pages, attachments, and comments.
         """
         cql_url = self.build_cql_url(cql, expand)
-        yield from self._paginate_url(cql_url, limit)
+        yield from self._paginate_url(cql_url, limit, include_body_format=True)
 
     def paginated_page_retrieval(
         self,
@@ -283,13 +289,22 @@ class ConfluencePaginationMixin:
             expand_string = f"&expand={expand}" if expand else ""
             url += f"?cql={cql}{expand_string}"
             for user_result in self._paginate_url(url, limit, force_offset_pagination=True):
-                user = user_result["user"]
+                user = user_result.get("user")
+                if not user:
+                    continue
+
+                account_id = user.get("accountId")
+                display_name = user.get("displayName")
+                if not account_id or not display_name:
+                    logging.warning(f"Skipping user with missing accountId or displayName: {user}")
+                    continue
+
                 yield ConfluenceUser(
-                    user_id=user["accountId"],
+                    user_id=account_id,
                     username=None,
-                    display_name=user["displayName"],
+                    display_name=display_name,
                     email=user.get("email"),
-                    type=user["accountType"],
+                    type=user.get("accountType"),
                 )
         else:
             for user in self._paginate_url("rest/api/user/list", limit):
@@ -311,9 +326,8 @@ class ConfluencePaginationMixin:
         It's a confluence specific endpoint that can be used to fetch groups.
         """
         user_field = "accountId" if self._is_cloud else "key"
-        user_value = user_id
         # Server uses userKey (but calls it key during the API call), Cloud uses accountId
-        user_query = f"{user_field}={quote(user_value)}"
+        user_query = f"{user_field}={quote(user_id)}"
 
         url = f"rest/api/user/memberof?{user_query}"
         yield from self._paginate_url(url, limit, force_offset_pagination=True)
@@ -339,5 +353,9 @@ class ConfluencePaginationMixin:
         THIS DOESN'T WORK FOR SERVER because it breaks when there is a slash in the group name.
         E.g. neither "test/group" nor "test%2Fgroup" works for confluence.
         """
-        group_name = quote(group_name)
+
+        if not self._is_cloud and "/" in group_name:
+            logging.warning(f"Confluence Server may not handle encoded slashes in group name: {group_name}")
+
+        group_name = quote(group_name, safe="")
         yield from self._paginate_url(f"rest/api/group/{group_name}/member", limit)

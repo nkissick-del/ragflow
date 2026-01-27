@@ -4,7 +4,10 @@ import copy
 import logging
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
+from threading import Lock
 from typing import Any
+
+from cachetools import TTLCache
 
 import requests
 from typing_extensions import override
@@ -63,8 +66,9 @@ from rag.utils.redis_conn import RedisDB, REDIS_CONN
 from common.data_source.confluence.connection import ConfluenceConnectionMixin
 from common.data_source.confluence.pagination import ConfluencePaginationMixin
 
-_USER_ID_TO_DISPLAY_NAME_CACHE: dict[str, str | None] = {}
-_USER_EMAIL_CACHE: dict[str, str | None] = {}
+_USER_CACHE_LOCK = Lock()
+_USER_ID_TO_DISPLAY_NAME_CACHE: TTLCache = TTLCache(maxsize=10000, ttl=3600)
+_USER_EMAIL_CACHE: TTLCache = TTLCache(maxsize=10000, ttl=3600)
 
 
 class ConfluenceCheckpoint(ConnectorCheckpoint):
@@ -182,23 +186,35 @@ class OnyxConfluence(ConfluenceConnectionMixin, ConfluencePaginationMixin):
             raise
         return response
 
+    def fetch_attachment(self, attachment_link: str) -> requests.Response:
+        """
+        Fetch an attachment from Confluence.
+        """
+        return self._session.get(attachment_link)
+
 
 def get_user_email_from_username__server(confluence_client: OnyxConfluence, user_name: str) -> str | None:
     global _USER_EMAIL_CACHE
-    if _USER_EMAIL_CACHE.get(user_name) is None:
-        try:
-            response = confluence_client.get_mobile_parameters(user_name)
-            email = response.get("email")
-        except Exception:
-            logging.warning(f"failed to get confluence email for {user_name}")
-            # For now, we'll just return None and log a warning. This means
-            # we will keep retrying to get the email every group sync.
-            email = None
-            # We may want to just return a string that indicates failure so we don't
-            # keep retrying
-            # email = f"FAILED TO GET CONFLUENCE EMAIL FOR {user_name}"
+    with _USER_CACHE_LOCK:
+        if user_name in _USER_EMAIL_CACHE:
+            return _USER_EMAIL_CACHE[user_name]
+
+    try:
+        response = confluence_client.get_mobile_parameters(user_name)
+        email = response.get("email")
+    except Exception:
+        logging.warning(f"failed to get confluence email for {user_name}")
+        # For now, we'll just return None and log a warning. This means
+        # we will keep retrying to get the email every group sync.
+        email = None
+        # We may want to just return a string that indicates failure so we don't
+        # keep retrying
+        # email = f"FAILED TO GET CONFLUENCE EMAIL FOR {user_name}"
+
+    with _USER_CACHE_LOCK:
         _USER_EMAIL_CACHE[user_name] = email
-    return _USER_EMAIL_CACHE[user_name]
+
+    return email
 
 
 def _get_user(confluence_client: OnyxConfluence, user_id: str) -> str:
@@ -212,23 +228,27 @@ def _get_user(confluence_client: OnyxConfluence, user_id: str) -> str:
         str: The User Display Name. 'Unknown User' if the user is deactivated or not found
     """
     global _USER_ID_TO_DISPLAY_NAME_CACHE
-    if _USER_ID_TO_DISPLAY_NAME_CACHE.get(user_id) is None:
+    with _USER_CACHE_LOCK:
+        if user_id in _USER_ID_TO_DISPLAY_NAME_CACHE:
+            return _USER_ID_TO_DISPLAY_NAME_CACHE[user_id] or _USER_NOT_FOUND
+
+    try:
+        result = confluence_client.get_user_details_by_userkey(user_id)
+        found_display_name = result.get("displayName")
+    except Exception:
+        found_display_name = None
+
+    if not found_display_name:
         try:
-            result = confluence_client.get_user_details_by_userkey(user_id)
+            result = confluence_client.get_user_details_by_accountid(user_id)
             found_display_name = result.get("displayName")
         except Exception:
             found_display_name = None
 
-        if not found_display_name:
-            try:
-                result = confluence_client.get_user_details_by_accountid(user_id)
-                found_display_name = result.get("displayName")
-            except Exception:
-                found_display_name = None
-
+    with _USER_CACHE_LOCK:
         _USER_ID_TO_DISPLAY_NAME_CACHE[user_id] = found_display_name
 
-    return _USER_ID_TO_DISPLAY_NAME_CACHE.get(user_id) or _USER_NOT_FOUND
+    return found_display_name or _USER_NOT_FOUND
 
 
 def sanitize_attachment_title(title: str) -> str:
@@ -503,7 +523,7 @@ def process_attachment(
         logging.info(f"Downloading attachment: title={attachment['title']} length={attachment_size} link={attachment_link}")
 
         # Download the attachment
-        resp: requests.Response = confluence_client._session.get(attachment_link)
+        resp: requests.Response = confluence_client.fetch_attachment(attachment_link)
         if resp.status_code != 200:
             logging.warning(f"Failed to fetch {attachment_link} with status code {resp.status_code}")
             return AttachmentProcessingResult(
@@ -985,6 +1005,10 @@ class ConfluenceConnector(
 
                 extension = Path(attachment.get("title", "")).suffix or ".unknown"
 
+                attachment_version = attachment.get("version", {})
+                when_changed = attachment_version.get("when")
+                doc_updated_at = datetime_from_string(when_changed) if when_changed else None
+
                 attachment_doc = Document(
                     id=attachment_id,
                     # sections=sections,
@@ -994,7 +1018,7 @@ class ConfluenceConnector(
                     blob=file_blob,
                     size_bytes=len(file_blob),
                     metadata=attachment_metadata,
-                    doc_updated_at=(datetime_from_string(attachment["version"]["when"]) if attachment.get("version") and attachment["version"].get("when") else None),
+                    doc_updated_at=doc_updated_at,
                     primary_owners=primary_owners,
                 )
                 if self._is_newer_than_start(attachment_doc.doc_updated_at, start):
@@ -1172,16 +1196,15 @@ class ConfluenceConnector(
             expand=restrictions_expand,
             limit=_SLIM_DOC_BATCH_SIZE,
         ):
-            page_id = page["id"]
             page_restrictions = page.get("restrictions") or {}
             page_space_key = page.get("space", {}).get("key")
             page_ancestors = page.get("ancestors", [])
 
-            page_id = build_confluence_document_id(self.wiki_base, page["_links"]["webui"], self.is_cloud)
+            page_doc_id = build_confluence_document_id(self.wiki_base, page["_links"]["webui"], self.is_cloud)
             doc_metadata_list.append(
                 SlimDocument(
-                    id=page_id,
-                    external_access=(get_external_access(page_id, page_restrictions, page_ancestors) if include_permissions else None),
+                    id=page_doc_id,
+                    external_access=(get_external_access(page_doc_id, page_restrictions, page_ancestors) if include_permissions else None),
                 )
             )
 

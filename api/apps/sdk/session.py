@@ -19,8 +19,10 @@ from .session_impl.agent import register_agent_routes
 from .session_impl.bot import register_bot_routes
 from .session_impl.session_ops import register_ops_routes
 
+
 # manager is injected by api/apps/__init__.py
-register_chat_routes(manager)  # noqa: F821
-register_agent_routes(manager)  # noqa: F821
-register_bot_routes(manager)  # noqa: F821
-register_ops_routes(manager)  # noqa: F821
+def setup_routes(manager):
+    register_chat_routes(manager)
+    register_agent_routes(manager)
+    register_bot_routes(manager)
+    register_ops_routes(manager)

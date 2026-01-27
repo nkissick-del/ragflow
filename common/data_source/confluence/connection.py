@@ -4,6 +4,7 @@ import time
 from datetime import datetime, timezone, timedelta
 from typing import Any, Callable, cast
 from atlassian import Confluence
+import requests
 from requests.exceptions import HTTPError
 
 from common.data_source.utils import confluence_refresh_tokens, _handle_http_error, run_with_timeout
@@ -28,7 +29,6 @@ class ConfluenceConnectionMixin:
     - self._kwargs
     """
 
-    CREDENTIAL_PREFIX = "connector:confluence:credential"
     CREDENTIAL_TTL = 300  # 5 min
     PROBE_TIMEOUT = 5  # 5 seconds
 
@@ -94,7 +94,7 @@ class ConfluenceConnectionMixin:
         # reasonably frequently rather than trying to handle strong synchronization
         # between the db and redis everywhere the credentials might be updated
         new_credential_str = json.dumps(new_credentials)
-        self.redis_client.set(self.credential_key, new_credential_str, exp=self.CREDENTIAL_TTL)
+        self.redis_client.set(self.credential_key, new_credential_str, ex=self.CREDENTIAL_TTL)
         self._credentials_provider.set_credentials(new_credentials)
 
         return new_credentials, True
@@ -122,15 +122,14 @@ class ConfluenceConnectionMixin:
                 # v2 endpoint doesn't always work with scoped tokens, use v1
                 token = credentials["confluence_access_token"]
                 probe_url = f"{self.base_url}/rest/api/space?limit=1"
-                import requests
 
-                logging.info(f"First and Last 5 of token: {token[:5]}...{token[-5:]}")
+                logging.info("Sending probe request to Confluence...")
 
                 try:
                     r = requests.get(
                         probe_url,
                         headers={"Authorization": f"Bearer {token}"},
-                        timeout=10,
+                        timeout=self.PROBE_TIMEOUT,
                     )
                     r.raise_for_status()
                 except HTTPError as e:
@@ -170,7 +169,7 @@ class ConfluenceConnectionMixin:
 
             # This call sometimes hangs indefinitely, so we run it in a timeout
             spaces = run_with_timeout(
-                timeout=10,
+                timeout=self.PROBE_TIMEOUT,
                 func=confluence_client_with_minimal_retries.get_all_spaces,
                 limit=1,
             )
@@ -202,7 +201,7 @@ class ConfluenceConnectionMixin:
 
         confluence = None
 
-        # probe connection with direct client, no retries
+        # initialize direct client without retry logic
         if "confluence_refresh_token" in credentials:
             logging.info("Connecting to Confluence Cloud with OAuth Access Token.")
 
@@ -210,7 +209,7 @@ class ConfluenceConnectionMixin:
             url = f"https://api.atlassian.com/ex/confluence/{credentials['cloud_id']}"
             confluence = Confluence(url=url, oauth2=oauth2_dict, **kwargs)
         else:
-            logging.info(f"Connecting to Confluence with Personal Access Token as user: {credentials['confluence_username']}")
+            logging.info("Connecting to Confluence with Personal Access Token.")
             if self._is_cloud:
                 confluence = Confluence(
                     url=self._url,
@@ -231,12 +230,13 @@ class ConfluenceConnectionMixin:
     # This uses the native rate limiting option provided by the
     # confluence client and otherwise applies a simpler set of error handling.
     def _make_rate_limited_confluence_method(self, name: str, credential_provider: CredentialsProviderInterface | None) -> Callable[..., Any]:
-        def wrapped_call(*args: list[Any], **kwargs: Any) -> Any:
+        def wrapped_call(*args: Any, **kwargs: Any) -> Any:
             MAX_RETRIES = 5
 
             TIMEOUT = 600
             timeout_at = time.monotonic() + TIMEOUT
 
+            last_http_exc = None
             for attempt in range(MAX_RETRIES):
                 if time.monotonic() > timeout_at:
                     raise TimeoutError(f"Confluence call attempts took longer than {TIMEOUT} seconds.")
@@ -264,11 +264,13 @@ class ConfluenceConnectionMixin:
                         return attr(*args, **kwargs)
 
                 except HTTPError as e:
+                    last_http_exc = e
                     delay_until = _handle_http_error(e, attempt)
                     logging.warning(f"HTTPError in confluence call. Retrying in {delay_until} seconds...")
                     while time.monotonic() < delay_until:
                         # in the future, check a signal here to exit
                         time.sleep(1)
+
                 except AttributeError as e:
                     # Some error within the Confluence library, unclear why it fails.
                     # Users reported it to be intermittent, so just retry
@@ -278,10 +280,16 @@ class ConfluenceConnectionMixin:
                     logging.exception("Confluence Client raised an AttributeError. Retrying...")
                     time.sleep(5)
 
+            if last_http_exc:
+                raise last_http_exc
+
         return wrapped_call
 
     def __getattr__(self, name: str) -> Any:
         """Dynamically intercept attribute/method access."""
+        if not self._confluence:
+            raise RuntimeError("Confluence connection not initialized. Call _initialize_connection first.")
+
         attr = getattr(self._confluence, name, None)
         if attr is None:
             # The underlying Confluence client doesn't have this attribute

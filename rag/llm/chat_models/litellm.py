@@ -69,11 +69,21 @@ class LiteLLMBase(ABC):
 
         # Factory specific fields
         if self.provider == SupportedLiteLLMProvider.OpenRouter:
-            self.api_key = json.loads(key).get("api_key", "")
-            self.provider_order = json.loads(key).get("provider_order", "")
+            try:
+                parsed_key = json.loads(key)
+                self.api_key = parsed_key.get("api_key", "")
+                self.provider_order = parsed_key.get("provider_order", "")
+            except json.JSONDecodeError:
+                logging.error(f"Invalid JSON in OpenRouter key: {key}")
+                raise
         elif self.provider == SupportedLiteLLMProvider.Azure_OpenAI:
-            self.api_key = json.loads(key).get("api_key", "")
-            self.api_version = json.loads(key).get("api_version", "2024-02-01")
+            try:
+                parsed_key = json.loads(key)
+                self.api_key = parsed_key.get("api_key", "")
+                self.api_version = parsed_key.get("api_version", "2024-02-01")
+            except json.JSONDecodeError:
+                logging.error(f"Invalid JSON in Azure_OpenAI key: {key}")
+                raise
 
     def _get_delay(self):
         return self.base_delay * random.uniform(10, 150)
@@ -100,6 +110,7 @@ class LiteLLMBase(ABC):
         return LLMErrorCode.ERROR_GENERIC
 
     def _clean_conf(self, gen_conf):
+        gen_conf = gen_conf.copy()
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
         return gen_conf
@@ -136,17 +147,21 @@ class LiteLLMBase(ABC):
                 if e:
                     return e, 0
 
-        assert False, "Shouldn't be here."
+                if e:
+                    return e, 0
+
+        raise RuntimeError(f"Unexpected code path reached in async_chat. Max retries {self.max_retries} exceeded without returning.")
 
     async def async_chat_streamly(self, system, history, gen_conf, **kwargs):
-        if system and history and history[0].get("role") != "system":
-            history.insert(0, {"role": "system", "content": system})
-        logging.info("[HISTORY STREAMLY]" + json.dumps(history, ensure_ascii=False, indent=4))
+        hist = list(history) if history else []
+        if system and hist and hist[0].get("role") != "system":
+            hist.insert(0, {"role": "system", "content": system})
+        logging.info("[HISTORY STREAMLY]" + json.dumps(hist, ensure_ascii=False, indent=4))
         gen_conf = self._clean_conf(gen_conf)
         reasoning_start = False
         total_tokens = 0
 
-        completion_args = self._construct_completion_args(history=history, stream=True, tools=False, **gen_conf)
+        completion_args = self._construct_completion_args(history=hist, stream=True, tools=False, **gen_conf)
         stop = kwargs.get("stop")
         if stop:
             completion_args["stop"] = stop
@@ -172,10 +187,13 @@ class LiteLLMBase(ABC):
                         if not reasoning_start:
                             reasoning_start = True
                             ans = "<think>"
-                        ans += delta.reasoning_content + "</think>"
+                        ans += delta.reasoning_content
                     else:
-                        reasoning_start = False
-                        ans = delta.content
+                        ans = ""
+                        if reasoning_start:
+                            reasoning_start = False
+                            ans += "</think>"
+                        ans += delta.content
 
                     tol = total_token_count_from_response(resp)
                     if not tol:
@@ -190,6 +208,8 @@ class LiteLLMBase(ABC):
                             ans += LENGTH_NOTIFICATION_EN
 
                     yield ans
+                if reasoning_start:
+                    yield "</think>"
                 yield total_tokens
                 return
             except Exception as e:
@@ -252,8 +272,10 @@ class LiteLLMBase(ABC):
         try:
             if isinstance(tool_res, dict):
                 tool_res = json.dumps(tool_res, ensure_ascii=False)
-        finally:
-            hist.append({"role": "tool", "tool_call_id": tool_call.id, "content": str(tool_res)})
+        except Exception as e:
+            logging.error(f"Failed to serialize tool response: {e}")
+            tool_res = str(tool_res)
+        hist.append({"role": "tool", "tool_call_id": tool_call.id, "content": str(tool_res)})
         return hist
 
     def bind_tools(self, toolcall_session, tools):
@@ -325,7 +347,7 @@ class LiteLLMBase(ABC):
                 if e:
                     return e, tk_count
 
-        assert False, "Shouldn't be here."
+        raise RuntimeError(f"Unexpected code path reached in async_chat_with_tools. Max retries {self.max_retries} exceeded.")
 
     async def async_chat_streamly_with_tools(self, system: str, history: list, gen_conf: dict = {}):
         gen_conf = self._clean_conf(gen_conf)
@@ -378,10 +400,12 @@ class LiteLLMBase(ABC):
                             if not reasoning_start:
                                 reasoning_start = True
                                 ans = "<think>"
-                            ans += delta.reasoning_content + "</think>"
+                            ans += delta.reasoning_content
                             yield ans
                         else:
-                            reasoning_start = False
+                            if reasoning_start:
+                                reasoning_start = False
+                                yield "</think>"
                             answer += delta.content
                             yield delta.content
 
@@ -389,7 +413,7 @@ class LiteLLMBase(ABC):
                         if not tol:
                             total_tokens += num_tokens_from_string(delta.content)
                         else:
-                            total_tokens = tol
+                            total_tokens += tol
 
                         finish_reason = getattr(resp.choices[0], "finish_reason", "")
                         if finish_reason == "length":
@@ -445,7 +469,7 @@ class LiteLLMBase(ABC):
                     yield total_tokens
                     return
 
-        assert False, "Shouldn't be here."
+        raise RuntimeError(f"Unexpected code path reached in async_chat_streamly_with_tools. Max retries {self.max_retries} exceeded.")
 
     def _construct_completion_args(self, history, stream: bool, tools: bool, **kwargs):
         completion_args = {
@@ -476,7 +500,12 @@ class LiteLLMBase(ABC):
             completion_args.pop("api_key", None)
             completion_args.pop("api_base", None)
 
-            bedrock_key = json.loads(self.api_key)
+            try:
+                bedrock_key = json.loads(self.api_key)
+            except json.JSONDecodeError:
+                logging.error(f"Invalid JSON in Bedrock api_key: {self.api_key}")
+                raise ValueError("Invalid Bedrock api_key JSON")
+
             mode = bedrock_key.get("auth_mode")
             if not mode:
                 logging.error("Bedrock auth_mode is not provided in the key")
@@ -490,9 +519,22 @@ class LiteLLMBase(ABC):
                 completion_args.update({"aws_secret_access_key": bedrock_key.get("bedrock_sk")})
             elif mode == "iam_role":
                 aws_role_arn = bedrock_key.get("aws_role_arn")
-                sts_client = boto3.client("sts", region_name=bedrock_region)
-                resp = sts_client.assume_role(RoleArn=aws_role_arn, RoleSessionName="BedrockSession")
-                creds = resp["Credentials"]
+                import time
+
+                now = time.time()
+                # Check cache
+                cached = getattr(self, "_cached_bedrock_creds", None)
+                expiry = getattr(self, "_cached_bedrock_expiration", 0)
+                # Refresh if no cache or expiring in < 5 mins (300s)
+                if not cached or (expiry - now) < 300:
+                    sts_client = boto3.client("sts", region_name=bedrock_region)
+                    resp = sts_client.assume_role(RoleArn=aws_role_arn, RoleSessionName="BedrockSession")
+                    creds = resp["Credentials"]
+                    self._cached_bedrock_creds = creds
+                    # creds["Expiration"] is datetime, convert to timestamp
+                    self._cached_bedrock_expiration = creds["Expiration"].timestamp()
+
+                creds = self._cached_bedrock_creds
                 completion_args.update({"aws_region_name": bedrock_region})
                 completion_args.update({"aws_access_key_id": creds["AccessKeyId"]})
                 completion_args.update({"aws_secret_access_key": creds["SecretAccessKey"]})

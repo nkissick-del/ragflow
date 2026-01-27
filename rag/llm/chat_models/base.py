@@ -69,10 +69,10 @@ class Base(ABC):
         self.max_rounds = kwargs.get("max_rounds", 5)
         self.is_tools = False
         self.tools = []
-        self.toolcall_sessions = {}
+        self.toolcall_session = {}
 
     def _get_delay(self):
-        return self.base_delay * random.uniform(10, 150)
+        return self.base_delay * random.uniform(0.1, 1.5)
 
     def _classify_error(self, error):
         error_str = str(error).lower()
@@ -87,7 +87,7 @@ class Base(ABC):
             (["connect", "network", "unreachable", "dns"], LLMErrorCode.ERROR_CONNECTION),
             (["filter", "content", "policy", "blocked", "safety", "inappropriate"], LLMErrorCode.ERROR_CONTENT_FILTER),
             (["model", "not found", "does not exist", "not available"], LLMErrorCode.ERROR_MODEL),
-            (["max rounds"], LLMErrorCode.ERROR_MODEL),
+            (["max rounds"], LLMErrorCode.ERROR_MAX_ROUNDS),
         ]
         for words, code in keywords_mapping:
             if re.search("({})".format("|".join(words)), error_str):
@@ -96,11 +96,11 @@ class Base(ABC):
         return LLMErrorCode.ERROR_GENERIC
 
     def _clean_conf(self, gen_conf):
+        gen_conf = gen_conf.copy()
         model_name_lower = (self.model_name or "").lower()
         # gpt-5 and gpt-5.1 endpoints have inconsistent parameter support, clear custom generation params to prevent unexpected issues
         if "gpt-5" in model_name_lower:
-            gen_conf = {}
-            return gen_conf
+            return {}
 
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
@@ -146,15 +146,53 @@ class Base(ABC):
                 continue
             if not resp.choices[0].delta.content:
                 resp.choices[0].delta.content = ""
+        ans = ""
+        async for resp in response:
+            if not resp.choices:
+                continue
+            if not resp.choices[0].delta.content:
+                resp.choices[0].delta.content = ""
+
+            delta_content = resp.choices[0].delta.content
+            if hasattr(resp.choices[0].delta, "reasoning_content") and resp.choices[0].delta.reasoning_content:
+                r_content = resp.choices[0].delta.reasoning_content
+                if not reasoning_start:
+                    reasoning_start = True
+                    ans = "<think>" + r_content
+                else:
+                    ans = r_content
+            else:
+                if reasoning_start:
+                    reasoning_start = False
+                    ans = "</think>" + delta_content
+                else:
+                    ans = delta_content
+
+            # Streaming filter for reasoning models if needed (optional logic from request 1)
+            # The user request mentioned "modify the stream handling... to maintain a buffer".
+            # However, looking at lines 147-157, it seems this method handles standard streaming
+            # while a specific "filtering" logic was mentioned in request 1.
+            # Request 1 says: "The current streaming filter inside _async_chat_streamly is fragile because it checks chunk boundaries with delta.startswith("<think>") / delta.endswith("</think>")"
+            # It seems like I need to apply Fix 1 (filtering) AND Fix 10 (tag handling).
+            # Let's re-read carefully.
+            # There are TWO different usages of _async_chat_streamly.
+            # One is the definition itself (lines 134-168), and the other is the CALLER at lines 447-451.
+            # Fix 1 applies to the CALLER (lines 447-451).
+            # Fix 10 applies to THIS definition (lines 149-157).
+
+            # Implementing Fix 10 here:
             if kwargs.get("with_reasoning", True) and hasattr(resp.choices[0].delta, "reasoning_content") and resp.choices[0].delta.reasoning_content:
                 ans = ""
                 if not reasoning_start:
                     reasoning_start = True
                     ans = "<think>"
-                ans += resp.choices[0].delta.reasoning_content + "</think>"
+                ans += resp.choices[0].delta.reasoning_content
             else:
-                reasoning_start = False
-                ans = resp.choices[0].delta.content
+                ans = ""
+                if reasoning_start:
+                    reasoning_start = False
+                    ans = "</think>"
+                ans += resp.choices[0].delta.content
             tol = total_token_count_from_response(resp)
             if not tol:
                 tol = num_tokens_from_string(resp.choices[0].delta.content)
@@ -167,7 +205,8 @@ class Base(ABC):
                     ans += LENGTH_NOTIFICATION_EN
             yield ans, tol
 
-    async def async_chat_streamly(self, system, history, gen_conf: dict = {}, **kwargs):
+    async def async_chat_streamly(self, system, history, gen_conf: dict | None = None, **kwargs):
+        gen_conf = gen_conf or {}
         if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
         gen_conf = self._clean_conf(gen_conf)
@@ -191,7 +230,7 @@ class Base(ABC):
                     return
 
     def _length_stop(self, ans):
-        if is_chinese([ans]):
+        if is_chinese(ans):
             return ans + LENGTH_NOTIFICATION_CN
         return ans + LENGTH_NOTIFICATION_EN
 
@@ -261,8 +300,10 @@ class Base(ABC):
         try:
             if isinstance(tool_res, dict):
                 tool_res = json.dumps(tool_res, ensure_ascii=False)
-        finally:
-            hist.append({"role": "tool", "tool_call_id": tool_call.id, "content": str(tool_res)})
+        except Exception:
+            tool_res = str(tool_res)
+
+        hist.append({"role": "tool", "tool_call_id": tool_call.id, "content": str(tool_res)})
         return hist
 
     def bind_tools(self, toolcall_session, tools):
@@ -272,7 +313,8 @@ class Base(ABC):
         self.toolcall_session = toolcall_session
         self.tools = tools
 
-    async def async_chat_with_tools(self, system: str, history: list, gen_conf: dict = {}):
+    async def async_chat_with_tools(self, system: str, history: list, gen_conf: dict | None = None):
+        gen_conf = gen_conf or {}
         gen_conf = self._clean_conf(gen_conf)
         if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
@@ -287,7 +329,7 @@ class Base(ABC):
                     logging.info(f"{self.tools=}")
                     response = await self.async_client.chat.completions.create(model=self.model_name, messages=history, tools=self.tools, tool_choice="auto", **gen_conf)
                     tk_count += total_token_count_from_response(response)
-                    if any([not response.choices, not response.choices[0].message]):
+                    if not response.choices or not response.choices[0].message:
                         raise Exception(f"500 response structure error. Response: {response}")
 
                     if not hasattr(response.choices[0].message, "tool_calls") or not response.choices[0].message.tool_calls:
@@ -326,7 +368,8 @@ class Base(ABC):
 
         assert False, "Shouldn't be here."
 
-    async def async_chat_streamly_with_tools(self, system: str, history: list, gen_conf: dict = {}):
+    async def async_chat_streamly_with_tools(self, system: str, history: list, gen_conf: dict | None = None):
+        gen_conf = gen_conf or {}
         gen_conf = self._clean_conf(gen_conf)
         tools = self.tools
         if system and history and history[0].get("role") != "system":
@@ -383,7 +426,7 @@ class Base(ABC):
                         if not tol:
                             total_tokens += num_tokens_from_string(delta.content)
                         else:
-                            total_tokens = tol
+                            total_tokens += tol
 
                         finish_reason = getattr(resp.choices[0], "finish_reason", "")
                         if finish_reason == "length":
@@ -421,7 +464,7 @@ class Base(ABC):
                     if not tol:
                         total_tokens += num_tokens_from_string(delta.content)
                     else:
-                        total_tokens = tol
+                        total_tokens += tol
                     yield delta.content
 
                 yield total_tokens
@@ -444,11 +487,36 @@ class Base(ABC):
 
             final_ans = ""
             tol_token = 0
+            leftover = ""
             async for delta, tol in self._async_chat_streamly(history, gen_conf, with_reasoning=False, **kwargs):
-                if delta.startswith("<think>") or delta.endswith("</think>"):
-                    continue
-                final_ans += delta
+                buffer = leftover + delta
+                leftover = ""
+
+                while True:
+                    start = buffer.find("<think>")
+                    end = buffer.find("</think>")
+                    if start != -1 and end != -1:
+                        buffer = buffer[:start] + buffer[end + 8 :]
+                    else:
+                        break
+
+                s = buffer.find("<think>")
+                if s != -1:
+                    leftover = buffer[s:]
+                    buffer = buffer[:s]
+                else:
+                    for i in range(1, 8):
+                        suffix = buffer[-i:]
+                        if "<think>".startswith(suffix) or "</think>".startswith(suffix):
+                            leftover = suffix
+                            buffer = buffer[:-i]
+                            break
+
+                final_ans += buffer
                 tol_token = tol
+
+            if leftover and "<think>" not in leftover:
+                final_ans += leftover
 
             if len(final_ans.strip()) == 0:
                 final_ans = "**ERROR**: Empty response from reasoning model"
@@ -467,7 +535,8 @@ class Base(ABC):
             ans = self._length_stop(ans)
         return ans, total_token_count_from_response(response)
 
-    async def async_chat(self, system, history, gen_conf={}, **kwargs):
+    async def async_chat(self, system, history, gen_conf: dict | None = None, **kwargs):
+        gen_conf = gen_conf or {}
         if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
         gen_conf = self._clean_conf(gen_conf)

@@ -30,7 +30,11 @@ def register_agent_routes(manager):
 
         cvs.dsl = json.loads(str(canvas))
         conv = {"id": session_id, "dialog_id": cvs.id, "user_id": user_id, "message": [{"role": "assistant", "content": canvas.get_prologue()}], "source": "agent", "dsl": cvs.dsl}
-        API4ConversationService.save(**conv)
+        try:
+            API4ConversationService.save(**conv)
+        except Exception as e:
+            return get_error_data_result(f"Failed to save conversation: {str(e)}")
+
         conv["agent_id"] = conv.pop("dialog_id")
         return get_result(data=conv)
 
@@ -47,7 +51,11 @@ def register_agent_routes(manager):
             return get_error_data_result(f"You don't own the agent {agent_id}")
 
         filtered_messages = [m for m in messages if m["role"] in ["user", "assistant"]]
-        prompt_tokens = sum(len(tiktoken_encode.encode(m["content"])) for m in filtered_messages)
+        prompt_tokens = 0
+        for m in filtered_messages:
+            content = m.get("content")
+            if isinstance(content, str):
+                prompt_tokens += len(tiktoken_encode.encode(content))
         if not filtered_messages:
             return jsonify(
                 get_data_openai(
@@ -62,6 +70,7 @@ def register_agent_routes(manager):
 
         question = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
 
+        session_id = req.pop("session_id", req.get("id", "")) or req.get("metadata", {}).get("id", "")
         stream = req.pop("stream", False)
         if stream:
             resp = Response(
@@ -69,7 +78,7 @@ def register_agent_routes(manager):
                     tenant_id,
                     agent_id,
                     question,
-                    session_id=req.pop("session_id", req.get("id", "")) or req.get("metadata", {}).get("id", ""),
+                    session_id=session_id,
                     stream=True,
                     **req,
                 ),
@@ -87,7 +96,7 @@ def register_agent_routes(manager):
                 tenant_id,
                 agent_id,
                 question,
-                session_id=req.pop("session_id", req.get("id", "")) or req.get("metadata", {}).get("id", ""),
+                session_id=session_id,
                 stream=False,
                 **req,
             ):
@@ -108,13 +117,17 @@ def register_agent_routes(manager):
             async def generate():
                 trace_items = []
                 async for answer in agent_completion(tenant_id=tenant_id, agent_id=agent_id, **req):
+                    ans = None
                     if isinstance(answer, str):
                         try:
                             ans = json.loads(answer[5:])  # remove "data:"
+                            event = ans.get("event")
                         except Exception:
                             continue
+                    else:
+                        # If answer is not string, it might be dict or we skip
+                        continue
 
-                    event = ans.get("event")
                     if event == "node_finished":
                         if return_trace:
                             data = ans.get("data", {})
@@ -168,9 +181,14 @@ def register_agent_routes(manager):
                 final_ans = ans
             except Exception as e:
                 return get_result(data=f"**ERROR**: {str(e)}")
-        final_ans["data"]["content"] = full_content
+
+        if not final_ans or not isinstance(final_ans, dict):
+            # Initialize a valid structure if none was obtained
+            final_ans = {"data": {}}
+
+        final_ans.setdefault("data", {})["content"] = full_content
         final_ans["data"]["reference"] = reference
-        if return_trace and final_ans:
+        if return_trace:
             final_ans["data"]["trace"] = trace_items
         return get_result(data=final_ans)
 
@@ -181,8 +199,19 @@ def register_agent_routes(manager):
             return get_error_data_result(message=f"You don't own the agent {agent_id}.")
         id = request.args.get("id")
         user_id = request.args.get("user_id")
-        page_number = int(request.args.get("page", 1))
-        items_per_page = int(request.args.get("page_size", 30))
+        try:
+            page_number = int(request.args.get("page", 1))
+            if page_number < 1:
+                page_number = 1
+        except ValueError:
+            page_number = 1
+
+        try:
+            items_per_page = int(request.args.get("page_size", 30))
+            if items_per_page < 1:
+                items_per_page = 30
+        except ValueError:
+            items_per_page = 30
         orderby = request.args.get("orderby", "update_time")
         if request.args.get("desc") == "False" or request.args.get("desc") == "false":
             desc = False
@@ -253,7 +282,11 @@ def register_agent_routes(manager):
 
         convs = API4ConversationService.query(dialog_id=agent_id)
         if not convs:
-            return get_error_data_result(f"Agent {agent_id} has no sessions")
+            # If explicit IDs provided and convs is empty, it means none of the requested IDs exist (or all deleted)
+            # We will handle it in the ID checking loop or return 0 success count.
+            # But if no IDs provided (bulk delete all for agent) and no sessions exist, then error.
+            if not req or not req.get("ids"):
+                return get_error_data_result(f"Agent {agent_id} has no sessions")
 
         if not req:
             ids = None
@@ -275,8 +308,12 @@ def register_agent_routes(manager):
             if not conv:
                 errors.append(f"The agent doesn't own the session {session_id}")
                 continue
-            API4ConversationService.delete_by_id(session_id)
-            success_count += 1
+            try:
+                res = API4ConversationService.delete_by_id(session_id)
+                if res:
+                    success_count += 1
+            except Exception as e:
+                errors.append(f"Failed to delete session {session_id}: {str(e)}")
 
         if errors:
             if success_count > 0:

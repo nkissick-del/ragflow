@@ -1,4 +1,5 @@
 import json
+import logging
 import re
 from quart import Response
 from api.db.services.dialog_service import async_ask
@@ -24,13 +25,14 @@ def register_ops_routes(manager):
             if not KnowledgebaseService.accessible(kb_id, tenant_id):
                 return get_error_data_result(f"You don't own the dataset {kb_id}.")
             kbs = KnowledgebaseService.query(id=kb_id)
+            if not kbs:
+                return get_error_data_result(f"The dataset {kb_id} is not found")
             kb = kbs[0]
             if kb.chunk_num == 0:
                 return get_error_data_result(f"The dataset {kb_id} doesn't own parsed file")
         uid = tenant_id
 
         async def stream():
-            nonlocal req, uid
             try:
                 async for ans in async_ask(req["question"], req["kb_ids"], uid):
                     yield "data:" + json.dumps({"code": 0, "message": "", "data": ans}, ensure_ascii=False) + "\n\n"
@@ -81,17 +83,21 @@ Reason:
  - At the same time, related terms can also help search engines better understand user needs and return more accurate search results.
 
 """
-        ans = await chat_mdl.async_chat(
-            prompt,
-            [
-                {
-                    "role": "user",
-                    "content": f"""
+        try:
+            ans = await chat_mdl.async_chat(
+                prompt,
+                [
+                    {
+                        "role": "user",
+                        "content": f"""
 Keywords: {question}
 Related search terms:
     """,
-                }
-            ],
-            {"temperature": 0.9},
-        )
-        return get_result(data=[re.sub(r"^[0-9]\. ", "", a) for a in ans.split("\n") if re.match(r"^[0-9]\. ", a)])
+                    }
+                ],
+                {"temperature": 0.9},
+            )
+        except Exception as e:
+            logging.exception(f"Error in related_questions: {e}")
+            return get_error_data_result(str(e))
+        return get_result(data=[re.sub(r"^[0-9]+\. ", "", a) for a in ans.split("\n") if re.match(r"^[0-9]+\. ", a)])

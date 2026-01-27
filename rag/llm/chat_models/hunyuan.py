@@ -11,12 +11,18 @@ class HunyuanChat(Base):
         from tencentcloud.common import credential
         from tencentcloud.hunyuan.v20230901 import hunyuan_client
 
-        key = json.loads(key)
-        sid = key.get("hunyuan_sid", "")
-        sk = key.get("hunyuan_sk", "")
+        try:
+            key_json = json.loads(key)
+        except json.JSONDecodeError:
+            raise ValueError(f"Failed to parse configuration key: {key}. Please ensure it is a valid JSON string with 'hunyuan_sid' and 'hunyuan_sk'.")
+
+        sid = key_json.get("hunyuan_sid", "")
+        sk = key_json.get("hunyuan_sk", "")
+        region = key_json.get("hunyuan_region", None)
+
         cred = credential.Credential(sid, sk)
         self.model_name = model_name
-        self.client = hunyuan_client.HunyuanClient(cred, "")
+        self.client = hunyuan_client.HunyuanClient(cred, region)
 
     def _clean_conf(self, gen_conf):
         _gen_conf = {}
@@ -26,29 +32,34 @@ class HunyuanChat(Base):
             _gen_conf["TopP"] = gen_conf["top_p"]
         return _gen_conf
 
-    def _chat(self, history, gen_conf={}, **kwargs):
+    def _chat(self, history, gen_conf=None, **kwargs):
         from tencentcloud.hunyuan.v20230901 import models
+
+        gen_conf = gen_conf or {}
+        cleaned_conf = self._clean_conf(gen_conf)
 
         hist = [{k.capitalize(): v for k, v in item.items()} for item in history]
         req = models.ChatCompletionsRequest()
-        params = {"Model": self.model_name, "Messages": hist, **gen_conf}
+        params = {"Model": self.model_name, "Messages": hist, **cleaned_conf}
         req.from_json_string(json.dumps(params))
         response = self.client.ChatCompletions(req)
         ans = response.Choices[0].Message.Content
         return ans, response.Usage.TotalTokens
 
-    def chat_streamly(self, system, history, gen_conf={}, **kwargs):
+    def chat_streamly(self, system, history, gen_conf=None, **kwargs):
         from tencentcloud.common.exception.tencent_cloud_sdk_exception import (
             TencentCloudSDKException,
         )
         from tencentcloud.hunyuan.v20230901 import models
 
         _gen_conf = {}
+        gen_conf = dict(gen_conf or {})
         _history = [{k.capitalize(): v for k, v in item.items()} for item in history]
         if system and history and history[0].get("role") != "system":
             _history.insert(0, {"Role": "system", "Content": system})
-        if "max_tokens" in gen_conf:
-            del gen_conf["max_tokens"]
+
+        gen_conf.pop("max_tokens", None)
+
         if "temperature" in gen_conf:
             _gen_conf["Temperature"] = gen_conf["temperature"]
         if "top_p" in gen_conf:
@@ -61,20 +72,24 @@ class HunyuanChat(Base):
             **_gen_conf,
         }
         req.from_json_string(json.dumps(params))
-        ans = ""
+
         total_tokens = 0
         try:
             response = self.client.ChatCompletions(req)
             for resp in response:
                 resp = json.loads(resp["data"])
+
+                # Extract usage if enabled/present in chunk
+                if "Usage" in resp and "TotalTokens" in resp["Usage"]:
+                    total_tokens = resp["Usage"]["TotalTokens"]
+
                 if not resp["Choices"] or not resp["Choices"][0]["Delta"]["Content"]:
                     continue
-                ans = resp["Choices"][0]["Delta"]["Content"]
-                total_tokens += 1
 
-                yield ans
+                content = resp["Choices"][0]["Delta"]["Content"]
+                yield {"type": "content", "text": content}
 
         except TencentCloudSDKException as e:
-            yield ans + "\n**ERROR**: " + str(e)
+            yield {"type": "error", "text": str(e)}
 
-        yield total_tokens
+        yield {"type": "usage", "total_tokens": total_tokens}

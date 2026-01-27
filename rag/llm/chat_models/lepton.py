@@ -1,4 +1,3 @@
-from urllib.parse import urljoin
 from .base import Base
 
 
@@ -7,5 +6,5 @@ class LeptonAIChat(Base):
 
     def __init__(self, key, model_name, base_url=None, **kwargs):
         if not base_url:
-            base_url = urljoin("https://" + model_name + ".lepton.run", "api/v1")
+            base_url = f"https://{model_name}.lepton.run/api/v1"
         super().__init__(key, model_name, base_url, **kwargs)

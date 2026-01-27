@@ -11,28 +11,36 @@ class BaiduYiyanChat(Base):
 
         import qianfan
 
-        key = json.loads(key)
+        try:
+            key = json.loads(key)
+        except json.JSONDecodeError:
+            raise ValueError("Invalid credentials: key must be a valid JSON string.")
+
         ak = key.get("yiyan_ak", "")
         sk = key.get("yiyan_sk", "")
+        if not ak or not sk:
+            raise ValueError("missing or invalid yiyan_ak/yiyan_sk")
         self.client = qianfan.ChatCompletion(ak=ak, sk=sk)
         self.model_name = model_name.lower()
 
     def _clean_conf(self, gen_conf):
-        gen_conf["penalty_score"] = ((gen_conf.get("presence_penalty", 0) + gen_conf.get("frequency_penalty", 0)) / 2) + 1
-        if "max_tokens" in gen_conf:
-            del gen_conf["max_tokens"]
-        return gen_conf
+        new_conf = gen_conf.copy()
+        new_conf["penalty_score"] = ((new_conf.get("presence_penalty", 0) + new_conf.get("frequency_penalty", 0)) / 2) + 1
+        if "max_tokens" in new_conf:
+            del new_conf["max_tokens"]
+        return new_conf
 
     def _chat(self, history, gen_conf):
+        gen_conf = self._clean_conf(gen_conf)
         system = history[0]["content"] if history and history[0]["role"] == "system" else ""
         response = self.client.do(model=self.model_name, messages=[h for h in history if h["role"] != "system"], system=system, **gen_conf).body
         ans = response["result"]
         return ans, total_token_count_from_response(response)
 
-    def chat_streamly(self, system, history, gen_conf={}, **kwargs):
-        gen_conf["penalty_score"] = ((gen_conf.get("presence_penalty", 0) + gen_conf.get("frequency_penalty", 0)) / 2) + 1
-        if "max_tokens" in gen_conf:
-            del gen_conf["max_tokens"]
+    def chat_streamly(self, system, history, gen_conf=None, **kwargs):
+        if gen_conf is None:
+            gen_conf = {}
+        gen_conf = self._clean_conf(gen_conf)
         ans = ""
         total_tokens = 0
 
@@ -46,6 +54,7 @@ class BaiduYiyanChat(Base):
                 yield ans
 
         except Exception as e:
-            return ans + "\n**ERROR**: " + str(e), 0
+            yield ans + "\n**ERROR**: " + str(e), 0
+            return
 
         yield total_tokens

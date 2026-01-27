@@ -1,5 +1,7 @@
 import json
+import logging
 import re
+from functools import wraps
 from quart import Response, request
 from api.db.db_models import APIToken
 from api.db.services.conversation_service import async_iframe_completion as iframe_completion
@@ -21,11 +23,9 @@ from rag.prompts.template import load_prompt
 from agent.canvas import Canvas
 
 
-def register_bot_routes(manager):
-    @manager.route("/chatbots/<dialog_id>/completions", methods=["POST"])
-    async def chatbot_completions(dialog_id):
-        req = await get_request_json()
-
+def require_api_token(func):
+    @wraps(func)
+    async def decorated_function(*args, **kwargs):
         auth_header = request.headers.get("Authorization")
         if not auth_header:
             return get_error_data_result(message="Authorization header is missing")
@@ -37,6 +37,18 @@ def register_bot_routes(manager):
         objs = APIToken.query(beta=token)
         if not objs:
             return get_error_data_result(message="Authentication error: API key is invalid")
+
+        request.api_token = objs[0]
+        return await func(*args, **kwargs)
+
+    return decorated_function
+
+
+def register_bot_routes(manager):
+    @manager.route("/chatbots/<dialog_id>/completions", methods=["POST"])
+    @require_api_token
+    async def chatbot_completions(dialog_id):
+        req = await get_request_json()
 
         if "quote" not in req:
             req["quote"] = False
@@ -52,25 +64,14 @@ def register_bot_routes(manager):
         async for answer in iframe_completion(dialog_id, **req):
             return get_result(data=answer)
 
-        return None
+        return get_result(data=None)
 
     @manager.route("/chatbots/<dialog_id>/info", methods=["GET"])
+    @require_api_token
     async def chatbots_inputs(dialog_id):
-        auth_header = request.headers.get("Authorization")
-        if not auth_header:
-            return get_error_data_result(message="Authorization header is missing")
-
-        token_parts = auth_header.split()
-        if len(token_parts) != 2:
-            return get_error_data_result(message="Authorization is not valid")
-        token = token_parts[1]
-        objs = APIToken.query(beta=token)
-        if not objs:
-            return get_error_data_result(message="Authentication error: API key is invalid")
-
         e, dialog = DialogService.get_by_id(dialog_id)
         if not e:
-            return get_error_data_result(f"Can't find dialog by ID: {dialog_id}")
+            return get_error_data_result(message=f"Can't find dialog by ID: {dialog_id}")
 
         return get_result(
             data={
@@ -81,72 +82,39 @@ def register_bot_routes(manager):
         )
 
     @manager.route("/agentbots/<agent_id>/completions", methods=["POST"])
+    @require_api_token
     async def agent_bot_completions(agent_id):
         req = await get_request_json()
 
-        auth_header = request.headers.get("Authorization")
-        if not auth_header:
-            return get_error_data_result(message="Authorization header is missing")
-
-        token_parts = auth_header.split()
-        if len(token_parts) != 2:
-            return get_error_data_result(message="Authorization is not valid")
-        token = token_parts[1]
-        objs = APIToken.query(beta=token)
-        if not objs:
-            return get_error_data_result(message="Authentication error: API key is invalid")
-
         if req.get("stream", True):
-            resp = Response(agent_completion(objs[0].tenant_id, agent_id, **req), mimetype="text/event-stream")
+            resp = Response(agent_completion(request.api_token.tenant_id, agent_id, **req), mimetype="text/event-stream")
             resp.headers.add_header("Cache-control", "no-cache")
             resp.headers.add_header("Connection", "keep-alive")
             resp.headers.add_header("X-Accel-Buffering", "no")
             resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
             return resp
 
-        async for answer in agent_completion(objs[0].tenant_id, agent_id, **req):
+        async for answer in agent_completion(request.api_token.tenant_id, agent_id, **req):
             return get_result(data=answer)
 
-        return None
+        return get_result(data=None)
 
     @manager.route("/agentbots/<agent_id>/inputs", methods=["GET"])
+    @require_api_token
     async def begin_inputs(agent_id):
-        auth_header = request.headers.get("Authorization")
-        if not auth_header:
-            return get_error_data_result(message="Authorization header is missing")
-
-        token_parts = auth_header.split()
-        if len(token_parts) != 2:
-            return get_error_data_result(message="Authorization is not valid")
-        token = token_parts[1]
-        objs = APIToken.query(beta=token)
-        if not objs:
-            return get_error_data_result(message="Authentication error: API key is invalid")
-
         e, cvs = UserCanvasService.get_by_id(agent_id)
         if not e:
-            return get_error_data_result(f"Can't find agent by ID: {agent_id}")
+            return get_error_data_result(message=f"Can't find agent by ID: {agent_id}")
 
-        canvas = Canvas(json.dumps(cvs.dsl), objs[0].tenant_id, canvas_id=cvs.id)
+        canvas = Canvas(json.dumps(cvs.dsl), request.api_token.tenant_id, canvas_id=cvs.id)
         return get_result(data={"title": cvs.title, "avatar": cvs.avatar, "inputs": canvas.get_component_input_form("begin"), "prologue": canvas.get_prologue(), "mode": canvas.get_mode()})
 
     @manager.route("/searchbots/ask", methods=["POST"])
     @validate_request("question", "kb_ids")
+    @require_api_token
     async def ask_about_embedded():
-        auth_header = request.headers.get("Authorization")
-        if not auth_header:
-            return get_error_data_result(message="Authorization header is missing")
-
-        token_parts = auth_header.split()
-        if len(token_parts) != 2:
-            return get_error_data_result(message="Authorization is not valid")
-        token = token_parts[1]
-        objs = APIToken.query(beta=token)
-        if not objs:
-            return get_error_data_result(message="Authentication error: API key is invalid")
-
         req = await get_request_json()
-        uid = objs[0].tenant_id
+        uid = request.api_token.tenant_id
 
         search_id = req.get("search_id", "")
         search_config = {}
@@ -160,7 +128,8 @@ def register_bot_routes(manager):
                 async for ans in async_ask(req["question"], req["kb_ids"], uid, search_config=search_config):
                     yield "data:" + json.dumps({"code": 0, "message": "", "data": ans}, ensure_ascii=False) + "\n\n"
             except Exception as e:
-                yield "data:" + json.dumps({"code": 500, "message": str(e), "data": {"answer": "**ERROR**: " + str(e), "reference": []}}, ensure_ascii=False) + "\n\n"
+                logging.exception(e)
+                yield "data:" + json.dumps({"code": 500, "message": "Internal server error", "data": {"answer": "**ERROR**: Internal server error", "reference": []}}, ensure_ascii=False) + "\n\n"
             yield "data:" + json.dumps({"code": 0, "message": "", "data": True}, ensure_ascii=False) + "\n\n"
 
         resp = Response(stream(), mimetype="text/event-stream")
@@ -172,22 +141,24 @@ def register_bot_routes(manager):
 
     @manager.route("/searchbots/retrieval_test", methods=["POST"])
     @validate_request("kb_id", "question")
+    @require_api_token
     async def retrieval_test_embedded():
-        auth_header = request.headers.get("Authorization")
-        if not auth_header:
-            return get_error_data_result(message="Authorization header is missing")
-
-        token_parts = auth_header.split()
-        if len(token_parts) != 2:
-            return get_error_data_result(message="Authorization is not valid")
-        token = token_parts[1]
-        objs = APIToken.query(beta=token)
-        if not objs:
-            return get_error_data_result(message="Authentication error: API key is invalid")
-
         req = await get_request_json()
-        page = int(req.get("page", 1))
-        size = int(req.get("size", 30))
+        try:
+            page = int(req.get("page", 1))
+            size = int(req.get("size", 30))
+            similarity_threshold = float(req.get("similarity_threshold", 0.0))
+            vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
+            top = int(req.get("top_k", 1024))
+            if page < 1 or size < 1:
+                raise ValueError("Page and size must be greater than 0")
+            if not (0 <= similarity_threshold <= 1):
+                raise ValueError("Similarity threshold must be between 0 and 1")
+            if not (0 <= vector_similarity_weight <= 1):
+                raise ValueError("Vector similarity weight must be between 0 and 1")
+        except ValueError as e:
+            return get_json_result(data=False, message=str(e), code=RetCode.DATA_ERROR)
+
         question = req["question"]
         kb_ids = req["kb_id"]
         if isinstance(kb_ids, str):
@@ -195,14 +166,11 @@ def register_bot_routes(manager):
         if not kb_ids:
             return get_json_result(data=False, message="Please specify dataset firstly.", code=RetCode.DATA_ERROR)
         doc_ids = req.get("doc_ids", [])
-        similarity_threshold = float(req.get("similarity_threshold", 0.0))
-        vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
         use_kg = req.get("use_kg", False)
-        top = int(req.get("top_k", 1024))
         langs = req.get("cross_languages", [])
-        tenant_id = objs[0].tenant_id
+        tenant_id = request.api_token.tenant_id
         if not tenant_id:
-            return get_error_data_result(message="permission denined.")
+            return get_error_data_result(message="permission denied.")
 
         async def _retrieval():
             local_doc_ids = list(doc_ids) if doc_ids else []
@@ -212,10 +180,11 @@ def register_bot_routes(manager):
             meta_data_filter = {}
             chat_mdl = None
             if req.get("search_id", ""):
-                search_config = SearchService.get_detail(req.get("search_id", "")).get("search_config", {})
-                meta_data_filter = search_config.get("meta_data_filter", {})
-                if meta_data_filter.get("method") in ["auto", "semi_auto"]:
-                    chat_mdl = LLMBundle(tenant_id, LLMType.CHAT, llm_name=search_config.get("chat_id", ""))
+                if detail := SearchService.get_detail(req.get("search_id", "")):
+                    search_config = detail.get("search_config", {})
+                    meta_data_filter = search_config.get("meta_data_filter", {})
+                    if meta_data_filter.get("method") in ["auto", "semi_auto"]:
+                        chat_mdl = LLMBundle(tenant_id, LLMType.CHAT, llm_name=search_config.get("chat_id", ""))
             else:
                 meta_data_filter = req.get("meta_data_filter") or {}
                 if meta_data_filter.get("method") in ["auto", "semi_auto"]:
@@ -281,29 +250,18 @@ def register_bot_routes(manager):
         try:
             return await _retrieval()
         except Exception as e:
-            if str(e).find("not_found") > 0:
+            if "not_found" in str(e):
                 return get_json_result(data=False, message="No chunk found! Check the chunk status please!", code=RetCode.DATA_ERROR)
             return server_error_response(e)
 
     @manager.route("/searchbots/related_questions", methods=["POST"])
     @validate_request("question")
+    @require_api_token
     async def related_questions_embedded():
-        auth_header = request.headers.get("Authorization")
-        if not auth_header:
-            return get_error_data_result(message="Authorization header is missing")
-
-        token_parts = auth_header.split()
-        if len(token_parts) != 2:
-            return get_error_data_result(message="Authorization is not valid")
-        token = token_parts[1]
-        objs = APIToken.query(beta=token)
-        if not objs:
-            return get_error_data_result(message="Authentication error: API key is invalid")
-
         req = await get_request_json()
-        tenant_id = objs[0].tenant_id
+        tenant_id = request.api_token.tenant_id
         if not tenant_id:
-            return get_error_data_result(message="permission denined.")
+            return get_error_data_result(message="permission denied.")
 
         search_id = req.get("search_id", "")
         search_config = {}
@@ -331,26 +289,18 @@ Related search terms:
             ],
             gen_conf,
         )
-        return get_json_result(data=[re.sub(r"^[0-9]\. ", "", a) for a in ans.split("\n") if re.match(r"^[0-9]\. ", a)])
+        return get_json_result(data=[re.sub(r"^[0-9]+\. ", "", a) for a in ans.split("\n") if re.match(r"^[0-9]+\. ", a)])
 
     @manager.route("/searchbots/detail", methods=["GET"])
+    @require_api_token
     async def detail_share_embedded():
-        auth_header = request.headers.get("Authorization")
-        if not auth_header:
-            return get_error_data_result(message="Authorization header is missing")
+        search_id = request.args.get("search_id")
+        if not search_id:
+            return get_error_data_result(message="search_id is required")
 
-        token_parts = auth_header.split()
-        if len(token_parts) != 2:
-            return get_error_data_result(message="Authorization is not valid")
-        token = token_parts[1]
-        objs = APIToken.query(beta=token)
-        if not objs:
-            return get_error_data_result(message="Authentication error: API key is invalid")
-
-        search_id = request.args["search_id"]
-        tenant_id = objs[0].tenant_id
+        tenant_id = request.api_token.tenant_id
         if not tenant_id:
-            return get_error_data_result(message="permission denined.")
+            return get_error_data_result(message="permission denied.")
         try:
             tenants = UserTenantService.query(user_id=tenant_id)
             for tenant in tenants:
@@ -368,20 +318,9 @@ Related search terms:
 
     @manager.route("/searchbots/mindmap", methods=["POST"])
     @validate_request("question", "kb_ids")
+    @require_api_token
     async def mindmap():
-        auth_header = request.headers.get("Authorization")
-        if not auth_header:
-            return get_error_data_result(message="Authorization header is missing")
-
-        token_parts = auth_header.split()
-        if len(token_parts) != 2:
-            return get_error_data_result(message="Authorization is not valid")
-        token = token_parts[1]
-        objs = APIToken.query(beta=token)
-        if not objs:
-            return get_error_data_result(message="Authentication error: API key is invalid")
-
-        tenant_id = objs[0].tenant_id
+        tenant_id = request.api_token.tenant_id
         req = await get_request_json()
 
         search_id = req.get("search_id", "")

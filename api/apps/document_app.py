@@ -666,7 +666,7 @@ async def upload_and_parse():
             return get_json_result(data=False, message="No file selected!", code=RetCode.ARGUMENT_ERROR)
 
     form = await request.form
-    doc_ids = IngestionService.doc_upload_and_parse(form.get("conversation_id"), file_objs, current_user.id)
+    doc_ids = await asyncio.to_thread(IngestionService.doc_upload_and_parse, form.get("conversation_id"), file_objs, current_user.id)
     return get_json_result(data=doc_ids)
 
 

@@ -432,7 +432,8 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
 
     unfinished_task_array = [task for task in parse_task_array if task["progress"] < 1.0]
     for unfinished_task in unfinished_task_array:
-        assert REDIS_CONN.queue_product(settings.get_svr_queue_name(priority), message=unfinished_task), "Can't access Redis. Please check the Redis' status."
+        if not REDIS_CONN.queue_product(settings.get_svr_queue_name(priority), message=unfinished_task):
+            raise RuntimeError("Can't access Redis. Please check the Redis' status.")
 
 
 def reuse_prev_task_chunks(task: dict, prev_tasks: list[dict], chunking_config: dict):

@@ -266,7 +266,11 @@ class DocumentService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def get_total_size_by_kb_id(cls, kb_id, keywords="", run_status=[], types=[]):
+    def get_total_size_by_kb_id(cls, kb_id, keywords="", run_status=None, types=None):
+        if run_status is None:
+            run_status = []
+        if types is None:
+            types = []
         query = cls.model.select(fn.COALESCE(fn.SUM(cls.model.size), 0)).where(cls.model.kb_id == kb_id)
 
         if keywords:

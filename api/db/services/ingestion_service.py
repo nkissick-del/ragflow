@@ -55,6 +55,8 @@ class IngestionService(CommonService):
             raise LookupError("Conversation not found!")
 
         e, dia = DialogService.get_by_id(conv.dialog_id)
+        if not e:
+            raise LookupError("Dialog not found!")
         if not dia.kb_ids:
             raise LookupError("No dataset associated with this conversation. Please add a dataset before uploading documents")
         kb_id = dia.kb_ids[0]
@@ -90,8 +92,9 @@ class IngestionService(CommonService):
                 d = deepcopy(doc)
                 d.update(ck)
                 d["id"] = xxhash.xxh64((ck["content_with_weight"] + str(d["doc_id"])).encode("utf-8")).hexdigest()
-                d["create_time"] = str(datetime.now()).replace("T", " ")[:19]
-                d["create_timestamp_flt"] = datetime.now().timestamp()
+                now = datetime.now()
+                d["create_time"] = now.strftime("%Y-%m-%d %H:%M:%S")
+                d["create_timestamp_flt"] = now.timestamp()
                 if not d.get("image"):
                     docs.append(d)
                     continue
@@ -135,25 +138,32 @@ class IngestionService(CommonService):
                 from graphrag.general.mind_map_extractor import MindMapExtractor
 
                 mindmap = MindMapExtractor(llm_bdl)
-                try:
-                    mind_map = asyncio.run(mindmap([c["content_with_weight"] for c in docs if c["doc_id"] == doc_id]))
-                    mind_map = json.dumps(mind_map.output, ensure_ascii=False, indent=2)
-                    if len(mind_map) < 32:
-                        raise Exception("Few content: " + mind_map)
-                    cks.append(
-                        {
-                            "id": get_uuid(),
-                            "doc_id": doc_id,
-                            "kb_id": [kb.id],
-                            "docnm_kwd": doc_nm[doc_id],
-                            "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", doc_nm[doc_id])),
-                            "content_ltks": rag_tokenizer.tokenize("summary summarize 总结 概况 file 文件 概括"),
-                            "content_with_weight": mind_map,
-                            "knowledge_graph_kwd": "mind_map",
-                        }
-                    )
-                except Exception:
-                    logging.exception("Mind map generation error")
+
+                async def process_mindmap(content_list):
+                    try:
+                        res = await mindmap(content_list)
+                        return json.dumps(res.output, ensure_ascii=False, indent=2)
+                    except Exception:
+                        logging.exception("Mind map generation error")
+                        return ""
+
+                mind_map_results = asyncio.run(process_mindmap([c["content_with_weight"] for c in docs if c["doc_id"] == doc_id]))
+                if mind_map_results:
+                    if len(mind_map_results) < 32:
+                        logging.error("Few content: " + mind_map_results)
+                    else:
+                        cks.append(
+                            {
+                                "id": get_uuid(),
+                                "doc_id": doc_id,
+                                "kb_id": [kb.id],
+                                "docnm_kwd": doc_nm[doc_id],
+                                "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", doc_nm[doc_id])),
+                                "content_ltks": rag_tokenizer.tokenize("summary summarize 总结 概况 file 文件 概括"),
+                                "content_with_weight": mind_map_results,
+                                "knowledge_graph_kwd": "mind_map",
+                            }
+                        )
 
             vectors = embedding(doc_id, [c["content_with_weight"] for c in cks])
             assert len(cks) == len(vectors)
@@ -162,8 +172,10 @@ class IngestionService(CommonService):
                 d["q_%d_vec" % len(v)] = v
             for b in range(0, len(cks), es_bulk_size):
                 if try_create_idx:
-                    if not settings.docStoreConn.index_exist(idxnm, kb_id):
-                        settings.docStoreConn.create_idx(idxnm, kb_id, len(vectors[0]))
+                    if vectors:
+                        dim = len(vectors[0])
+                        if not settings.docStoreConn.index_exist(idxnm, kb_id):
+                            settings.docStoreConn.create_idx(idxnm, kb_id, dim)
                     try_create_idx = False
                 settings.docStoreConn.insert(cks[b : b + es_bulk_size], idxnm, kb_id)
 
@@ -174,15 +186,13 @@ class IngestionService(CommonService):
     @classmethod
     @DB.connection_context()
     def queue_raptor_o_graphrag_tasks(cls, sample_doc, ty, priority, fake_doc_id="", doc_ids=None):
-        from common.misc_utils import get_uuid
-
-        if doc_ids is None:
-            doc_ids = []
-
         """
         You can provide a fake_doc_id to bypass the restriction of tasks at the knowledgebase level.
         Optionally, specify a list of doc_ids to determine which documents participate in the task.
         """
+        if doc_ids is None:
+            doc_ids = []
+
         assert ty in ["graphrag", "raptor", "mindmap"], "type should be graphrag, raptor or mindmap"
 
         chunking_config = DocumentService.get_chunking_config(sample_doc["id"])
@@ -223,7 +233,7 @@ class IngestionService(CommonService):
             "process_begin_at": get_format_time(),
         }
         if not keep_progress:
-            info["progress"] = random.random() * 1 / 100.0
+            info["progress"] = random.random() / 100.0
             info["run"] = TaskStatus.RUNNING.value
             # keep the doc in DONE state when keep_progress=True for GraphRAG, RAPTOR and Mindmap tasks
 
@@ -304,21 +314,22 @@ class IngestionService(CommonService):
                         e, kb = KnowledgebaseService.get_by_id(doc.kb_id)
                         if not e:
                             raise LookupError("Can't find this dataset!")
-                        doc.parser_config["llm_id"] = kb.parser_config.get("llm_id")
-                        doc.parser_config["enable_metadata"] = kb.parser_config.get("enable_metadata", False)
-                        doc.parser_config["metadata"] = kb.parser_config.get("metadata", {})
-                        DocumentService.update_parser_config(doc.id, doc.parser_config)
+
+                        new_config = dict(doc.parser_config or {})
+                        new_config.update(
+                            {"llm_id": kb.parser_config.get("llm_id"), "enable_metadata": kb.parser_config.get("enable_metadata", False), "metadata": kb.parser_config.get("metadata", {})}
+                        )
+                        DocumentService.update_parser_config(doc.id, new_config)
                     doc_dict = doc.to_dict()
                     should_run = True
 
-            if should_cancel:
-                cancel_all_task_of(doc_id)
-            if should_delete:
-                TaskService.filter_delete([Task.doc_id == doc_id])
-                if settings.docStoreConn.index_exist(search.index_name(tenant_id), doc_kb_id):
-                    settings.docStoreConn.delete({"doc_id": doc_id}, search.index_name(tenant_id), doc_kb_id)
+                if should_cancel:
+                    cancel_all_task_of(doc_id)
+                if should_delete:
+                    TaskService.filter_delete([Task.doc_id == doc_id])
+                    if settings.docStoreConn.index_exist(search.index_name(tenant_id), doc_kb_id):
+                        settings.docStoreConn.delete({"doc_id": doc_id}, search.index_name(tenant_id), doc_kb_id)
 
-            with DB.atomic():
                 DocumentService.update_by_id(doc_id, info)
 
             if should_run:

@@ -13,7 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import asyncio
+
 import base64
 import logging
 import re
@@ -707,13 +707,13 @@ class FileService(CommonService):
                         result: CrawlResult = await crawler.arun(url=url, config=crawler_config)
                         return result
 
-                page = asyncio.run(adownload())
+                page = await adownload()
                 if page.pdf:
                     if filename.split(".")[-1].lower() != "pdf":
                         filename += ".pdf"
-                    return structured(filename, "pdf", page.pdf, page.response_headers["content-type"])
+                    return structured(filename, FileType.PDF.value, page.pdf, page.response_headers.get("content-type", "application/pdf"))
 
-                return structured(filename, "html", str(page.markdown).encode("utf-8"), page.response_headers["content-type"], user_id)
+                return structured(filename, filename_type(filename), str(page.markdown).encode("utf-8"), page.response_headers.get("content-type", "text/html"))
             except Exception as e:
                 raise ValueError(f"Download failure: {e}")
 
@@ -753,7 +753,11 @@ class FileService(CommonService):
         kb_root_folder = cls.get_kb_folder(user_id)
         kb_folder = cls.new_a_file_from_kb(kb.tenant_id, kb.name, kb_root_folder["id"])
 
-        name = name if not name.lower().endswith(".pdf") else name[:-4]
+        if name.strip().lower() == ".pdf" or not name.strip():
+            name = "file"
+        else:
+            name = name if not name.lower().endswith(".pdf") else name[:-4]
+        name = name.strip()
         filename = duplicate_name(DocumentService.query, name=name + ".pdf", kb_id=kb.id)
         filetype = filename_type(filename)
         if filetype == FileType.OTHER.value:

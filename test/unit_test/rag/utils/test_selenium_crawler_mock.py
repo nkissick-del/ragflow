@@ -1,99 +1,127 @@
 import unittest
 import sys
 import os
+
+import importlib
 from unittest.mock import MagicMock, patch
-
-# Global Mocking of selenium and seleniumwire to handle missing dependencies in test environment
-if "selenium" not in sys.modules:
-    selenium_mock = MagicMock()
-    selenium_mock.common.exceptions.TimeoutException = TimeoutError
-    sys.modules["selenium"] = selenium_mock
-    sys.modules["selenium.common"] = selenium_mock.common
-    sys.modules["selenium.common.exceptions"] = selenium_mock.common.exceptions
-
-if "seleniumwire" not in sys.modules:
-    sys.modules["seleniumwire"] = MagicMock()
-    sys.modules["seleniumwire.webdriver"] = MagicMock()
-
-if "deepdoc" not in sys.modules:
-    sys.modules["deepdoc"] = MagicMock()
-    sys.modules["deepdoc.parser"] = MagicMock()
-    sys.modules["deepdoc.parser.html_parser"] = MagicMock()
-
-if "api" not in sys.modules:
-    sys.modules["api"] = MagicMock()
-    sys.modules["api.db"] = MagicMock()
-    sys.modules["api.db.services"] = MagicMock()
-    sys.modules["api.db.services.file_service"] = MagicMock()
-
-# Now we can safely import the module under test (it will use the mocks)
-# However, we need to ensure patches apply to the mocked modules or import happens here
-# It is better to import inside tests or after mocks if we rely on global mocks
-# But we already mocked sys.modules so standard import should work.
-
-from rag.utils.selenium_crawler import SeleniumCrawler
 
 
 class TestSeleniumCrawler(unittest.TestCase):
-    @patch("seleniumwire.webdriver.Chrome")
-    @patch("seleniumwire.webdriver.ChromeOptions")
-    def test_parse_url_html(self, MockOptions, MockChrome):
+    def setUp(self):
+        # Create mocks for dependencies
+        self.mock_selenium = MagicMock()
+        self.mock_selenium.common.exceptions.TimeoutException = TimeoutError
+
+        self.mock_seleniumwire = MagicMock()
+        self.mock_deepdoc = MagicMock()
+        self.mock_api = MagicMock()
+
+        # Setup the patcher for sys.modules
+        self.modules_patcher = patch.dict(
+            sys.modules,
+            {
+                "selenium": self.mock_selenium,
+                "selenium.common": self.mock_selenium.common,
+                "selenium.common.exceptions": self.mock_selenium.common.exceptions,
+                "seleniumwire": self.mock_seleniumwire,
+                "seleniumwire.webdriver": self.mock_seleniumwire.webdriver,
+                "deepdoc": self.mock_deepdoc,
+                "deepdoc.parser": self.mock_deepdoc.parser,
+                "deepdoc.parser.html_parser": self.mock_deepdoc.parser.html_parser,
+                "api": self.mock_api,
+                "api.db": self.mock_api.db,
+                "api.db.services": self.mock_api.db.services,
+                "api.db.services.file_service": self.mock_api.db.services.file_service,
+            },
+        )
+        self.modules_patcher.start()
+
+        # Import (and reload) the module under test to apply mocks
+        import rag.utils.selenium_crawler
+
+        self.crawler_module = importlib.reload(rag.utils.selenium_crawler)
+        self.SeleniumCrawler = self.crawler_module.SeleniumCrawler
+
+        # Shortcuts for verification
+        self.MockChrome = self.mock_seleniumwire.webdriver.Chrome
+        self.MockOptions = self.mock_seleniumwire.webdriver.ChromeOptions
+        self.MockFileService = self.mock_api.db.services.file_service.FileService
+        self.MockHtmlParser = self.mock_deepdoc.parser.html_parser.RAGFlowHtmlParser
+
+    def tearDown(self):
+        self.modules_patcher.stop()
+
+    def test_parse_url_html(self):
         # Setup mock driver and response
-        mock_driver = MockChrome.return_value
+        mock_driver = self.MockChrome.return_value
         mock_request = MagicMock()
         mock_request.response.headers = {"Content-Type": "text/html; charset=utf-8"}
         mock_driver.requests = [mock_request]
         mock_driver.page_source = "<html><body><p>Hello World</p></body></html>"
 
-        # Mock HtmlParser
-        with patch("rag.utils.selenium_crawler.RAGFlowHtmlParser") as MockParser:
-            MockParser.return_value.parser_txt.return_value = ["Hello World"]
+        # Mock HtmlParser result
+        self.MockHtmlParser.return_value.parser_txt.return_value = ["Hello World"]
 
-            result = SeleniumCrawler.parse_url("http://example.com", "/tmp/downloads", "user1")
+        result = self.SeleniumCrawler.parse_url("http://example.com", "/tmp/downloads", "user1")
 
-            self.assertEqual(result, "Hello World")
-            mock_driver.quit.assert_called_once()
-            # Verify timeout set
-            mock_driver.set_page_load_timeout.assert_called_with(120)
+        self.assertEqual(result, "Hello World")
+        mock_driver.quit.assert_called_once()
+        mock_driver.set_page_load_timeout.assert_called_with(120)
 
-    @patch("seleniumwire.webdriver.Chrome")
-    @patch("seleniumwire.webdriver.ChromeOptions")
-    @patch("rag.utils.selenium_crawler.FileService")
-    @patch("rag.utils.selenium_crawler._LocalFile")
-    def test_parse_url_file_content_disposition(self, MockLocalFile, MockFileService, MockOptions, MockChrome):
+    def test_parse_url_file_content_disposition(self):
         # Setup mock driver and response
-        mock_driver = MockChrome.return_value
+        mock_driver = self.MockChrome.return_value
         mock_request = MagicMock()
         mock_request.response.headers = {"Content-Type": "application/pdf", "Content-Disposition": 'attachment; filename="test.pdf"'}
         mock_driver.requests = [mock_request]
 
-        SeleniumCrawler.parse_url("http://example.com/file.pdf", "/tmp/downloads", "user1")
+        # Determine where _LocalFile is in the reloaded module
+        # Since we use patched sys.modules, imports inside selenium_crawler are using mocks.
+        # But _LocalFile is defined in selenium_crawler.py, so we should patch it on the module instance.
 
-        # Verify LocalFile created with correct filename
-        MockLocalFile.assert_called_with("test.pdf", os.path.join("/tmp/downloads", "test.pdf"))
-        # MockFileService.parse_docs.assert_called_once()
-        mock_driver.quit.assert_called_once()
+        with (
+            patch.object(self.crawler_module, "_LocalFile") as MockLocalFile,
+            patch.object(self.crawler_module, "FileService") as MockFileService,
+            patch.object(self.SeleniumCrawler, "wait_for_download") as MockWait,
+        ):
+            MockWait.return_value = "test.pdf"
+            MockFileService.parse_docs.return_value = ["parsed_doc"]
 
-    @patch("seleniumwire.webdriver.Chrome")
-    @patch("seleniumwire.webdriver.ChromeOptions")
-    @patch("rag.utils.selenium_crawler.FileService")
-    @patch("rag.utils.selenium_crawler._LocalFile")
-    @patch("rag.utils.selenium_crawler.SeleniumCrawler.wait_for_download")
-    def test_parse_url_file_wait_download(self, MockWait, MockLocalFile, MockFileService, MockOptions, MockChrome):
-        # Setup mock driver and response
-        mock_driver = MockChrome.return_value
+            result = self.SeleniumCrawler.parse_url("http://example.com/file.pdf", "/tmp/downloads", "user1")
+
+            # Verify wait_for_download called to verify existence
+            MockWait.assert_called_with("/tmp/downloads", expected_filename="test.pdf")
+
+            # Verify LocalFile created
+            MockLocalFile.assert_called_with("test.pdf", os.path.join("/tmp/downloads", "test.pdf"))
+
+            # Verify validation
+            self.assertEqual(result, ["parsed_doc"])
+            MockFileService.parse_docs.assert_called_once()
+
+            mock_driver.quit.assert_called_once()
+
+    def test_parse_url_file_wait_download(self):
+        # Setup mock driver
+        mock_driver = self.MockChrome.return_value
         mock_request = MagicMock()
-        # No Content-Disposition filename
         mock_request.response.headers = {"Content-Type": "application/pdf"}
         mock_driver.requests = [mock_request]
 
-        MockWait.return_value = "downloaded_file.pdf"
+        with (
+            patch.object(self.crawler_module, "_LocalFile") as MockLocalFile,
+            patch.object(self.SeleniumCrawler, "wait_for_download") as MockWait,
+            patch.object(self.crawler_module, "FileService") as MockFileService,
+        ):
+            MockWait.return_value = "downloaded_file.pdf"
+            MockFileService.parse_docs.return_value = ["parsed_doc"]
 
-        SeleniumCrawler.parse_url("http://example.com/file.pdf", "/tmp/downloads", "user1")
+            result = self.SeleniumCrawler.parse_url("http://example.com/file.pdf", "/tmp/downloads", "user1")
 
-        MockWait.assert_called_with("/tmp/downloads")
-        MockLocalFile.assert_called_with("downloaded_file.pdf", os.path.join("/tmp/downloads", "downloaded_file.pdf"))
-        mock_driver.quit.assert_called_once()
+            MockWait.assert_called_with("/tmp/downloads")
+            MockLocalFile.assert_called_with("downloaded_file.pdf", os.path.join("/tmp/downloads", "downloaded_file.pdf"))
+            self.assertEqual(result, ["parsed_doc"])
+            mock_driver.quit.assert_called_once()
 
     @patch("os.listdir")
     @patch("os.path.isfile")
@@ -101,21 +129,45 @@ class TestSeleniumCrawler(unittest.TestCase):
     @patch("time.sleep")
     @patch("time.time")
     def test_wait_for_download(self, mock_time, mock_sleep, mock_getsize, mock_isfile, mock_listdir):
-        # Sequence of time.time() calls: start, check loop 1, check loop 2...
-        # We need to simulate the file appearing and becoming stable.
+        # Use a callable side_effect for time.time to be deterministic and robust
+        # Start at 0, increment by 1 on each call
+        self.time_counter = 0
 
-        # Iteration 1: Only temp file
-        # Iteration 2: Real file appears, initial size
-        # Iteration 3: Real file stable size
+        def time_side_effect():
+            self.time_counter += 1
+            return self.time_counter
 
-        mock_time.side_effect = [0, 1, 2, 3, 4, 100]  # simulating time passing
+        mock_time.side_effect = time_side_effect
 
-        mock_listdir.side_effect = [["file.crdownload"], ["target.pdf"], ["target.pdf"]]
+        # Scenario:
+        # 1. Start (time=1)
+        # 2. Check initial files (only if no expected_filename, but let's assume standard flow)
+        #    Wait, my code calls set(os.listdir) at start.
+        # 3. Loop: time check (time=2 < start+10)
+        # 4. listdir -> finds nothing or crdownload
+        # 5. sleep
+        # 6. Loop: time check (time=3)
+        # 7. listdir -> finds target
+        # 8. isfile -> True
+        # 9. getsize -> 100
+        # 10. sleep
+        # 11. getsize -> 100 (stable)
+        # 12. return
+
+        mock_listdir.side_effect = [
+            ["file.crdownload"],  # Initial check
+            ["file.crdownload"],  # Loop 1
+            ["file.crdownload", "target.pdf"],  # Loop 2
+            ["file.crdownload", "target.pdf"],  # Loop 3 (if needed)
+        ]
 
         mock_isfile.return_value = True
-        mock_getsize.side_effect = [100, 100]  # Size stable
+        mock_getsize.side_effect = [100, 100]  # Stable size
 
-        result = SeleniumCrawler.wait_for_download("/downloads", timeout=10)
+        # We need to ensure we don't timeout. timeout=10.
+        # time values will be 1, 2, ...
+
+        result = self.SeleniumCrawler.wait_for_download("/downloads", timeout=10)
         self.assertEqual(result, "target.pdf")
 
 

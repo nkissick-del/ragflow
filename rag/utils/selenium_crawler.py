@@ -4,6 +4,9 @@ import time
 from selenium.common.exceptions import TimeoutException
 from deepdoc.parser.html_parser import RAGFlowHtmlParser
 from api.db.services.file_service import FileService
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class _LocalFile:
@@ -21,20 +24,36 @@ class _LocalFile:
 
 class SeleniumCrawler:
     @staticmethod
-    def wait_for_download(download_path, timeout=120):
+    def wait_for_download(download_path, timeout=120, expected_filename=None):
         start_time = time.time()
+        initial_files = set(os.listdir(download_path)) if expected_filename is None else set()
+
         while time.time() - start_time < timeout:
-            files = os.listdir(download_path)
-            for fname in files:
-                if fname.endswith(".crdownload"):
-                    continue
-                file_path = os.path.join(download_path, fname)
+            if expected_filename:
+                file_path = os.path.join(download_path, expected_filename)
                 if os.path.isfile(file_path):
-                    # Check if file size is stable
-                    initial_size = os.path.getsize(file_path)
-                    time.sleep(1)
-                    if os.path.getsize(file_path) == initial_size:
-                        return fname
+                    try:
+                        initial_size = os.path.getsize(file_path)
+                        time.sleep(1)
+                        if os.path.getsize(file_path) == initial_size:
+                            return expected_filename
+                    except (FileNotFoundError, OSError):
+                        continue
+            else:
+                files = os.listdir(download_path)
+                for fname in files:
+                    if fname in initial_files or fname.endswith(".crdownload"):
+                        continue
+                    file_path = os.path.join(download_path, fname)
+                    if os.path.isfile(file_path):
+                        try:
+                            # Check if file size is stable
+                            initial_size = os.path.getsize(file_path)
+                            time.sleep(1)
+                            if os.path.getsize(file_path) == initial_size:
+                                return fname
+                        except (FileNotFoundError, OSError):
+                            continue
             time.sleep(1)
         raise TimeoutError("Download timed out")
 
@@ -55,8 +74,8 @@ class SeleniumCrawler:
         try:
             try:
                 driver.get(url)
-            except TimeoutException:
-                # Handle timeout but continue to check if anything was downloaded or if we have headers
+            except TimeoutException as e:
+                logger.warning(f"Timeout loading {url}: {e}")
                 pass
 
             res_headers = [r.response.headers for r in driver.requests if r and r.response]
@@ -77,6 +96,18 @@ class SeleniumCrawler:
                 r = re.search(r"filename=\"?([^\";]+)\"?", content_disposition)
                 if r and r.group(1):
                     filename = r.group(1)
+                    # Sanitize filename
+                    filename = os.path.basename(filename)
+                    filename = filename.lstrip(".").replace("\x00", "")
+                    if not filename:
+                        filename = f"downloaded_{int(time.time())}"
+
+            if filename:
+                # Fallback to waiting for a file in the download directory
+                try:
+                    filename = SeleniumCrawler.wait_for_download(download_path, expected_filename=filename)
+                except TimeoutError:
+                    raise ValueError("Cannot identify downloaded file")
 
             if not filename:
                 # Fallback to waiting for a file in the download directory

@@ -737,7 +737,9 @@ async def set_meta():
 async def upload_info():
     files = await request.files
     file = files.get("file")
+    if not file:
+        return get_json_result(data=False, message="No file selected!", code=RetCode.ARGUMENT_ERROR)
     try:
-        return get_json_result(data=FileService.upload_info(current_user.id, file, request.args.get("url")))
+        return get_json_result(data=await FileService.upload_info(current_user.id, file, request.args.get("url")))
     except Exception as e:
         return server_error_response(e)

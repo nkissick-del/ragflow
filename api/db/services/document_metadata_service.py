@@ -117,7 +117,8 @@ class DocumentMetadataService(CommonService):
         empty_metadata_count = 0
 
         # We select only meta_fields to minimize data transfer for the loop
-        meta_rows = query.select(cls.model.meta_fields)
+        # Use iterator to avoid loading all objects into memory
+        meta_rows = query.select(cls.model.meta_fields).iterator()
 
         for row in meta_rows:
             meta_fields = row.meta_fields or {}
@@ -169,7 +170,7 @@ class DocumentMetadataService(CommonService):
         meta = {}
         for r in cls.model.select(*fields).where(cls.model.kb_id.in_(kb_ids)):
             doc_id = r.id
-            for k, v in r.meta_fields.items():
+            for k, v in (r.meta_fields or {}).items():
                 if k not in meta:
                     meta[k] = {}
                 if not isinstance(v, list):
@@ -332,6 +333,7 @@ class DocumentMetadataService(CommonService):
             return changed
 
         updated_docs = 0
+        docs_to_update = []
         with DB.atomic():
             rows = cls.model.select(cls.model.id, cls.model.meta_fields).where((cls.model.id.in_(doc_ids)) & (cls.model.kb_id == kb_id))
             for r in rows:
@@ -340,6 +342,16 @@ class DocumentMetadataService(CommonService):
                 changed = _apply_updates(meta)
                 changed = _apply_deletes(meta) or changed
                 if changed and meta != original_meta:
-                    cls.model.update(meta_fields=meta, update_time=current_timestamp(), update_date=get_format_time()).where(cls.model.id == r.id).execute()
-                    updated_docs += 1
+                    r.meta_fields = meta
+                    r.update_time = current_timestamp()
+                    r.update_date = get_format_time()
+                    docs_to_update.append(r)
+
+            if docs_to_update:
+                # Update in batches of 100 to avoid overly large SQL statements
+                batch_size = 100
+                for i in range(0, len(docs_to_update), batch_size):
+                    batch = docs_to_update[i : i + batch_size]
+                    cls.model.bulk_update(batch, fields=[cls.model.meta_fields, cls.model.update_time, cls.model.update_date])
+                    updated_docs += len(batch)
         return updated_docs

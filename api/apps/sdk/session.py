@@ -477,6 +477,7 @@ async def agents_completion_openai_compatibility(tenant_id, agent_id):
         return resp
     else:
         # For non-streaming, just return the response directly
+        has_result = False
         async for response in completion_openai(
             tenant_id,
             agent_id,
@@ -485,9 +486,11 @@ async def agents_completion_openai_compatibility(tenant_id, agent_id):
             stream=False,
             **req,
         ):
+            has_result = True
             return jsonify(response)
 
-        return None
+        if not has_result:
+            return jsonify(get_error_data_result("No completion generated")), 500
 
 
 @manager.route("/agents/<agent_id>/completions", methods=["POST"])  # noqa: F821
@@ -660,7 +663,11 @@ async def list_agent_session(tenant_id, agent_id):
                 if message_num != 0 and messages[message_num]["role"] != "user":
                     chunk_list = []
                     # Add boundary and type checks to prevent KeyError
-                    if chunk_num < len(conv["reference"]) and conv["reference"][chunk_num] is not None and isinstance(conv["reference"][chunk_num], dict) and "chunks" in conv["reference"][chunk_num]:
+                    is_valid_chunk = (
+                        chunk_num < len(conv["reference"]) and conv["reference"][chunk_num] is not None and isinstance(conv["reference"][chunk_num], dict) and "chunks" in conv["reference"][chunk_num]
+                    )
+
+                    if is_valid_chunk:
                         chunks = conv["reference"][chunk_num]["chunks"]
                         for chunk in chunks:
                             # Ensure chunk is a dictionary before calling get method
@@ -876,10 +883,14 @@ Related search terms:
 async def chatbot_completions(dialog_id):
     req = await get_request_json()
 
-    token = request.headers.get("Authorization").split()
-    if len(token) != 2:
+    auth_header = request.headers.get("Authorization")
+    if not auth_header:
+        return get_error_data_result(message='Authorization header is missing!"')
+
+    token_parts = auth_header.split()
+    if len(token_parts) != 2:
         return get_error_data_result(message='Authorization is not valid!"')
-    token = token[1]
+    token = token_parts[1]
     objs = APIToken.query(beta=token)
     if not objs:
         return get_error_data_result(message='Authentication error: API key is invalid!"')

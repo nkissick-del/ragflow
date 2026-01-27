@@ -74,7 +74,7 @@ async def update():
     if req["name"].strip() == "":
         return get_data_error_result(message="Dataset name can't be empty.")
     if len(req["name"].encode("utf-8")) > DATASET_NAME_LIMIT:
-        return get_data_error_result(message=f"Dataset name length is {len(req['name'])} which is large than {DATASET_NAME_LIMIT}")
+        return get_data_error_result(message=f"Dataset name length is {len(req['name'].encode('utf-8'))} which is larger than {DATASET_NAME_LIMIT}")
     req["name"] = req["name"].strip()
     if settings.DOC_ENGINE_INFINITY:
         parser_id = req.get("parser_id")

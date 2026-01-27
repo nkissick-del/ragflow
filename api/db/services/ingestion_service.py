@@ -51,7 +51,8 @@ class IngestionService(CommonService):
         e, conv = ConversationService.get_by_id(conversation_id)
         if not e:
             e, conv = API4ConversationService.get_by_id(conversation_id)
-        assert e, "Conversation not found!"
+        if not e:
+            raise LookupError("Conversation not found!")
 
         e, dia = DialogService.get_by_id(conv.dialog_id)
         if not dia.kb_ids:
@@ -64,24 +65,26 @@ class IngestionService(CommonService):
         embd_mdl = LLMBundle(kb.tenant_id, "embedding", llm_name=kb.embd_id, lang=kb.language)
 
         err, files = FileService.upload_document(kb, file_objs, user_id)
-        assert not err, "\n".join(err)
+        if err:
+            raise RuntimeError("\n".join(err))
 
         def dummy(prog=None, msg=""):
             pass
 
         FACTORY = {ParserType.PRESENTATION.value: presentation, ParserType.PICTURE.value: picture, ParserType.AUDIO.value: audio, ParserType.EMAIL.value: email}
         parser_config = {"chunk_token_num": 4096, "delimiter": "\n!?;。；！？", "layout_recognize": "Plain Text", "table_context_size": 0, "image_context_size": 0}
-        exe = ThreadPoolExecutor(max_workers=12)
-        threads = []
         doc_nm = {}
         for d, blob in files:
             doc_nm[d["id"]] = d["name"]
-        for d, blob in files:
-            kwargs = {"callback": dummy, "parser_config": parser_config, "from_page": 0, "to_page": 100000, "tenant_id": kb.tenant_id, "lang": kb.language}
-            threads.append(exe.submit(FACTORY.get(d["parser_id"], naive).chunk, d["name"], blob, **kwargs))
+
+        docs = []
+        threads = []
+        with ThreadPoolExecutor(max_workers=12) as exe:
+            for d, blob in files:
+                kwargs = {"callback": dummy, "parser_config": parser_config, "from_page": 0, "to_page": 100000, "tenant_id": kb.tenant_id, "lang": kb.language}
+                threads.append(exe.submit(FACTORY.get(d["parser_id"], naive).chunk, d["name"], blob, **kwargs))
 
         for (docinfo, _), th in zip(files, threads):
-            docs = []
             doc = {"doc_id": docinfo["id"], "kb_id": [kb.id]}
             for ck in th.result():
                 d = deepcopy(doc)
@@ -170,8 +173,11 @@ class IngestionService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def queue_raptor_o_graphrag_tasks(cls, sample_doc_id, ty, priority, fake_doc_id="", doc_ids=[]):
+    def queue_raptor_o_graphrag_tasks(cls, sample_doc, ty, priority, fake_doc_id="", doc_ids=None):
         from common.misc_utils import get_uuid
+
+        if doc_ids is None:
+            doc_ids = []
 
         """
         You can provide a fake_doc_id to bypass the restriction of tasks at the knowledgebase level.
@@ -179,16 +185,16 @@ class IngestionService(CommonService):
         """
         assert ty in ["graphrag", "raptor", "mindmap"], "type should be graphrag, raptor or mindmap"
 
-        chunking_config = DocumentService.get_chunking_config(sample_doc_id["id"])
+        chunking_config = DocumentService.get_chunking_config(sample_doc["id"])
         hasher = xxhash.xxh64()
         for field in sorted(chunking_config.keys()):
             hasher.update(str(chunking_config[field]).encode("utf-8"))
 
         def new_task():
-            nonlocal sample_doc_id
+            nonlocal sample_doc
             return {
                 "id": get_uuid(),
-                "doc_id": sample_doc_id["id"],
+                "doc_id": sample_doc["id"],
                 "from_page": 100000000,
                 "to_page": 100000000,
                 "task_type": ty,
@@ -205,7 +211,7 @@ class IngestionService(CommonService):
 
         task["doc_id"] = fake_doc_id
         task["doc_ids"] = doc_ids
-        cls.begin2parse(sample_doc_id["id"], keep_progress=True)
+        cls.begin2parse(sample_doc["id"], keep_progress=True)
         assert REDIS_CONN.queue_product(settings.get_svr_queue_name(priority), message=task), "Can't access Redis. Please check the Redis' status."
         return task["id"]
 
@@ -286,10 +292,10 @@ class IngestionService(CommonService):
                     else:
                         raise ValueError("Cannot cancel a task that is not in RUNNING status")
 
-                if all([delete_flag, str(run_status) == TaskStatus.RUNNING.value, str(doc.run) == TaskStatus.DONE.value]):
+                is_rerun_condition = all([delete_flag, str(run_status) == TaskStatus.RUNNING.value, str(doc.run) == TaskStatus.DONE.value])
+                if is_rerun_condition:
                     DocumentService.clear_chunk_num_when_rerun(doc.id)
 
-                DocumentService.update_by_id(doc_id, info)
                 if delete_flag:
                     should_delete = True
 
@@ -311,6 +317,10 @@ class IngestionService(CommonService):
                 TaskService.filter_delete([Task.doc_id == doc_id])
                 if settings.docStoreConn.index_exist(search.index_name(tenant_id), doc_kb_id):
                     settings.docStoreConn.delete({"doc_id": doc_id}, search.index_name(tenant_id), doc_kb_id)
+
+            with DB.atomic():
+                DocumentService.update_by_id(doc_id, info)
+
             if should_run:
                 cls.run(tenant_id, doc_dict, kb_table_num_map)
         return True

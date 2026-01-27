@@ -31,14 +31,14 @@ from api.db.services.conversation_service import async_iframe_completion as ifra
 from api.db.services.conversation_service import async_completion as rag_completion
 from api.db.services.dialog_service import DialogService, async_ask, async_chat, gen_mindmap
 from api.db.services.document_service import DocumentService
+from api.db.services.document_metadata_service import DocumentMetadataService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from common.metadata_utils import apply_meta_data_filter, convert_conditions, meta_filter
 from api.db.services.search_service import SearchService
 from api.db.services.user_service import UserTenantService
 from common.misc_utils import get_uuid
-from api.utils.api_utils import check_duplicate_ids, get_data_openai, get_error_data_result, get_json_result, \
-    get_result, get_request_json, server_error_response, token_required, validate_request
+from api.utils.api_utils import check_duplicate_ids, get_data_openai, get_error_data_result, get_json_result, get_result, get_request_json, server_error_response, token_required, validate_request
 from rag.app.tag import label_question
 from rag.prompts.template import load_prompt
 from rag.prompts.generator import cross_languages, keyword_extraction, chunks_format
@@ -92,8 +92,7 @@ async def create_agent_session(tenant_id, agent_id):
     canvas.reset()
 
     cvs.dsl = json.loads(str(canvas))
-    conv = {"id": session_id, "dialog_id": cvs.id, "user_id": user_id,
-            "message": [{"role": "assistant", "content": canvas.get_prologue()}], "source": "agent", "dsl": cvs.dsl}
+    conv = {"id": session_id, "dialog_id": cvs.id, "user_id": user_id, "message": [{"role": "assistant", "content": canvas.get_prologue()}], "source": "agent", "dsl": cvs.dsl}
     API4ConversationService.save(**conv)
     conv["agent_id"] = conv.pop("dialog_id")
     return get_result(data=conv)
@@ -142,7 +141,7 @@ async def chat_completion(tenant_id, chat_id):
         return get_error_data_result(message="metadata_condition must be an object.")
 
     if metadata_condition and req.get("question"):
-        metas = DocumentService.get_meta_by_kbs(dia.kb_ids or [])
+        metas = DocumentMetadataService.get_meta_by_kbs(dia.kb_ids or [])
         filtered_doc_ids = meta_filter(
             metas,
             convert_conditions(metadata_condition),
@@ -274,7 +273,7 @@ async def chat_completion_openai_like(tenant_id, chat_id):
 
     doc_ids_str = None
     if metadata_condition:
-        metas = DocumentService.get_meta_by_kbs(dia.kb_ids or [])
+        metas = DocumentMetadataService.get_meta_by_kbs(dia.kb_ids or [])
         filtered_doc_ids = meta_filter(
             metas,
             convert_conditions(metadata_condition),
@@ -479,13 +478,13 @@ async def agents_completion_openai_compatibility(tenant_id, agent_id):
     else:
         # For non-streaming, just return the response directly
         async for response in completion_openai(
-                tenant_id,
-                agent_id,
-                question,
-                session_id=req.pop("session_id", req.get("id", "")) or req.get("metadata", {}).get("id", ""),
-                stream=False,
-                **req,
-            ):
+            tenant_id,
+            agent_id,
+            question,
+            session_id=req.pop("session_id", req.get("id", "")) or req.get("metadata", {}).get("id", ""),
+            stream=False,
+            **req,
+        ):
             return jsonify(response)
 
         return None
@@ -639,8 +638,7 @@ async def list_agent_session(tenant_id, agent_id):
         desc = True
     # dsl defaults to True in all cases except for False and false
     include_dsl = request.args.get("dsl") != "False" and request.args.get("dsl") != "false"
-    total, convs = API4ConversationService.get_list(agent_id, tenant_id, page_number, items_per_page, orderby, desc, id,
-                                                    user_id, include_dsl)
+    total, convs = API4ConversationService.get_list(agent_id, tenant_id, page_number, items_per_page, orderby, desc, id, user_id, include_dsl)
     if not convs:
         return get_result(data=[])
     for conv in convs:
@@ -662,8 +660,7 @@ async def list_agent_session(tenant_id, agent_id):
                 if message_num != 0 and messages[message_num]["role"] != "user":
                     chunk_list = []
                     # Add boundary and type checks to prevent KeyError
-                    if chunk_num < len(conv["reference"]) and conv["reference"][chunk_num] is not None and isinstance(
-                            conv["reference"][chunk_num], dict) and "chunks" in conv["reference"][chunk_num]:
+                    if chunk_num < len(conv["reference"]) and conv["reference"][chunk_num] is not None and isinstance(conv["reference"][chunk_num], dict) and "chunks" in conv["reference"][chunk_num]:
                         chunks = conv["reference"][chunk_num]["chunks"]
                         for chunk in chunks:
                             # Ensure chunk is a dictionary before calling get method
@@ -721,16 +718,13 @@ async def delete(tenant_id, chat_id):
 
     if errors:
         if success_count > 0:
-            return get_result(data={"success_count": success_count, "errors": errors},
-                              message=f"Partially deleted {success_count} sessions with {len(errors)} errors")
+            return get_result(data={"success_count": success_count, "errors": errors}, message=f"Partially deleted {success_count} sessions with {len(errors)} errors")
         else:
             return get_error_data_result(message="; ".join(errors))
 
     if duplicate_messages:
         if success_count > 0:
-            return get_result(
-                message=f"Partially deleted {success_count} sessions with {len(duplicate_messages)} errors",
-                data={"success_count": success_count, "errors": duplicate_messages})
+            return get_result(message=f"Partially deleted {success_count} sessions with {len(duplicate_messages)} errors", data={"success_count": success_count, "errors": duplicate_messages})
         else:
             return get_error_data_result(message=";".join(duplicate_messages))
 
@@ -776,16 +770,13 @@ async def delete_agent_session(tenant_id, agent_id):
 
     if errors:
         if success_count > 0:
-            return get_result(data={"success_count": success_count, "errors": errors},
-                              message=f"Partially deleted {success_count} sessions with {len(errors)} errors")
+            return get_result(data={"success_count": success_count, "errors": errors}, message=f"Partially deleted {success_count} sessions with {len(errors)} errors")
         else:
             return get_error_data_result(message="; ".join(errors))
 
     if duplicate_messages:
         if success_count > 0:
-            return get_result(
-                message=f"Partially deleted {success_count} sessions with {len(duplicate_messages)} errors",
-                data={"success_count": success_count, "errors": duplicate_messages})
+            return get_result(message=f"Partially deleted {success_count} sessions with {len(duplicate_messages)} errors", data={"success_count": success_count, "errors": duplicate_messages})
         else:
             return get_error_data_result(message=";".join(duplicate_messages))
 
@@ -818,9 +809,7 @@ async def ask_about(tenant_id):
             async for ans in async_ask(req["question"], req["kb_ids"], uid):
                 yield "data:" + json.dumps({"code": 0, "message": "", "data": ans}, ensure_ascii=False) + "\n\n"
         except Exception as e:
-            yield "data:" + json.dumps(
-                {"code": 500, "message": str(e), "data": {"answer": "**ERROR**: " + str(e), "reference": []}},
-                ensure_ascii=False) + "\n\n"
+            yield "data:" + json.dumps({"code": 500, "message": str(e), "data": {"answer": "**ERROR**: " + str(e), "reference": []}}, ensure_ascii=False) + "\n\n"
         yield "data:" + json.dumps({"code": 0, "message": "", "data": True}, ensure_ascii=False) + "\n\n"
 
     resp = Response(stream(), mimetype="text/event-stream")
@@ -911,6 +900,7 @@ async def chatbot_completions(dialog_id):
 
     return None
 
+
 @manager.route("/chatbots/<dialog_id>/info", methods=["GET"])  # noqa: F821
 async def chatbots_inputs(dialog_id):
     token = request.headers.get("Authorization").split()
@@ -959,6 +949,7 @@ async def agent_bot_completions(agent_id):
 
     return None
 
+
 @manager.route("/agentbots/<agent_id>/inputs", methods=["GET"])  # noqa: F821
 async def begin_inputs(agent_id):
     token = request.headers.get("Authorization").split()
@@ -974,9 +965,7 @@ async def begin_inputs(agent_id):
         return get_error_data_result(f"Can't find agent by ID: {agent_id}")
 
     canvas = Canvas(json.dumps(cvs.dsl), objs[0].tenant_id, canvas_id=cvs.id)
-    return get_result(
-        data={"title": cvs.title, "avatar": cvs.avatar, "inputs": canvas.get_component_input_form("begin"),
-              "prologue": canvas.get_prologue(), "mode": canvas.get_mode()})
+    return get_result(data={"title": cvs.title, "avatar": cvs.avatar, "inputs": canvas.get_component_input_form("begin"), "prologue": canvas.get_prologue(), "mode": canvas.get_mode()})
 
 
 @manager.route("/searchbots/ask", methods=["POST"])  # noqa: F821
@@ -1005,9 +994,7 @@ async def ask_about_embedded():
             async for ans in async_ask(req["question"], req["kb_ids"], uid, search_config=search_config):
                 yield "data:" + json.dumps({"code": 0, "message": "", "data": ans}, ensure_ascii=False) + "\n\n"
         except Exception as e:
-            yield "data:" + json.dumps(
-                {"code": 500, "message": str(e), "data": {"answer": "**ERROR**: " + str(e), "reference": []}},
-                ensure_ascii=False) + "\n\n"
+            yield "data:" + json.dumps({"code": 500, "message": str(e), "data": {"answer": "**ERROR**: " + str(e), "reference": []}}, ensure_ascii=False) + "\n\n"
         yield "data:" + json.dumps({"code": 0, "message": "", "data": True}, ensure_ascii=False) + "\n\n"
 
     resp = Response(stream(), mimetype="text/event-stream")
@@ -1037,8 +1024,7 @@ async def retrieval_test_embedded():
     if isinstance(kb_ids, str):
         kb_ids = [kb_ids]
     if not kb_ids:
-        return get_json_result(data=False, message='Please specify dataset firstly.',
-                               code=RetCode.DATA_ERROR)
+        return get_json_result(data=False, message="Please specify dataset firstly.", code=RetCode.DATA_ERROR)
     doc_ids = req.get("doc_ids", [])
     similarity_threshold = float(req.get("similarity_threshold", 0.0))
     vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
@@ -1077,8 +1063,7 @@ async def retrieval_test_embedded():
                     tenant_ids.append(tenant.tenant_id)
                     break
             else:
-                return get_json_result(data=False, message="Only owner of dataset authorized for this operation.",
-                                       code=RetCode.OPERATING_ERROR)
+                return get_json_result(data=False, message="Only owner of dataset authorized for this operation.", code=RetCode.OPERATING_ERROR)
 
         e, kb = KnowledgebaseService.get_by_id(kb_ids[0])
         if not e:
@@ -1099,12 +1084,22 @@ async def retrieval_test_embedded():
 
         labels = label_question(_question, [kb])
         ranks = await settings.retriever.retrieval(
-            _question, embd_mdl, tenant_ids, kb_ids, page, size, similarity_threshold, vector_similarity_weight, top,
-            local_doc_ids, rerank_mdl=rerank_mdl, highlight=req.get("highlight"), rank_feature=labels
+            _question,
+            embd_mdl,
+            tenant_ids,
+            kb_ids,
+            page,
+            size,
+            similarity_threshold,
+            vector_similarity_weight,
+            top,
+            local_doc_ids,
+            rerank_mdl=rerank_mdl,
+            highlight=req.get("highlight"),
+            rank_feature=labels,
         )
         if use_kg:
-            ck = await settings.kg_retriever.retrieval(_question, tenant_ids, kb_ids, embd_mdl,
-                                                 LLMBundle(kb.tenant_id, LLMType.CHAT))
+            ck = await settings.kg_retriever.retrieval(_question, tenant_ids, kb_ids, embd_mdl, LLMBundle(kb.tenant_id, LLMType.CHAT))
             if ck["content_with_weight"]:
                 ranks["chunks"].insert(0, ck)
 
@@ -1118,8 +1113,7 @@ async def retrieval_test_embedded():
         return await _retrieval()
     except Exception as e:
         if str(e).find("not_found") > 0:
-            return get_json_result(data=False, message="No chunk found! Check the chunk status please!",
-                                   code=RetCode.DATA_ERROR)
+            return get_json_result(data=False, message="No chunk found! Check the chunk status please!", code=RetCode.DATA_ERROR)
         return server_error_response(e)
 
 
@@ -1188,8 +1182,7 @@ async def detail_share_embedded():
             if SearchService.query(tenant_id=tenant.tenant_id, id=search_id):
                 break
         else:
-            return get_json_result(data=False, message="Has no permission for this operation.",
-                                   code=RetCode.OPERATING_ERROR)
+            return get_json_result(data=False, message="Has no permission for this operation.", code=RetCode.OPERATING_ERROR)
 
         search = SearchService.get_detail(search_id)
         if not search:
@@ -1216,7 +1209,7 @@ async def mindmap():
     search_id = req.get("search_id", "")
     search_app = SearchService.get_detail(search_id) if search_id else {}
 
-    mind_map =await gen_mindmap(req["question"], req["kb_ids"], tenant_id, search_app.get("search_config", {}))
+    mind_map = await gen_mindmap(req["question"], req["kb_ids"], tenant_id, search_app.get("search_config", {}))
     if "error" in mind_map:
         return server_error_response(Exception(mind_map["error"]))
     return get_json_result(data=mind_map)

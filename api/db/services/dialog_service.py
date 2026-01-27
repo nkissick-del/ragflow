@@ -29,6 +29,7 @@ from common.constants import LLMType, ParserType, StatusEnum
 from api.db.db_models import DB, Dialog
 from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
+from api.db.services.document_metadata_service import DocumentMetadataService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.langfuse_service import TenantLangfuseService
 from api.db.services.llm_service import LLMBundle
@@ -350,7 +351,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         questions = [await cross_languages(dialog.tenant_id, dialog.llm_id, questions[0], prompt_config["cross_languages"])]
 
     if dialog.meta_data_filter:
-        metas = DocumentService.get_meta_by_kbs(dialog.kb_ids)
+        metas = DocumentMetadataService.get_meta_by_kbs(dialog.kb_ids)
         attachments = await apply_meta_data_filter(
             dialog.meta_data_filter,
             metas,

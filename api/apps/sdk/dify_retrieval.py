@@ -18,6 +18,7 @@ import logging
 from quart import jsonify
 
 from api.db.services.document_service import DocumentService
+from api.db.services.document_metadata_service import DocumentMetadataService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from common.metadata_utils import meta_filter, convert_conditions
@@ -26,7 +27,8 @@ from rag.app.tag import label_question
 from common.constants import RetCode, LLMType
 from common import settings
 
-@manager.route('/dify/retrieval', methods=['POST'])  # noqa: F821
+
+@manager.route("/dify/retrieval", methods=["POST"])  # noqa: F821
 @apikey_required
 @validate_request("knowledge_id", "query")
 async def retrieval(tenant_id):
@@ -121,11 +123,10 @@ async def retrieval(tenant_id):
     similarity_threshold = float(retrieval_setting.get("score_threshold", 0.0))
     top = int(retrieval_setting.get("top_k", 1024))
     metadata_condition = req.get("metadata_condition", {}) or {}
-    metas = DocumentService.get_meta_by_kbs([kb_id])
+    metas = DocumentMetadataService.get_meta_by_kbs([kb_id])
 
     doc_ids = []
     try:
-
         e, kb = KnowledgebaseService.get_by_id(kb_id)
         if not e:
             return build_error_result(message="Knowledgebase not found!", code=RetCode.NOT_FOUND)
@@ -146,15 +147,11 @@ async def retrieval(tenant_id):
             vector_similarity_weight=0.3,
             top=top,
             doc_ids=doc_ids,
-            rank_feature=label_question(question, [kb])
+            rank_feature=label_question(question, [kb]),
         )
 
         if use_kg:
-            ck = await settings.kg_retriever.retrieval(question,
-                                                 [tenant_id],
-                                                 [kb_id],
-                                                 embd_mdl,
-                                                 LLMBundle(kb.tenant_id, LLMType.CHAT))
+            ck = await settings.kg_retriever.retrieval(question, [tenant_id], [kb_id], embd_mdl, LLMBundle(kb.tenant_id, LLMType.CHAT))
             if ck["content_with_weight"]:
                 ranks["chunks"].insert(0, ck)
 
@@ -162,21 +159,13 @@ async def retrieval(tenant_id):
         for c in ranks["chunks"]:
             e, doc = DocumentService.get_by_id(c["doc_id"])
             c.pop("vector", None)
-            meta = getattr(doc, 'meta_fields', {})
+            meta = getattr(doc, "meta_fields", {})
             meta["doc_id"] = c["doc_id"]
-            records.append({
-                "content": c["content_with_weight"],
-                "score": c["similarity"],
-                "title": c["docnm_kwd"],
-                "metadata": meta
-            })
+            records.append({"content": c["content_with_weight"], "score": c["similarity"], "title": c["docnm_kwd"], "metadata": meta})
 
         return jsonify({"records": records})
     except Exception as e:
         if str(e).find("not_found") > 0:
-            return build_error_result(
-                message='No chunk found! Check the chunk status please!',
-                code=RetCode.NOT_FOUND
-            )
+            return build_error_result(message="No chunk found! Check the chunk status please!", code=RetCode.NOT_FOUND)
         logging.exception(e)
         return build_error_result(message=str(e), code=RetCode.SERVER_ERROR)

@@ -24,6 +24,7 @@ from api.common.check_team_permission import check_kb_team_permission
 from api.constants import FILE_NAME_LEN_LIMIT, IMG_BASE64_PREFIX
 from api.db import VALID_FILE_TYPES, FileType
 from api.db.services.document_service import DocumentService
+from api.db.services.document_metadata_service import DocumentMetadataService
 from api.db.services.ingestion_service import IngestionService
 from common.metadata_utils import meta_filter, convert_conditions
 from api.db.services.file_service import FileService
@@ -238,7 +239,7 @@ async def list_docs():
     doc_ids_filter = None
     metas = None
     if metadata_condition or metadata:
-        metas = DocumentService.get_flatted_meta_by_kbs([kb_id])
+        metas = DocumentMetadataService.get_flatted_meta_by_kbs([kb_id])
 
     if metadata_condition:
         doc_ids_filter = set(meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and")))
@@ -341,7 +342,7 @@ async def get_filter():
             return get_data_error_result(message=f"Invalid filter conditions: {', '.join(invalid_types)} type{'s' if len(invalid_types) > 1 else ''}")
 
     try:
-        filter, total = DocumentService.get_filter_by_kb_id(kb_id, keywords, run_status, types, suffix)
+        filter, total = DocumentMetadataService.get_filter_by_kb_id(kb_id, keywords, run_status, types, suffix)
         return get_json_result(data={"total": total, "filter": filter})
     except Exception as e:
         return server_error_response(e)
@@ -375,7 +376,7 @@ async def metadata_summary():
         return get_json_result(data=False, message="Only owner of dataset authorized for this operation.", code=RetCode.OPERATING_ERROR)
 
     try:
-        summary = DocumentService.get_metadata_summary(kb_id)
+        summary = DocumentMetadataService.get_metadata_summary(kb_id)
         return get_json_result(data={"summary": summary})
     except Exception as e:
         return server_error_response(e)
@@ -429,14 +430,14 @@ async def metadata_update():
         target_doc_ids = set(document_ids)
 
     if metadata_condition:
-        metas = DocumentService.get_flatted_meta_by_kbs([kb_id])
+        metas = DocumentMetadataService.get_flatted_meta_by_kbs([kb_id])
         filtered_ids = set(meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and")))
         target_doc_ids = target_doc_ids & filtered_ids
         if metadata_condition.get("conditions") and not target_doc_ids:
             return get_json_result(data={"updated": 0, "matched_docs": 0})
 
     target_doc_ids = list(target_doc_ids)
-    updated = DocumentService.batch_update_metadata(kb_id, target_doc_ids, updates, deletes)
+    updated = DocumentMetadataService.batch_update_metadata(kb_id, target_doc_ids, updates, deletes)
     return get_json_result(data={"updated": updated, "matched_docs": len(target_doc_ids)})
 
 

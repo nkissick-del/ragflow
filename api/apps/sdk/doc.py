@@ -29,6 +29,7 @@ from api.constants import FILE_NAME_LEN_LIMIT
 from api.db import FileType
 from api.db.db_models import File, Task
 from api.db.services.document_service import DocumentService
+from api.db.services.document_metadata_service import DocumentMetadataService
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
@@ -254,7 +255,7 @@ async def update_doc(tenant_id, dataset_id, document_id):
     if "meta_fields" in req:
         if not isinstance(req["meta_fields"], dict):
             return get_error_data_result(message="meta_fields must be a dictionary")
-        DocumentService.update_meta_fields(document_id, req["meta_fields"])
+        DocumentMetadataService.update_meta_fields(document_id, req["meta_fields"])
 
     if "name" in req and req["name"] != doc.name:
         if len(req["name"].encode("utf-8")) > FILE_NAME_LEN_LIMIT:
@@ -567,7 +568,7 @@ def list_docs(dataset_id, tenant_id):
 
     doc_ids_filter = None
     if metadata_condition:
-        metas = DocumentService.get_flatted_meta_by_kbs([dataset_id])
+        metas = DocumentMetadataService.get_flatted_meta_by_kbs([dataset_id])
         doc_ids_filter = meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and"))
         if metadata_condition.get("conditions") and not doc_ids_filter:
             return get_result(data={"total": 0, "docs": []})
@@ -604,7 +605,7 @@ def metadata_summary(dataset_id, tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
 
     try:
-        summary = DocumentService.get_metadata_summary(dataset_id)
+        summary = DocumentMetadataService.get_metadata_summary(dataset_id)
         return get_result(data={"summary": summary})
     except Exception as e:
         return server_error_response(e)
@@ -650,14 +651,14 @@ async def metadata_batch_update(dataset_id, tenant_id):
         target_doc_ids = set(document_ids)
 
     if metadata_condition:
-        metas = DocumentService.get_flatted_meta_by_kbs([dataset_id])
+        metas = DocumentMetadataService.get_flatted_meta_by_kbs([dataset_id])
         filtered_ids = set(meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and")))
         target_doc_ids = target_doc_ids & filtered_ids
         if metadata_condition.get("conditions") and not target_doc_ids:
             return get_result(data={"updated": 0, "matched_docs": 0})
 
     target_doc_ids = list(target_doc_ids)
-    updated = DocumentService.batch_update_metadata(dataset_id, target_doc_ids, updates, deletes)
+    updated = DocumentMetadataService.batch_update_metadata(dataset_id, target_doc_ids, updates, deletes)
     return get_result(data={"updated": updated, "matched_docs": len(target_doc_ids)})
 
 

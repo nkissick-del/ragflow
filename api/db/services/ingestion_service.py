@@ -18,6 +18,7 @@ import json
 import logging
 import random
 import re
+import time
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from datetime import datetime
@@ -334,14 +335,22 @@ class IngestionService(CommonService):
                     logging.exception(f"Failed to cancel tasks for doc_id {doc_id}: {e}")
 
             if should_delete:
-                TaskService.filter_delete([Task.doc_id == doc_id])
-                for _ in range(3):  # Retry logic
-                    try:
-                        if settings.docStoreConn.index_exist(search.index_name(tenant_id), doc_kb_id):
-                            settings.docStoreConn.delete({"doc_id": doc_id}, search.index_name(tenant_id), doc_kb_id)
-                        break
-                    except Exception as e:
-                        logging.warning(f"Failed to delete from docStore (retry): {e}")
+                try:
+                    TaskService.filter_delete([Task.doc_id == doc_id])
+                    for i in range(3):  # Retry logic
+                        try:
+                            if settings.docStoreConn.index_exist(search.index_name(tenant_id), doc_kb_id):
+                                settings.docStoreConn.delete({"doc_id": doc_id}, search.index_name(tenant_id), doc_kb_id)
+                            break
+                        except Exception as e:
+                            logging.warning(f"Failed to delete from docStore (attempt {i + 1}): {e}")
+                            if i == 2:
+                                logging.error(f"Final failure deleting doc {doc_id} from docStore {doc_kb_id} tenant {tenant_id}: {e}")
+                                raise e
+                            time.sleep(2**i)
+                except Exception as e:
+                    logging.exception(f"Deletion failed for doc_id {doc_id}: {e}")
+                    raise e
 
             if should_run:
                 cls.run(tenant_id, doc_dict, kb_table_num_map)

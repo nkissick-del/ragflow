@@ -132,32 +132,6 @@ class TestIngestionService(unittest.TestCase):
         sys.modules["common.constants"].TaskStatus = self.mock_task_status
 
         # Save original sys.modules keys to restore later
-        self._mocked_modules = [
-            "xxhash",
-            "rag.nlp",
-            "rag.utils",
-            "rag.utils.redis_conn",
-            "rag.app",
-            "graphrag.general.mind_map_extractor",
-            "api.db.db_models",
-            "api.db.db_utils",
-            "api.db.services.common_service",
-            "api.db.services.document_service",
-            "api.db.services.knowledgebase_service",
-            "api.db.services.task_service",
-            "api.db.services.file_service",
-            "api.db.services.dialog_service",
-            "api.db.services.conversation_service",
-            "api.db.services.api_service",
-            "api.db.services.llm_service",
-            "api.db.services.user_service",
-            "common.time_utils",
-            "common.constants",
-            "common.settings",
-            "common.misc_utils",
-            "common",
-            "rag",
-        ]
 
     def test_handle_run_transaction(self):
         """Test that delete/cancel operations happen inside the atomic block"""

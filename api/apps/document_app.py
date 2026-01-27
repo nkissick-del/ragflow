@@ -23,7 +23,8 @@ from api.apps import current_user, login_required
 from api.common.check_team_permission import check_kb_team_permission
 from api.constants import FILE_NAME_LEN_LIMIT, IMG_BASE64_PREFIX
 from api.db import VALID_FILE_TYPES, FileType
-from api.db.services.document_service import DocumentService, doc_upload_and_parse
+from api.db.services.document_service import DocumentService
+from api.db.services.ingestion_service import IngestionService
 from common.metadata_utils import meta_filter, convert_conditions
 from api.db.services.file_service import FileService
 from api.db.services.file2document_service import File2DocumentService
@@ -523,7 +524,7 @@ async def rm():
 async def run():
     req = await get_request_json()
     try:
-        await asyncio.to_thread(DocumentService.handle_run, req["doc_ids"], req["run"], req.get("delete", False), req.get("apply_kb"), current_user.id)
+        await asyncio.to_thread(IngestionService.handle_run, req["doc_ids"], req["run"], req.get("delete", False), req.get("apply_kb"), current_user.id)
         return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)
@@ -665,7 +666,7 @@ async def upload_and_parse():
             return get_json_result(data=False, message="No file selected!", code=RetCode.ARGUMENT_ERROR)
 
     form = await request.form
-    doc_ids = doc_upload_and_parse(form.get("conversation_id"), file_objs, current_user.id)
+    doc_ids = IngestionService.doc_upload_and_parse(form.get("conversation_id"), file_objs, current_user.id)
     return get_json_result(data=doc_ids)
 
 

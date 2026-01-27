@@ -131,6 +131,15 @@ class IngestionService(CommonService):
 
         _, tenant = TenantService.get_by_id(kb.tenant_id)
         llm_bdl = LLMBundle(kb.tenant_id, "chat", tenant.llm_id)
+
+        async def process_mindmap(content_list):
+            try:
+                res = await mindmap(content_list)
+                return json.dumps(res.output, ensure_ascii=False, indent=2)
+            except Exception:
+                logging.exception("Mind map generation error")
+                return ""
+
         for doc_id in docids:
             cks = [c for c in docs if c["doc_id"] == doc_id]
 
@@ -139,15 +148,7 @@ class IngestionService(CommonService):
 
                 mindmap = MindMapExtractor(llm_bdl)
 
-                async def process_mindmap(content_list):
-                    try:
-                        res = await mindmap(content_list)
-                        return json.dumps(res.output, ensure_ascii=False, indent=2)
-                    except Exception:
-                        logging.exception("Mind map generation error")
-                        return ""
-
-                mind_map_results = asyncio.run(process_mindmap([c["content_with_weight"] for c in docs if c["doc_id"] == doc_id]))
+                mind_map_results = asyncio.run(process_mindmap([c["content_with_weight"] for c in cks]))
                 if mind_map_results:
                     if len(mind_map_results) < 32:
                         logging.error("Few content: " + mind_map_results)
@@ -323,14 +324,24 @@ class IngestionService(CommonService):
                     doc_dict = doc.to_dict()
                     should_run = True
 
-                if should_cancel:
-                    cancel_all_task_of(doc_id)
-                if should_delete:
-                    TaskService.filter_delete([Task.doc_id == doc_id])
-                    if settings.docStoreConn.index_exist(search.index_name(tenant_id), doc_kb_id):
-                        settings.docStoreConn.delete({"doc_id": doc_id}, search.index_name(tenant_id), doc_kb_id)
-
                 DocumentService.update_by_id(doc_id, info)
+
+            # External side effects moved out of atomic block
+            if should_cancel:
+                try:
+                    cancel_all_task_of(doc_id)
+                except Exception as e:
+                    logging.exception(f"Failed to cancel tasks for doc_id {doc_id}: {e}")
+
+            if should_delete:
+                TaskService.filter_delete([Task.doc_id == doc_id])
+                for _ in range(3):  # Retry logic
+                    try:
+                        if settings.docStoreConn.index_exist(search.index_name(tenant_id), doc_kb_id):
+                            settings.docStoreConn.delete({"doc_id": doc_id}, search.index_name(tenant_id), doc_kb_id)
+                        break
+                    except Exception as e:
+                        logging.warning(f"Failed to delete from docStore (retry): {e}")
 
             if should_run:
                 cls.run(tenant_id, doc_dict, kb_table_num_map)

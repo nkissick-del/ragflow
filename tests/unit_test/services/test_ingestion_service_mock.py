@@ -1,15 +1,46 @@
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 import sys
 import os
-import asyncio
-from datetime import datetime
 import types
 
 # Adjust path to import from project root
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../")))
 
 # Mock dependencies before any imports
+# Store original modules if they exist to restore later
+_original_modules = {}
+_MOCKED_MODULES = [
+    "xxhash",
+    "rag.nlp",
+    "rag.utils",
+    "rag.utils.redis_conn",
+    "rag.app",
+    "graphrag.general.mind_map_extractor",
+    "api.db.db_models",
+    "api.db.db_utils",
+    "api.db.services.common_service",
+    "api.db.services.document_service",
+    "api.db.services.knowledgebase_service",
+    "api.db.services.task_service",
+    "api.db.services.file_service",
+    "api.db.services.dialog_service",
+    "api.db.services.conversation_service",
+    "api.db.services.api_service",
+    "api.db.services.llm_service",
+    "api.db.services.user_service",
+    "common.time_utils",
+    "common.constants",
+    "common.settings",
+    "common.misc_utils",
+    "common",
+    "rag",
+]
+
+for mod in _MOCKED_MODULES:
+    if mod in sys.modules:
+        _original_modules[mod] = sys.modules[mod]
+
 sys.modules["xxhash"] = MagicMock()
 sys.modules["rag.nlp"] = MagicMock()
 sys.modules["rag.utils"] = MagicMock()
@@ -73,7 +104,7 @@ sys.modules["api.db.db_models"].DB = mock_db
 # but the specific submodules we mocked above will be returned from sys.modules
 try:
     from api.db.services.ingestion_service import IngestionService
-except ImportError as e:
+except ImportError:
     # If this fails, we might need to be more aggressive or check pythonpath
     raise
 
@@ -85,13 +116,48 @@ class TestIngestionService(unittest.TestCase):
         self.tenant_id = "tenant_123"
         mock_db.atomic.reset_mock()
 
-        # Reloading IngestionService might have already bound TaskStatus.
-        # Let's fix TaskStatus values in the mocked module.
-        from common.constants import TaskStatus
+        # Reset persistent mocks
+        sys.modules["api.db.services.document_service"].DocumentService.reset_mock()
+        sys.modules["api.db.services.task_service"].TaskService.reset_mock()
+        sys.modules["api.db.services.knowledgebase_service"].KnowledgebaseService.reset_mock()
+        sys.modules["common.settings"].reset_mock()
 
-        TaskStatus.RUNNING.value = "1"
-        TaskStatus.CANCEL.value = "0"
-        TaskStatus.DONE.value = "2"
+        # Mock TaskStatus with an object that has .value attributes
+        self.mock_task_status = MagicMock()
+        self.mock_task_status.RUNNING = MagicMock(value="1")
+        self.mock_task_status.CANCEL = MagicMock(value="0")
+        self.mock_task_status.DONE = MagicMock(value="2")
+
+        # Inject our mock TaskStatus into common.constants
+        sys.modules["common.constants"].TaskStatus = self.mock_task_status
+
+        # Save original sys.modules keys to restore later
+        self._mocked_modules = [
+            "xxhash",
+            "rag.nlp",
+            "rag.utils",
+            "rag.utils.redis_conn",
+            "rag.app",
+            "graphrag.general.mind_map_extractor",
+            "api.db.db_models",
+            "api.db.db_utils",
+            "api.db.services.common_service",
+            "api.db.services.document_service",
+            "api.db.services.knowledgebase_service",
+            "api.db.services.task_service",
+            "api.db.services.file_service",
+            "api.db.services.dialog_service",
+            "api.db.services.conversation_service",
+            "api.db.services.api_service",
+            "api.db.services.llm_service",
+            "api.db.services.user_service",
+            "common.time_utils",
+            "common.constants",
+            "common.settings",
+            "common.misc_utils",
+            "common",
+            "rag",
+        ]
 
     def test_handle_run_transaction(self):
         """Test that delete/cancel operations happen inside the atomic block"""
@@ -99,7 +165,6 @@ class TestIngestionService(unittest.TestCase):
         mock_doc_service = sys.modules["api.db.services.document_service"].DocumentService
         mock_task_service = sys.modules["api.db.services.task_service"].TaskService
         mock_settings = sys.modules["common.settings"]
-        mock_kb_service = sys.modules["api.db.services.knowledgebase_service"].KnowledgebaseService
 
         # Setup
         mock_doc_service.accessible.return_value = True
@@ -128,7 +193,6 @@ class TestIngestionService(unittest.TestCase):
 
         # Verify calls
         mock_task_service.filter_delete.assert_called()
-        print(f"index_exist return value: {mock_settings.docStoreConn.index_exist.return_value}")
         mock_settings.docStoreConn.index_exist.assert_called()
         mock_settings.docStoreConn.delete.assert_called()
         mock_doc_service.update_by_id.assert_called()
@@ -143,6 +207,15 @@ class TestIngestionService(unittest.TestCase):
 
         with self.assertRaisesRegex(LookupError, "Dialog not found"):
             IngestionService.doc_upload_and_parse("conv_1", [], "user_1")
+
+
+def tearDownModule():
+    # Restore original modules
+    for mod in _MOCKED_MODULES:
+        if mod in _original_modules:
+            sys.modules[mod] = _original_modules[mod]
+        else:
+            sys.modules.pop(mod, None)
 
 
 if __name__ == "__main__":

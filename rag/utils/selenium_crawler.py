@@ -76,7 +76,7 @@ class SeleniumCrawler:
                 driver.get(url)
             except TimeoutException as e:
                 logger.warning(f"Timeout loading {url}: {e}")
-                pass
+                raise
 
             res_headers = [r.response.headers for r in driver.requests if r and r.response]
             if not res_headers:
@@ -103,7 +103,8 @@ class SeleniumCrawler:
                         filename = f"downloaded_{int(time.time())}"
 
             if filename:
-                # Fallback to waiting for a file in the download directory
+                # Wait for the expected file since filename was determined from Content-Disposition
+
                 try:
                     filename = SeleniumCrawler.wait_for_download(download_path, expected_filename=filename)
                 except TimeoutError:

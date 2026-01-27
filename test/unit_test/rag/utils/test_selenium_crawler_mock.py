@@ -139,10 +139,9 @@ class TestSeleniumCrawler(unittest.TestCase):
 
         mock_time.side_effect = time_side_effect
 
-        # Scenario:
+        # Scenario steps:
         # 1. Start (time=1)
-        # 2. Check initial files (only if no expected_filename, but let's assume standard flow)
-        #    Wait, my code calls set(os.listdir) at start.
+        # 2. Check initial files.
         # 3. Loop: time check (time=2 < start+10)
         # 4. listdir -> finds nothing or crdownload
         # 5. sleep
@@ -162,7 +161,7 @@ class TestSeleniumCrawler(unittest.TestCase):
         ]
 
         mock_isfile.return_value = True
-        mock_getsize.side_effect = [100, 100]  # Stable size
+        mock_getsize.side_effect = lambda x: 100  # Stable size regardless of calls
 
         # We need to ensure we don't timeout. timeout=10.
         # time values will be 1, 2, ...

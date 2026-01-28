@@ -154,6 +154,8 @@ async def update_dataset(dataset_id):
             return get_data_error_result(message="No updatable fields provided", code=RetCode.DATA_ERROR)
 
         if "name" in sanitized_payload:
+            if not isinstance(sanitized_payload["name"], str):
+                return get_data_error_result(message="Name must be a string")
             sanitized_payload["name"] = sanitized_payload["name"].strip()
             if not sanitized_payload["name"]:
                 return get_data_error_result(message="Name cannot be empty")

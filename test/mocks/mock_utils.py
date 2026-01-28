@@ -237,7 +237,11 @@ def setup_mocks():
     sys.modules["itsdangerous.url_safe"] = mock_its_url
 
     class MockSerializer:
-        pass
+        def dumps(self, obj):
+            return str(obj)
+
+        def loads(self, token):
+            return token
 
     mock_its_url.URLSafeTimedSerializer = MockSerializer
 
@@ -264,6 +268,7 @@ def setup_mocks():
     # peewee exceptions if mocked
     import peewee
 
+    # Guard check for peewee mock - intentional defensive code for future refactors
     if isinstance(peewee, MagicMock):
         peewee.InterfaceError = type("InterfaceError", (Exception,), {})
         peewee.OperationalError = type("OperationalError", (Exception,), {})

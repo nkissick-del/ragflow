@@ -190,7 +190,11 @@ class EvaluationRunnerService:
                     except Exception as e:
                         logging.warning(f"Failed to update progress for run {run_id}: {e}")
                         try:
-                            EvaluationRun.update(metrics_summary={"error": "failed"}).where(EvaluationRun.id == run_id).execute()
+                            # Merge error into existing metrics_summary
+                            run = EvaluationRun.get_by_id(run_id)
+                            merged = (run.metrics_summary or {}) if run else {}
+                            merged["error"] = "failed"
+                            EvaluationRun.update(metrics_summary=merged).where(EvaluationRun.id == run_id).execute()
                         except Exception:
                             pass
 
@@ -200,7 +204,11 @@ class EvaluationRunnerService:
             except Exception as e:
                 logging.warning(f"Failed to update completion progress for run {run_id}: {e}")
                 try:
-                    EvaluationRun.update(metrics_summary={"error": "failed"}).where(EvaluationRun.id == run_id).execute()
+                    # Merge error into existing metrics_summary
+                    run = EvaluationRun.get_by_id(run_id)
+                    merged = (run.metrics_summary or {}) if run else {}
+                    merged["error"] = "failed"
+                    EvaluationRun.update(metrics_summary=merged).where(EvaluationRun.id == run_id).execute()
                 except Exception:
                     pass
 
@@ -264,6 +272,10 @@ class EvaluationRunnerService:
                     answer = getattr(ans, "answer", None)
                     if answer is None:
                         answer = getattr(ans, "content", "")
+
+                    if answer is None:
+                        answer = ""
+
                     if not isinstance(answer, str):
                         answer = str(answer)
 

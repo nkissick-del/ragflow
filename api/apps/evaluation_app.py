@@ -82,8 +82,16 @@ async def list_datasets():
     - page_size: Items per page (default: 20)
     """
     try:
-        page = int(request.args.get("page", 1))
-        page_size = int(request.args.get("page_size", 20))
+        try:
+            page = int(request.args.get("page", 1))
+            page_size = int(request.args.get("page_size", 20))
+        except ValueError:
+            return get_data_error_result(message="Invalid page or page_size", code=RetCode.DATA_ERROR)
+
+        if page < 1:
+            return get_data_error_result(message="Page must be greater than 0")
+        if page_size < 1:
+            return get_data_error_result(message="Page size must be greater than 0")
 
         result = EvaluationService.list_datasets(tenant_id=current_user.id, user_id=current_user.id, page=page, page_size=page_size)
 
@@ -122,13 +130,11 @@ async def update_dataset(dataset_id):
     try:
         req = await get_request_json()
 
-        # Remove fields that shouldn't be updated
-        req.pop("id", None)
-        req.pop("tenant_id", None)
-        req.pop("created_by", None)
-        req.pop("create_time", None)
+        # Defines allowed update fields (Whitelist)
+        allowed_fields = {"name", "description", "kb_ids"}
+        sanitized_payload = {k: v for k, v in req.items() if k in allowed_fields}
 
-        success = EvaluationService.update_dataset(dataset_id, **req)
+        success = EvaluationService.update_dataset(dataset_id, **sanitized_payload)
 
         if not success:
             return get_data_error_result(message="Failed to update dataset")
@@ -222,8 +228,13 @@ async def import_test_cases(dataset_id):
         req = await get_request_json()
         cases = req.get("cases", [])
 
+        MAX_BULK_IMPORT = 1000
+
         if not cases or not isinstance(cases, list):
             return get_data_error_result(message="cases must be a non-empty list")
+
+        if len(cases) > MAX_BULK_IMPORT:
+            return get_data_error_result(message=f"Too many cases in bulk import. Max allowed: {MAX_BULK_IMPORT}")
 
         success_count, failure_count = EvaluationService.import_test_cases(dataset_id=dataset_id, cases=cases)
 
@@ -237,8 +248,18 @@ async def import_test_cases(dataset_id):
 async def get_test_cases(dataset_id):
     """Get all test cases for a dataset"""
     try:
-        cases = EvaluationService.get_test_cases(dataset_id)
-        return get_json_result(data={"cases": cases, "total": len(cases)})
+        try:
+            page = int(request.args.get("page", 1))
+            page_size = int(request.args.get("page_size", 20))
+            if page < 1:
+                return get_data_error_result(message="Page must be greater than 0")
+            if page_size < 1:
+                return get_data_error_result(message="Page size must be greater than 0")
+        except ValueError:
+            return get_data_error_result(message="Invalid page or page_size params", code=RetCode.DATA_ERROR)
+
+        cases, total = EvaluationService.get_test_cases(dataset_id, page=page, page_size=page_size)
+        return get_json_result(data={"cases": cases, "total": total})
     except Exception as e:
         return server_error_response(e)
 
@@ -287,21 +308,6 @@ async def start_evaluation():
             return get_data_error_result(message=result)
 
         return get_json_result(data={"run_id": result})
-    except Exception as e:
-        return server_error_response(e)
-
-
-@manager.route("/run/<run_id>", methods=["GET"])  # noqa: F821
-@login_required
-async def get_evaluation_run(run_id):
-    """Get evaluation run details"""
-    try:
-        success, result = EvaluationService.get_run_results(run_id)
-
-        if not success:
-            return get_data_error_result(message=result, code=RetCode.DATA_ERROR)
-
-        return get_json_result(data=result)
     except Exception as e:
         return server_error_response(e)
 
@@ -359,7 +365,10 @@ async def delete_evaluation_run(run_id):
 async def get_recommendations(run_id):
     """Get configuration recommendations based on evaluation results"""
     try:
-        recommendations = EvaluationService.get_recommendations(run_id)
+        success, recommendations = EvaluationService.get_recommendations(run_id)
+        if not success:
+            return get_data_error_result(message=recommendations, code=RetCode.DATA_ERROR)
+
         return get_json_result(data={"recommendations": recommendations})
     except Exception as e:
         return server_error_response(e)
@@ -406,7 +415,7 @@ async def export_results(run_id):
             if not csv_data:
                 return get_data_error_result(message="Evaluation run not found or failed to generate CSV", code=RetCode.DATA_ERROR)
 
-            return Response(csv_data, mimetype="text/csv", headers={"Content-Disposition": f"attachment; filename=evaluation_run_{run_id}.csv"})
+            return Response(csv_data, mimetype="text/csv", headers={"Content-Type": "text/csv; charset=utf-8", "Content-Disposition": f"attachment; filename=evaluation_run_{run_id}.csv"})
 
         success, result = EvaluationService.get_run_results(run_id)
 
@@ -437,11 +446,16 @@ async def evaluate_single():
     }
     """
     try:
-        # req = await get_request_json()  # TODO: Use for single evaluation implementation
+        # Check validation
+        req = await get_request_json()
+        question = req.get("question")
+        dialog_id = req.get("dialog_id")
 
-        # TODO: Implement single evaluation
-        # This would execute the RAG pipeline and return metrics immediately
+        if not question or not dialog_id:
+            return get_data_error_result(message="question and dialog_id are required")
 
-        return get_json_result(data={"answer": "", "metrics": {}, "retrieved_chunks": []})
+        # FEATURE NOT IMPLEMENTED
+        # Return 501 Not Implemented
+        return get_json_result(data={"message": "Single evaluation not yet implemented."}, retmsg="Not Implemented", retcode=501)
     except Exception as e:
         return server_error_response(e)

@@ -14,7 +14,7 @@
 #  limitations under the License.
 #
 """
-Unit tests for EvaluationService.
+Unit tests for EvaluationService and EvaluationMetricsService.
 """
 
 import sys
@@ -78,6 +78,8 @@ def mock_env():
         # to force re-import with mocked dependencies
         if "api.db.services.evaluation_service" in sys.modules:
             del sys.modules["api.db.services.evaluation_service"]
+        if "api.db.services.evaluation.metrics_service" in sys.modules:
+            del sys.modules["api.db.services.evaluation.metrics_service"]
 
         yield {"llm_service": mock_llm_service, "tenant_llm_service": mock_tenant_llm_service, "template": mock_template, "json_repair": mock_json_repair, "db_models": mock_db_models}
 

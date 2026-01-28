@@ -30,8 +30,12 @@ from common.misc_utils import get_uuid
 from common.time_utils import current_timestamp
 
 
+_SENTINEL = object()
+
+
 def _sync_from_async_gen(async_gen, timeout=60):
-    result_queue = queue.Queue()
+    result_queue = queue.Queue(maxsize=10)
+    stop_event = threading.Event()
 
     def runner():
         loop = asyncio.new_event_loop()
@@ -40,31 +44,52 @@ def _sync_from_async_gen(async_gen, timeout=60):
         async def consume():
             try:
                 async for item in async_gen:
-                    result_queue.put(item)
+                    if stop_event.is_set():
+                        break
+                    while True:
+                        try:
+                            result_queue.put_nowait(item)
+                            break
+                        except queue.Full:
+                            if stop_event.is_set():
+                                return
+                            await asyncio.sleep(0.1)
             except Exception as e:
                 result_queue.put(e)
             finally:
-                result_queue.put(StopIteration)
+                result_queue.put(_SENTINEL)
 
         try:
             loop.run_until_complete(consume())
         except Exception:
             pass
         finally:
-            loop.close()
+            try:
+                # Cancel all running tasks
+                pending = asyncio.all_tasks(loop)
+                for task in pending:
+                    task.cancel()
+                loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+            finally:
+                loop.close()
 
     threading.Thread(target=runner, daemon=True).start()
 
-    while True:
-        try:
-            item = result_queue.get(timeout=timeout)
-            if item is StopIteration:
-                break
-            if isinstance(item, Exception):
-                raise item
-            yield item
-        except queue.Empty:
-            raise RuntimeError(f"Async generator timed out after {timeout} seconds")
+    try:
+        while True:
+            try:
+                item = result_queue.get(timeout=timeout)
+                if item is _SENTINEL:
+                    break
+                if isinstance(item, Exception):
+                    raise item
+                yield item
+            except queue.Empty:
+                stop_event.set()
+                raise RuntimeError(f"Async generator timed out after {timeout} seconds")
+    except GeneratorExit:
+        stop_event.set()
+        raise
 
 
 class EvaluationRunnerService:
@@ -182,9 +207,20 @@ class EvaluationRunnerService:
                     # The user mentioned: "e.g., response.get("usage") or response.usage"
                     if "usage" in ans:
                         token_usage = ans["usage"]
-                    elif "total_tokens" in ans:
-                        # Some APIs handle it differently, but user asked to populate token_usage
-                        token_usage = {"total_tokens": ans["total_tokens"]}
+                    elif getattr(ans, "usage", None):
+                        token_usage = getattr(ans, "usage")
+                        # Normalize if it's an object with attributes to dict if possible, or leave as is if services expect object
+                        # But based on "normalize to a dict assigned to token_usage", we should try to make it a dict if it isn't
+                        if hasattr(token_usage, "total_tokens") and not isinstance(token_usage, dict):
+                            token_usage = {"total_tokens": token_usage.total_tokens}
+
+                    if not token_usage:
+                        if "total_tokens" in ans:
+                            token_usage = {"total_tokens": ans["total_tokens"]}
+                        elif getattr(ans, "total_tokens", None):
+                            token_usage = {"total_tokens": getattr(ans, "total_tokens")}
+                        elif getattr(ans, "usage", None) and hasattr(getattr(ans, "usage"), "total_tokens"):
+                            token_usage = {"total_tokens": getattr(ans, "usage").total_tokens}
             except StopIteration:
                 logging.warning(f"Chat generator empty for case {case.get('id')}")
             except Exception as e:
@@ -221,7 +257,7 @@ class EvaluationRunnerService:
             except Exception as e:
                 logging.error(f"Failed to persist evaluation result {result_id}: {e}")
                 # We still return the result so the run can continue and stats can be computed
-                pass
+                # We still return the result so the run can continue and stats can be computed
 
             return result
         except Exception as e:

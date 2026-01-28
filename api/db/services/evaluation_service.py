@@ -76,8 +76,8 @@ class EvaluationService(CommonService):
         return EvaluationDatasetService.add_test_case(dataset_id, question, reference_answer, relevant_doc_ids, relevant_chunk_ids, metadata)
 
     @classmethod
-    def get_test_cases(cls, dataset_id: str) -> List[Dict[str, Any]]:
-        return EvaluationDatasetService.get_test_cases(dataset_id)
+    def get_test_cases(cls, dataset_id: str, page: int = 1, page_size: int = 20) -> Tuple[List[Dict[str, Any]], int]:
+        return EvaluationDatasetService.get_test_cases(dataset_id, page, page_size)
 
     @classmethod
     def delete_test_case(cls, case_id: str) -> bool:
@@ -104,7 +104,7 @@ class EvaluationService(CommonService):
         return EvaluationReportService.get_run_results_csv(run_id)
 
     @classmethod
-    def get_recommendations(cls, run_id: str) -> List[Dict[str, Any]]:
+    def get_recommendations(cls, run_id: str) -> Tuple[bool, List[Dict[str, Any]] | str]:
         return EvaluationReportService.get_recommendations(run_id)
 
     @classmethod

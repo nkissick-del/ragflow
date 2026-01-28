@@ -73,9 +73,12 @@ class EvaluationReportService:
                 .order_by(EvaluationResult.create_time)
             )
 
+            # Materialize results to avoid re-executing query
+            results_cache = list(query)
+
             # First pass: identify all metric keys
             all_metric_keys = set()
-            for result in query:
+            for result in results_cache:
                 metrics = result.to_dict().get("metrics", {})
                 if metrics:
                     for k in metrics.keys():
@@ -91,16 +94,8 @@ class EvaluationReportService:
             writer = csv.DictWriter(output, fieldnames=fieldnames)
             writer.writeheader()
 
-            # Second pass: stream rows
-            # Re-execute query for cursor iteration
-            query_iter = (
-                EvaluationResult.select(EvaluationResult, EvaluationCase)
-                .join(EvaluationCase, on=(EvaluationResult.case_id == EvaluationCase.id))
-                .where(EvaluationResult.run_id == run_id)
-                .order_by(EvaluationResult.create_time)
-            )
-
-            for result in query_iter:
+            # Second pass: use cached results
+            for result in results_cache:
                 result_dict = result.to_dict()
                 case_dict = result.case_id.to_dict()
 
@@ -129,7 +124,7 @@ class EvaluationReportService:
             return None
 
     @classmethod
-    def get_recommendations(cls, run_id: str) -> List[Dict[str, Any]]:
+    def get_recommendations(cls, run_id: str) -> Tuple[bool, List[Dict[str, Any]] | str]:
         """
         Analyze evaluation results and provide configuration recommendations.
         """
@@ -179,10 +174,10 @@ class EvaluationReportService:
                     }
                 )
 
-            return recommendations
+            return True, recommendations
         except Exception as e:
             logging.error(f"Error generating recommendations for run {run_id}: {e}")
-            return []
+            return False, str(e)
 
     @classmethod
     def compare_runs(cls, run_ids: List[str]) -> Tuple[bool, Dict[str, Any] | str]:

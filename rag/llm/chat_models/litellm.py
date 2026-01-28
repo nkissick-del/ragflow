@@ -529,8 +529,8 @@ class LiteLLMBase(ABC):
                 with self._bedrock_creds_lock:
                     now = time.time()
                     # Check cache
-                    cached = getattr(self, "_cached_bedrock_creds", None)
-                    expiry = getattr(self, "_cached_bedrock_expiration", 0)
+                    cached = self._cached_bedrock_creds
+                    expiry = self._cached_bedrock_expiration
                     # Refresh if no cache or expiring in < 5 mins (300s)
                     if not cached or (expiry - now) < 300:
                         sts_client = boto3.client("sts", region_name=bedrock_region)

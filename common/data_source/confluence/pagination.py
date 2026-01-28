@@ -88,36 +88,35 @@ class ConfluencePaginationMixin:
                 # Need to be careful here because the url_suffix might already have an expand
                 # parameter purely by happenstance (e.g. from the next link)
                 # We need to merge them if so
-                if True:
-                    # check if it is in the url
-                    parsed_url = urlparse(url_suffix)
-                    existing_query = parse_qs(parsed_url.query)
-                    existing_expands = []
-                    for e_val in existing_query.get("expand", []):
-                        existing_expands.extend(e_val.split(","))
+                # check if it is in the url
+                parsed_url = urlparse(url_suffix)
+                existing_query = parse_qs(parsed_url.query)
+                existing_expands = []
+                for e_val in existing_query.get("expand", []):
+                    existing_expands.extend(e_val.split(","))
 
-                    if "body.atlas_doc_format" not in existing_expands:
-                        existing_expands.append("body.atlas_doc_format")
+                if "body.atlas_doc_format" not in existing_expands:
+                    existing_expands.append("body.atlas_doc_format")
 
-                    # update URL without expand param to avoid duplicates/conflicts
-                    # we will pass it in params instead
-                    new_query = existing_query.copy()
-                    if "expand" in new_query:
-                        del new_query["expand"]
+                # update URL without expand param to avoid duplicates/conflicts
+                # we will pass it in params instead
+                new_query = existing_query.copy()
+                if "expand" in new_query:
+                    del new_query["expand"]
 
-                    # rebuild url without expand in query
-                    new_parts = list(parsed_url)
-                    new_parts[4] = urlencode(new_query, doseq=True)
-                    url_suffix = urlunparse(new_parts)
+                # rebuild url without expand in query
+                new_parts = list(parsed_url)
+                new_parts[4] = urlencode(new_query, doseq=True)
+                url_suffix = urlunparse(new_parts)
 
-                    # Deduplicate while preserving order
-                    seen = set()
-                    final_expands = []
-                    for x in existing_expands:
-                        if x not in seen:
-                            final_expands.append(x)
-                            seen.add(x)
-                    params["expand"] = ",".join(final_expands)
+                # Deduplicate while preserving order
+                seen = set()
+                final_expands = []
+                for x in existing_expands:
+                    if x not in seen:
+                        final_expands.append(x)
+                        seen.add(x)
+                params["expand"] = ",".join(final_expands)
 
                 params["body-format"] = "atlas_doc_format"
 

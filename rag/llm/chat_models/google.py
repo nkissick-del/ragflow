@@ -68,12 +68,16 @@ class GoogleChat(Base):
     def _refresh_anthropic_client_if_needed(self):
         if getattr(self, "credentials", None):
             from google.auth.transport.requests import Request
+            from google.auth.exceptions import RefreshError
             from anthropic import AnthropicVertex
 
-            if not self.credentials.valid or self.credentials.expired:
-                request = Request()
-                self.credentials.refresh(request)
-                self.client = AnthropicVertex(region=self.region, project_id=self.project_id, access_token=self.credentials.token)
+            if not self.credentials.valid:
+                try:
+                    request = Request()
+                    self.credentials.refresh(request)
+                    self.client = AnthropicVertex(region=self.region, project_id=self.project_id, access_token=self.credentials.token)
+                except RefreshError:
+                    logging.error("Failed to refresh Google credentials.")
 
     def _chat(self, history, gen_conf=None, **kwargs):
         gen_conf = {} if gen_conf is None else gen_conf.copy()

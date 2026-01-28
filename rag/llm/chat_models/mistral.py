@@ -58,7 +58,7 @@ class MistralChat(Base):
                 yield ans
 
         except MistralAPIException as e:
-            yield full_ans + "\n**ERROR**: " + str(e)
+            yield full_ans + "\n**Mistral Error**: " + str(e)
         except Exception as e:
             yield full_ans + "\n**ERROR**: " + str(e)
 

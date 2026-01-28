@@ -23,8 +23,10 @@ def register_ops_routes(manager):
         req["kb_ids"] = req.pop("dataset_ids")
         for kb_id in req["kb_ids"]:
             kbs = KnowledgebaseService.query(id=kb_id)
-            if not kbs or not KnowledgebaseService.accessible(kb_id, tenant_id) or kbs[0].chunk_num == 0:
+            if not kbs or not KnowledgebaseService.accessible(kb_id, tenant_id):
                 return get_error_data_result("Dataset not found or inaccessible")
+            if kbs[0].chunk_num == 0:
+                return get_error_data_result("No parsed files; please parse files first")
 
         uid = tenant_id
 

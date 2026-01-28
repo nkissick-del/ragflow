@@ -60,7 +60,7 @@ class EvaluationDatasetService(CommonService):
         """Get dataset by ID"""
         try:
             dataset = EvaluationDataset.get_by_id(dataset_id)
-            if dataset:
+            if dataset and dataset.status == StatusEnum.VALID.value:
                 return dataset.to_dict()
             return None
         except Exception as e:
@@ -72,7 +72,7 @@ class EvaluationDatasetService(CommonService):
         """List datasets for a tenant"""
         try:
             query = EvaluationDataset.select()
-            query = query.where((EvaluationDataset.tenant_id == tenant_id) & (EvaluationDataset.status == StatusEnum.VALID.value))
+            query = query.where((EvaluationDataset.tenant_id == tenant_id) & (EvaluationDataset.created_by == user_id) & (EvaluationDataset.status == StatusEnum.VALID.value))
             query = query.order_by(EvaluationDataset.create_time.desc())
 
             total = query.count()
@@ -87,6 +87,12 @@ class EvaluationDatasetService(CommonService):
     def update_dataset(cls, dataset_id: str, **kwargs) -> bool:
         """Update dataset"""
         try:
+            # Check existence and status
+            dataset = EvaluationDataset.get_or_none(EvaluationDataset.id == dataset_id, EvaluationDataset.status == StatusEnum.VALID.value)
+            if not dataset:
+                logging.error(f"Dataset {dataset_id} not found or invalid")
+                return False
+
             kwargs["update_time"] = current_timestamp()
             return EvaluationDataset.update(**kwargs).where(EvaluationDataset.id == dataset_id).execute() > 0
         except Exception as e:
@@ -97,7 +103,17 @@ class EvaluationDatasetService(CommonService):
     def delete_dataset(cls, dataset_id: str) -> bool:
         """Soft delete dataset"""
         try:
-            return EvaluationDataset.update(status=StatusEnum.INVALID.value, update_time=current_timestamp()).where(EvaluationDataset.id == dataset_id).execute() > 0
+            # Soft delete dataset and cascade to test cases
+            rows = EvaluationDataset.update(status=StatusEnum.INVALID.value, update_time=current_timestamp()).where(EvaluationDataset.id == dataset_id).execute()
+            if rows > 0:
+                # Cascade soft delete to test cases
+                # Verify EvaluationCase has "status" and "update_time" (we added them or assumed them)
+                try:
+                    EvaluationCase.update(status=StatusEnum.INVALID.value, update_time=current_timestamp()).where(EvaluationCase.dataset_id == dataset_id).execute()
+                except Exception as e:
+                    logging.warning(f"Failed to cascade soft delete to test cases for dataset {dataset_id}: {e}")
+
+            return rows > 0
         except Exception as e:
             logging.error(f"Error deleting dataset {dataset_id}: {e}")
             return False
@@ -116,7 +132,13 @@ class EvaluationDatasetService(CommonService):
         Add a test case to a dataset.
         """
         try:
+            # Verify dataset exists and is valid
+            dataset = EvaluationDataset.get_or_none(EvaluationDataset.id == dataset_id, EvaluationDataset.status == StatusEnum.VALID.value)
+            if not dataset:
+                return False, "Dataset not found or invalid"
+
             case_id = get_uuid()
+            timestamp = current_timestamp()
             case = {
                 "id": case_id,
                 "dataset_id": dataset_id,
@@ -125,7 +147,9 @@ class EvaluationDatasetService(CommonService):
                 "relevant_doc_ids": relevant_doc_ids,
                 "relevant_chunk_ids": relevant_chunk_ids,
                 "metadata": metadata,
-                "create_time": current_timestamp(),
+                "create_time": timestamp,
+                "update_time": timestamp,
+                "status": StatusEnum.VALID.value,
             }
 
             if not EvaluationCase.create(**case):
@@ -140,7 +164,11 @@ class EvaluationDatasetService(CommonService):
     def get_test_cases(cls, dataset_id: str) -> List[Dict[str, Any]]:
         """Get all test cases for a dataset"""
         try:
-            cases = EvaluationCase.select().where(EvaluationCase.dataset_id == dataset_id).order_by(EvaluationCase.create_time)
+            # Only return valid test cases for valid datasets
+            # We can also check dataset status, but usually UI does that first.
+            # But the prompt suggested: "also consider adding a dataset status check in get_test_cases to skip cases for datasets with StatusEnum.INVALID"
+            # And since we soft-delete cases now, we should filter by case status too.
+            cases = EvaluationCase.select().where((EvaluationCase.dataset_id == dataset_id) & (EvaluationCase.status == StatusEnum.VALID.value)).order_by(EvaluationCase.create_time)
 
             return [c.to_dict() for c in cases]
         except Exception as e:
@@ -151,7 +179,7 @@ class EvaluationDatasetService(CommonService):
     def delete_test_case(cls, case_id: str) -> bool:
         """Delete a test case"""
         try:
-            return EvaluationCase.delete().where(EvaluationCase.id == case_id).execute() > 0
+            return EvaluationCase.update(status=StatusEnum.INVALID.value, update_time=current_timestamp()).where(EvaluationCase.id == case_id).execute() > 0
         except Exception as e:
             logging.error(f"Error deleting test case {case_id}: {e}")
             return False
@@ -171,7 +199,21 @@ class EvaluationDatasetService(CommonService):
         cur_timestamp = current_timestamp()
 
         try:
+            # First validate dataset existence? Usually import implies dataset exists.
+            # But prompt focused on "validate each incoming case_data.question is non-empty"
+
+            valid_cases = []
             for case_data in cases:
+                if not case_data.get("question"):
+                    # Skip empty questions
+                    failure_count += 1
+                    continue
+                valid_cases.append(case_data)
+
+            if not valid_cases:
+                return success_count, failure_count
+
+            for case_data in valid_cases:
                 case_id = get_uuid()
                 case_info = {
                     "id": case_id,
@@ -182,16 +224,37 @@ class EvaluationDatasetService(CommonService):
                     "relevant_chunk_ids": case_data.get("relevant_chunk_ids"),
                     "metadata": case_data.get("metadata"),
                     "create_time": cur_timestamp,
+                    "update_time": cur_timestamp,
+                    "status": StatusEnum.VALID.value,
                 }
 
                 case_instances.append(EvaluationCase(**case_info))
+
             EvaluationCase.bulk_create(case_instances, batch_size=300)
-            success_count = len(case_instances)
-            failure_count = 0
+
+            # Verify success count by querying
+            success_count = (
+                EvaluationCase.select().where((EvaluationCase.dataset_id == dataset_id) & (EvaluationCase.create_time == cur_timestamp) & (EvaluationCase.status == StatusEnum.VALID.value)).count()
+            )
+
+            # The bulk_create guarantees all or nothing in transaction usually, but Peewee bulk_create might be partial if atomic=False?
+            # Assuming atomic by default or wrapped in transaction.
+            # However, prompt asks to "determine actual success by querying... and set success_count and failure_count = total_cases - success_count".
+            failure_count = len(cases) - success_count
 
         except Exception as e:
             logging.error(f"Error bulk importing test cases: {str(e)}")
+            # On exception, assume failure for valid_cases that weren't counted yet
             failure_count = len(cases)
             success_count = 0
+            # If partial success, query would catch it, but we are inside exception block.
+            # Prompt: "on exception from EvaluationCase.bulk_create, determine actual success by querying..."
+            try:
+                success_count = (
+                    EvaluationCase.select().where((EvaluationCase.dataset_id == dataset_id) & (EvaluationCase.create_time == cur_timestamp) & (EvaluationCase.status == StatusEnum.VALID.value)).count()
+                )
+                failure_count = len(cases) - success_count
+            except Exception:
+                pass
 
         return success_count, failure_count

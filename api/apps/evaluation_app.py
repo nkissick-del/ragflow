@@ -28,25 +28,20 @@ Provides REST API for RAG evaluation functionality including:
 from quart import request, Response
 from api.apps import login_required, current_user
 from api.db.services.evaluation_service import EvaluationService
-from api.utils.api_utils import (
-    get_data_error_result,
-    get_json_result,
-    get_request_json,
-    server_error_response,
-    validate_request
-)
+from api.utils.api_utils import get_data_error_result, get_json_result, get_request_json, server_error_response, validate_request
 from common.constants import RetCode
 
 
 # ==================== Dataset Management ====================
 
-@manager.route('/dataset/create', methods=['POST'])  # noqa: F821
+
+@manager.route("/dataset/create", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("name", "kb_ids")
 async def create_dataset():
     """
     Create a new evaluation dataset.
-    
+
     Request body:
     {
         "name": "Dataset name",
@@ -59,35 +54,29 @@ async def create_dataset():
         name = req.get("name", "").strip()
         description = req.get("description", "")
         kb_ids = req.get("kb_ids", [])
-        
+
         if not name:
             return get_data_error_result(message="Dataset name cannot be empty")
-        
+
         if not kb_ids or not isinstance(kb_ids, list):
             return get_data_error_result(message="kb_ids must be a non-empty list")
-        
-        success, result = EvaluationService.create_dataset(
-            name=name,
-            description=description,
-            kb_ids=kb_ids,
-            tenant_id=current_user.id,
-            user_id=current_user.id
-        )
-        
+
+        success, result = EvaluationService.create_dataset(name=name, description=description, kb_ids=kb_ids, tenant_id=current_user.id, user_id=current_user.id)
+
         if not success:
             return get_data_error_result(message=result)
-        
+
         return get_json_result(data={"dataset_id": result})
     except Exception as e:
         return server_error_response(e)
 
 
-@manager.route('/dataset/list', methods=['GET'])  # noqa: F821
+@manager.route("/dataset/list", methods=["GET"])  # noqa: F821
 @login_required
 async def list_datasets():
     """
     List evaluation datasets for current tenant.
-    
+
     Query params:
     - page: Page number (default: 1)
     - page_size: Items per page (default: 20)
@@ -95,42 +84,34 @@ async def list_datasets():
     try:
         page = int(request.args.get("page", 1))
         page_size = int(request.args.get("page_size", 20))
-        
-        result = EvaluationService.list_datasets(
-            tenant_id=current_user.id,
-            user_id=current_user.id,
-            page=page,
-            page_size=page_size
-        )
-        
+
+        result = EvaluationService.list_datasets(tenant_id=current_user.id, user_id=current_user.id, page=page, page_size=page_size)
+
         return get_json_result(data=result)
     except Exception as e:
         return server_error_response(e)
 
 
-@manager.route('/dataset/<dataset_id>', methods=['GET'])  # noqa: F821
+@manager.route("/dataset/<dataset_id>", methods=["GET"])  # noqa: F821
 @login_required
 async def get_dataset(dataset_id):
     """Get dataset details by ID"""
     try:
         dataset = EvaluationService.get_dataset(dataset_id)
         if not dataset:
-            return get_data_error_result(
-                message="Dataset not found",
-                code=RetCode.DATA_ERROR
-            )
-        
+            return get_data_error_result(message="Dataset not found", code=RetCode.DATA_ERROR)
+
         return get_json_result(data=dataset)
     except Exception as e:
         return server_error_response(e)
 
 
-@manager.route('/dataset/<dataset_id>', methods=['PUT'])  # noqa: F821
+@manager.route("/dataset/<dataset_id>", methods=["PUT"])  # noqa: F821
 @login_required
 async def update_dataset(dataset_id):
     """
     Update dataset.
-    
+
     Request body:
     {
         "name": "New name",
@@ -140,33 +121,33 @@ async def update_dataset(dataset_id):
     """
     try:
         req = await get_request_json()
-        
+
         # Remove fields that shouldn't be updated
         req.pop("id", None)
         req.pop("tenant_id", None)
         req.pop("created_by", None)
         req.pop("create_time", None)
-        
+
         success = EvaluationService.update_dataset(dataset_id, **req)
-        
+
         if not success:
             return get_data_error_result(message="Failed to update dataset")
-        
+
         return get_json_result(data={"dataset_id": dataset_id})
     except Exception as e:
         return server_error_response(e)
 
 
-@manager.route('/dataset/<dataset_id>', methods=['DELETE'])  # noqa: F821
+@manager.route("/dataset/<dataset_id>", methods=["DELETE"])  # noqa: F821
 @login_required
 async def delete_dataset(dataset_id):
     """Delete dataset (soft delete)"""
     try:
         success = EvaluationService.delete_dataset(dataset_id)
-        
+
         if not success:
             return get_data_error_result(message="Failed to delete dataset")
-        
+
         return get_json_result(data={"dataset_id": dataset_id})
     except Exception as e:
         return server_error_response(e)
@@ -174,13 +155,14 @@ async def delete_dataset(dataset_id):
 
 # ==================== Test Case Management ====================
 
-@manager.route('/dataset/<dataset_id>/case/add', methods=['POST'])  # noqa: F821
+
+@manager.route("/dataset/<dataset_id>/case/add", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("question")
 async def add_test_case(dataset_id):
     """
     Add a test case to a dataset.
-    
+
     Request body:
     {
         "question": "Test question",
@@ -193,34 +175,34 @@ async def add_test_case(dataset_id):
     try:
         req = await get_request_json()
         question = req.get("question", "").strip()
-        
+
         if not question:
             return get_data_error_result(message="Question cannot be empty")
-        
+
         success, result = EvaluationService.add_test_case(
             dataset_id=dataset_id,
             question=question,
             reference_answer=req.get("reference_answer"),
             relevant_doc_ids=req.get("relevant_doc_ids"),
             relevant_chunk_ids=req.get("relevant_chunk_ids"),
-            metadata=req.get("metadata")
+            metadata=req.get("metadata"),
         )
-        
+
         if not success:
             return get_data_error_result(message=result)
-        
+
         return get_json_result(data={"case_id": result})
     except Exception as e:
         return server_error_response(e)
 
 
-@manager.route('/dataset/<dataset_id>/case/import', methods=['POST'])  # noqa: F821
+@manager.route("/dataset/<dataset_id>/case/import", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("cases")
 async def import_test_cases(dataset_id):
     """
     Bulk import test cases.
-    
+
     Request body:
     {
         "cases": [
@@ -239,25 +221,18 @@ async def import_test_cases(dataset_id):
     try:
         req = await get_request_json()
         cases = req.get("cases", [])
-        
+
         if not cases or not isinstance(cases, list):
             return get_data_error_result(message="cases must be a non-empty list")
-        
-        success_count, failure_count = EvaluationService.import_test_cases(
-            dataset_id=dataset_id,
-            cases=cases
-        )
-        
-        return get_json_result(data={
-            "success_count": success_count,
-            "failure_count": failure_count,
-            "total": len(cases)
-        })
+
+        success_count, failure_count = EvaluationService.import_test_cases(dataset_id=dataset_id, cases=cases)
+
+        return get_json_result(data={"success_count": success_count, "failure_count": failure_count, "total": len(cases)})
     except Exception as e:
         return server_error_response(e)
 
 
-@manager.route('/dataset/<dataset_id>/cases', methods=['GET'])  # noqa: F821
+@manager.route("/dataset/<dataset_id>/cases", methods=["GET"])  # noqa: F821
 @login_required
 async def get_test_cases(dataset_id):
     """Get all test cases for a dataset"""
@@ -268,16 +243,16 @@ async def get_test_cases(dataset_id):
         return server_error_response(e)
 
 
-@manager.route('/case/<case_id>', methods=['DELETE'])  # noqa: F821
+@manager.route("/case/<case_id>", methods=["DELETE"])  # noqa: F821
 @login_required
 async def delete_test_case(case_id):
     """Delete a test case"""
     try:
         success = EvaluationService.delete_test_case(case_id)
-        
+
         if not success:
             return get_data_error_result(message="Failed to delete test case")
-        
+
         return get_json_result(data={"case_id": case_id})
     except Exception as e:
         return server_error_response(e)
@@ -285,13 +260,14 @@ async def delete_test_case(case_id):
 
 # ==================== Evaluation Execution ====================
 
-@manager.route('/run/start', methods=['POST'])  # noqa: F821
+
+@manager.route("/run/start", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("dataset_id", "dialog_id")
 async def start_evaluation():
     """
     Start an evaluation run.
-    
+
     Request body:
     {
         "dataset_id": "dataset_id",
@@ -304,64 +280,53 @@ async def start_evaluation():
         dataset_id = req.get("dataset_id")
         dialog_id = req.get("dialog_id")
         name = req.get("name")
-        
-        success, result = EvaluationService.start_evaluation(
-            dataset_id=dataset_id,
-            dialog_id=dialog_id,
-            user_id=current_user.id,
-            name=name
-        )
-        
+
+        success, result = EvaluationService.start_evaluation(dataset_id=dataset_id, dialog_id=dialog_id, user_id=current_user.id, name=name)
+
         if not success:
             return get_data_error_result(message=result)
-        
+
         return get_json_result(data={"run_id": result})
     except Exception as e:
         return server_error_response(e)
 
 
-@manager.route('/run/<run_id>', methods=['GET'])  # noqa: F821
+@manager.route("/run/<run_id>", methods=["GET"])  # noqa: F821
 @login_required
 async def get_evaluation_run(run_id):
     """Get evaluation run details"""
     try:
-        result = EvaluationService.get_run_results(run_id)
-        
-        if not result:
-            return get_data_error_result(
-                message="Evaluation run not found",
-                code=RetCode.DATA_ERROR
-            )
-        
+        success, result = EvaluationService.get_run_results(run_id)
+
+        if not success:
+            return get_data_error_result(message=result, code=RetCode.DATA_ERROR)
+
         return get_json_result(data=result)
     except Exception as e:
         return server_error_response(e)
 
 
-@manager.route('/run/<run_id>/results', methods=['GET'])  # noqa: F821
+@manager.route("/run/<run_id>/results", methods=["GET"])  # noqa: F821
 @login_required
 async def get_run_results(run_id):
     """Get detailed results for an evaluation run"""
     try:
-        result = EvaluationService.get_run_results(run_id)
-        
-        if not result:
-            return get_data_error_result(
-                message="Evaluation run not found",
-                code=RetCode.DATA_ERROR
-            )
-        
+        success, result = EvaluationService.get_run_results(run_id)
+
+        if not success:
+            return get_data_error_result(message=result, code=RetCode.DATA_ERROR)
+
         return get_json_result(data=result)
     except Exception as e:
         return server_error_response(e)
 
 
-@manager.route('/run/list', methods=['GET'])  # noqa: F821
+@manager.route("/run/list", methods=["GET"])  # noqa: F821
 @login_required
 async def list_evaluation_runs():
     """
     List evaluation runs.
-    
+
     Query params:
     - dataset_id: Filter by dataset (optional)
     - dialog_id: Filter by dialog (optional)
@@ -375,7 +340,7 @@ async def list_evaluation_runs():
         return server_error_response(e)
 
 
-@manager.route('/run/<run_id>', methods=['DELETE'])  # noqa: F821
+@manager.route("/run/<run_id>", methods=["DELETE"])  # noqa: F821
 @login_required
 async def delete_evaluation_run(run_id):
     """Delete an evaluation run"""
@@ -388,7 +353,8 @@ async def delete_evaluation_run(run_id):
 
 # ==================== Analysis & Recommendations ====================
 
-@manager.route('/run/<run_id>/recommendations', methods=['GET'])  # noqa: F821
+
+@manager.route("/run/<run_id>/recommendations", methods=["GET"])  # noqa: F821
 @login_required
 async def get_recommendations(run_id):
     """Get configuration recommendations based on evaluation results"""
@@ -399,13 +365,13 @@ async def get_recommendations(run_id):
         return server_error_response(e)
 
 
-@manager.route('/compare', methods=['POST'])  # noqa: F821
+@manager.route("/compare", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("run_ids")
 async def compare_runs():
     """
     Compare multiple evaluation runs.
-    
+
     Request body:
     {
         "run_ids": ["run_id1", "run_id2", "run_id3"]
@@ -414,12 +380,10 @@ async def compare_runs():
     try:
         req = await get_request_json()
         run_ids = req.get("run_ids", [])
-        
+
         if not run_ids or not isinstance(run_ids, list) or len(run_ids) < 2:
-            return get_data_error_result(
-                message="run_ids must be a list with at least 2 run IDs"
-            )
-        
+            return get_data_error_result(message="run_ids must be a list with at least 2 run IDs")
+
         success, result = EvaluationService.compare_runs(run_ids)
 
         if not success:
@@ -430,7 +394,7 @@ async def compare_runs():
         return server_error_response(e)
 
 
-@manager.route('/run/<run_id>/export', methods=['GET'])  # noqa: F821
+@manager.route("/run/<run_id>/export", methods=["GET"])  # noqa: F821
 @login_required
 async def export_results(run_id):
     """Export evaluation results as JSON/CSV"""
@@ -440,27 +404,15 @@ async def export_results(run_id):
         if format_type.lower() == "csv":
             csv_data = EvaluationService.get_run_results_csv(run_id)
             if not csv_data:
-                return get_data_error_result(
-                    message="Evaluation run not found or failed to generate CSV",
-                    code=RetCode.DATA_ERROR
-                )
+                return get_data_error_result(message="Evaluation run not found or failed to generate CSV", code=RetCode.DATA_ERROR)
 
-            return Response(
-                csv_data,
-                mimetype="text/csv",
-                headers={
-                    "Content-Disposition": f"attachment; filename=evaluation_run_{run_id}.csv"
-                }
-            )
+            return Response(csv_data, mimetype="text/csv", headers={"Content-Disposition": f"attachment; filename=evaluation_run_{run_id}.csv"})
 
-        result = EvaluationService.get_run_results(run_id)
-        
-        if not result:
-            return get_data_error_result(
-                message="Evaluation run not found",
-                code=RetCode.DATA_ERROR
-            )
-        
+        success, result = EvaluationService.get_run_results(run_id)
+
+        if not success:
+            return get_data_error_result(message=result, code=RetCode.DATA_ERROR)
+
         return get_json_result(data=result)
     except Exception as e:
         return server_error_response(e)
@@ -468,13 +420,14 @@ async def export_results(run_id):
 
 # ==================== Real-time Evaluation ====================
 
-@manager.route('/evaluate_single', methods=['POST'])  # noqa: F821
+
+@manager.route("/evaluate_single", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("question", "dialog_id")
 async def evaluate_single():
     """
     Evaluate a single question-answer pair in real-time.
-    
+
     Request body:
     {
         "question": "Test question",
@@ -485,14 +438,10 @@ async def evaluate_single():
     """
     try:
         # req = await get_request_json()  # TODO: Use for single evaluation implementation
-        
+
         # TODO: Implement single evaluation
         # This would execute the RAG pipeline and return metrics immediately
-        
-        return get_json_result(data={
-            "answer": "",
-            "metrics": {},
-            "retrieved_chunks": []
-        })
+
+        return get_json_result(data={"answer": "", "metrics": {}, "retrieved_chunks": []})
     except Exception as e:
         return server_error_response(e)

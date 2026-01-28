@@ -32,7 +32,6 @@ from api.db.db_models import EvaluationDataset
 from api.db.services.evaluation.dataset_service import EvaluationDatasetService
 from api.db.services.evaluation.runner_service import EvaluationRunnerService
 from api.db.services.evaluation.report_service import EvaluationReportService
-from api.db.services.evaluation.metrics_service import EvaluationMetricsService
 
 
 class EvaluationService(CommonService):
@@ -94,36 +93,10 @@ class EvaluationService(CommonService):
     def start_evaluation(cls, dataset_id: str, dialog_id: str, user_id: str, name: Optional[str] = None) -> Tuple[bool, str]:
         return EvaluationRunnerService.start_evaluation(dataset_id, dialog_id, user_id, name)
 
-    @classmethod
-    def _execute_evaluation(cls, run_id: str, dataset_id: str, dialog: Any):
-        return EvaluationRunnerService._execute_evaluation(run_id, dataset_id, dialog)
-
-    @classmethod
-    def _evaluate_single_case(cls, run_id: str, case: Dict[str, Any], dialog: Any) -> Optional[Dict[str, Any]]:
-        return EvaluationRunnerService._evaluate_single_case(run_id, case, dialog)
-
-    @classmethod
-    def _compute_metrics(
-        cls, question: str, generated_answer: str, reference_answer: Optional[str], retrieved_chunks: List[Dict[str, Any]], relevant_chunk_ids: Optional[List[str]], dialog: Any
-    ) -> Dict[str, float]:
-        return EvaluationMetricsService.compute_metrics(question, generated_answer, reference_answer, retrieved_chunks, relevant_chunk_ids, dialog)
-
-    @classmethod
-    def _evaluate_with_llm(cls, question: str, answer: str, reference: Optional[str], retrieved_chunks: List[Dict[str, Any]], dialog: Any) -> Dict[str, float]:
-        return EvaluationMetricsService._evaluate_with_llm(question, answer, reference, retrieved_chunks, dialog)
-
-    @classmethod
-    def _compute_retrieval_metrics(cls, retrieved_ids: List[str], relevant_ids: List[str]) -> Dict[str, float]:
-        return EvaluationMetricsService._compute_retrieval_metrics(retrieved_ids, relevant_ids)
-
-    @classmethod
-    def _compute_summary_metrics(cls, results: List[Dict[str, Any]]) -> Dict[str, Any]:
-        return EvaluationMetricsService.compute_summary_metrics(results)
-
     # ==================== Results & Analysis ====================
 
     @classmethod
-    def get_run_results(cls, run_id: str) -> Dict[str, Any]:
+    def get_run_results(cls, run_id: str) -> Tuple[bool, Dict[str, Any] | str]:
         return EvaluationReportService.get_run_results(run_id)
 
     @classmethod

@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 
+
 import csv
 import io
 import json
@@ -23,21 +24,35 @@ from typing import List, Dict, Any, Optional, Tuple
 from api.db.db_models import EvaluationRun, EvaluationResult, EvaluationCase
 
 
+def sanitize_csv_cell(value: str) -> str:
+    """
+    Sanitize CSV cell to prevent formula injection.
+    Prefixes values starting with =, +, -, @, or tab with a single quote.
+    """
+    if not value:
+        return ""
+
+    value = str(value)
+    if value.startswith(("=", "+", "-", "@", "\t")):
+        return f"'{value}"
+    return value
+
+
 class EvaluationReportService:
     @classmethod
-    def get_run_results(cls, run_id: str) -> Dict[str, Any]:
+    def get_run_results(cls, run_id: str) -> Tuple[bool, Dict[str, Any] | str]:
         """Get results for an evaluation run"""
         try:
             run = EvaluationRun.get_by_id(run_id)
             if not run:
-                return {}
+                return False, "Evaluation run not found"
 
             results = EvaluationResult.select().where(EvaluationResult.run_id == run_id).order_by(EvaluationResult.create_time)
 
-            return {"run": run.to_dict(), "results": [r.to_dict() for r in results]}
+            return True, {"run": run.to_dict(), "results": [r.to_dict() for r in results]}
         except Exception as e:
             logging.error(f"Error getting run results {run_id}: {e}")
-            return {}
+            return False, str(e)
 
     @classmethod
     def get_run_results_csv(cls, run_id: str) -> Optional[str]:
@@ -58,19 +73,42 @@ class EvaluationReportService:
                 .order_by(EvaluationResult.create_time)
             )
 
-            # Fetch data to memory to determine all metric keys
-            rows = []
+            # First pass: identify all metric keys
             all_metric_keys = set()
-
             for result in query:
+                metrics = result.to_dict().get("metrics", {})
+                if metrics:
+                    for k in metrics.keys():
+                        all_metric_keys.add(f"metric_{k}")
+
+            # Define CSV fields
+            fieldnames = ["Question", "Reference Answer", "Generated Answer", "Execution Time"]
+            fieldnames.extend(sorted(list(all_metric_keys)))
+            fieldnames.extend(["Retrieved Chunks", "Relevant Chunk IDs"])
+
+            # Generate CSV with streaming
+            output = io.StringIO()
+            writer = csv.DictWriter(output, fieldnames=fieldnames)
+            writer.writeheader()
+
+            # Second pass: stream rows
+            # Re-execute query for cursor iteration
+            query_iter = (
+                EvaluationResult.select(EvaluationResult, EvaluationCase)
+                .join(EvaluationCase, on=(EvaluationResult.case_id == EvaluationCase.id))
+                .where(EvaluationResult.run_id == run_id)
+                .order_by(EvaluationResult.create_time)
+            )
+
+            for result in query_iter:
                 result_dict = result.to_dict()
                 case_dict = result.case_id.to_dict()
 
-                # Combine info
+                # Sanitize user-controlled fields
                 row = {
-                    "Question": case_dict.get("question", ""),
-                    "Reference Answer": case_dict.get("reference_answer", ""),
-                    "Generated Answer": result_dict.get("generated_answer", ""),
+                    "Question": sanitize_csv_cell(case_dict.get("question", "")),
+                    "Reference Answer": sanitize_csv_cell(case_dict.get("reference_answer", "")),
+                    "Generated Answer": sanitize_csv_cell(result_dict.get("generated_answer", "")),
                     "Execution Time": result_dict.get("execution_time", 0),
                     "Retrieved Chunks": json.dumps(result_dict.get("retrieved_chunks", []), ensure_ascii=False),
                     "Relevant Chunk IDs": json.dumps(case_dict.get("relevant_chunk_ids", []), ensure_ascii=False),
@@ -80,27 +118,8 @@ class EvaluationReportService:
                 metrics = result_dict.get("metrics", {})
                 if metrics:
                     for k, v in metrics.items():
-                        metric_key = f"metric_{k}"
-                        row[metric_key] = v
-                        all_metric_keys.add(metric_key)
+                        row[f"metric_{k}"] = v
 
-                rows.append(row)
-
-            # Define CSV fields
-            fieldnames = ["Question", "Reference Answer", "Generated Answer", "Execution Time"]
-
-            # Add sorted metric keys
-            fieldnames.extend(sorted(list(all_metric_keys)))
-
-            # Add complex fields at the end
-            fieldnames.extend(["Retrieved Chunks", "Relevant Chunk IDs"])
-
-            # Generate CSV
-            output = io.StringIO()
-            writer = csv.DictWriter(output, fieldnames=fieldnames)
-
-            writer.writeheader()
-            for row in rows:
                 writer.writerow(row)
 
             return output.getvalue()
@@ -172,11 +191,18 @@ class EvaluationReportService:
         """
         try:
             # Fetch runs
-            runs = list(EvaluationRun.select().where(EvaluationRun.id.in_(run_ids)))
+            runs_query = list(EvaluationRun.select().where(EvaluationRun.id.in_(run_ids)))
+            runs_map = {r.id: r for r in runs_query}
 
-            # Check if all runs exist
-            found_ids = {r.id for r in runs}
-            missing_ids = set(run_ids) - found_ids
+            # Reorder according to input run_ids
+            runs = []
+            missing_ids = []
+            for rid in run_ids:
+                if rid in runs_map:
+                    runs.append(runs_map[rid])
+                elif rid not in missing_ids:  # Avoid duplicates in missing list
+                    missing_ids.append(rid)
+
             if missing_ids:
                 return False, f"Runs not found: {', '.join(missing_ids)}"
 

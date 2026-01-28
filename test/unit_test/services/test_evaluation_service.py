@@ -83,7 +83,7 @@ def mock_env():
 
 
 def test_evaluate_with_llm(mock_env):
-    from api.db.services.evaluation_service import EvaluationService
+    from api.db.services.evaluation.metrics_service import EvaluationMetricsService
 
     # Setup
     dialog = MagicMock()
@@ -100,7 +100,7 @@ def test_evaluate_with_llm(mock_env):
     mock_env["json_repair"].loads.return_value = {"faithfulness": 0.9, "context_relevance": 0.8, "answer_relevance": 0.95, "semantic_similarity": 0.85}
 
     # Execute
-    metrics = EvaluationService._evaluate_with_llm("Q", "A", "Ref", [{"content": "Ctx"}], dialog)
+    metrics = EvaluationMetricsService.evaluate_with_llm("Q", "A", "Ref", [{"content": "Ctx"}], dialog)
 
     # Verify
     assert metrics["faithfulness"] == 0.9
@@ -111,7 +111,7 @@ def test_evaluate_with_llm(mock_env):
 
 
 def test_evaluate_with_llm_error(mock_env):
-    from api.db.services.evaluation_service import EvaluationService
+    from api.db.services.evaluation.metrics_service import EvaluationMetricsService
 
     dialog = MagicMock()
     mock_bundle = mock_env["llm_service"].LLMBundle.return_value
@@ -119,7 +119,7 @@ def test_evaluate_with_llm_error(mock_env):
 
     mock_env["json_repair"].loads.side_effect = Exception("Fail")
 
-    metrics = EvaluationService._evaluate_with_llm("Q", "A", "Ref", [{"content": "Ctx"}], dialog)
+    metrics = EvaluationMetricsService.evaluate_with_llm("Q", "A", "Ref", [{"content": "Ctx"}], dialog)
 
     assert metrics["faithfulness"] == 0.0
     assert metrics["semantic_similarity"] is None

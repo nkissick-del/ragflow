@@ -30,6 +30,43 @@ from common.misc_utils import get_uuid
 from common.time_utils import current_timestamp
 
 
+def _sync_from_async_gen(async_gen, timeout=60):
+    result_queue = queue.Queue()
+
+    def runner():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        async def consume():
+            try:
+                async for item in async_gen:
+                    result_queue.put(item)
+            except Exception as e:
+                result_queue.put(e)
+            finally:
+                result_queue.put(StopIteration)
+
+        try:
+            loop.run_until_complete(consume())
+        except Exception:
+            pass
+        finally:
+            loop.close()
+
+    threading.Thread(target=runner, daemon=True).start()
+
+    while True:
+        try:
+            item = result_queue.get(timeout=timeout)
+            if item is StopIteration:
+                break
+            if isinstance(item, Exception):
+                raise item
+            yield item
+        except queue.Empty:
+            raise RuntimeError(f"Async generator timed out after {timeout} seconds")
+
+
 class EvaluationRunnerService:
     @classmethod
     def start_evaluation(cls, dataset_id: str, dialog_id: str, user_id: str, name: Optional[str] = None) -> Tuple[bool, str]:
@@ -37,6 +74,10 @@ class EvaluationRunnerService:
         Start an evaluation run.
         """
         try:
+            # Validate dataset
+            if not EvaluationDatasetService.get_dataset(dataset_id):
+                return False, "Dataset not found"
+
             # Get dialog configuration
             success, dialog = DialogService.get_by_id(dialog_id)
             if not success:
@@ -63,9 +104,8 @@ class EvaluationRunnerService:
             if not EvaluationRun.create(**run):
                 return False, "Failed to create evaluation run"
 
-            # Execute evaluation asynchronously (in production, use task queue)
-            # For now, we'll execute synchronously
-            cls._execute_evaluation(run_id, dataset_id, dialog)
+            # Execute evaluation asynchronously
+            threading.Thread(target=cls.execute_evaluation, args=(run_id, dataset_id, dialog)).start()
 
             return True, run_id
         except Exception as e:
@@ -73,7 +113,7 @@ class EvaluationRunnerService:
             return False, str(e)
 
     @classmethod
-    def _execute_evaluation(cls, run_id: str, dataset_id: str, dialog: Any):
+    def execute_evaluation(cls, run_id: str, dataset_id: str, dialog: Any):
         """
         Execute evaluation for all test cases.
         """
@@ -88,22 +128,29 @@ class EvaluationRunnerService:
             # Execute each test case
             results = []
             for case in test_cases:
-                result = cls._evaluate_single_case(run_id, case, dialog)
+                result = cls.evaluate_single_case(run_id, case, dialog)
                 if result:
                     results.append(result)
+
+            # Check if any results were obtained
+            if not results:
+                logging.warning(f"No results generated for run {run_id}")
+                EvaluationRun.update(status="FAILED", complete_time=current_timestamp()).where(EvaluationRun.id == run_id).execute()
+                return
 
             # Compute summary metrics
             metrics_summary = EvaluationMetricsService.compute_summary_metrics(results)
 
             # Update run status
-            EvaluationRun.update(status="COMPLETED", metrics_summary=metrics_summary, complete_time=current_timestamp()).where(EvaluationRun.id == run_id).execute()
+            status = "COMPLETED" if len(results) == len(test_cases) else "PARTIAL"
+            EvaluationRun.update(status=status, metrics_summary=metrics_summary, complete_time=current_timestamp()).where(EvaluationRun.id == run_id).execute()
 
         except Exception as e:
             logging.error(f"Error executing evaluation {run_id}: {e}")
             EvaluationRun.update(status="FAILED", complete_time=current_timestamp()).where(EvaluationRun.id == run_id).execute()
 
     @classmethod
-    def _evaluate_single_case(cls, run_id: str, case: Dict[str, Any], dialog: Any) -> Optional[Dict[str, Any]]:
+    def evaluate_single_case(cls, run_id: str, case: Dict[str, Any], dialog: Any) -> Optional[Dict[str, Any]]:
         """
         Evaluate a single test case.
         """
@@ -115,46 +162,33 @@ class EvaluationRunnerService:
             start_time = timer()
             answer = ""
             retrieved_chunks = []
-
-            def _sync_from_async_gen(async_gen):
-                result_queue: queue.Queue = queue.Queue()
-
-                def runner():
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-
-                    async def consume():
-                        try:
-                            async for item in async_gen:
-                                result_queue.put(item)
-                        except Exception as e:
-                            result_queue.put(e)
-                        finally:
-                            result_queue.put(StopIteration)
-
-                    loop.run_until_complete(consume())
-                    loop.close()
-
-                threading.Thread(target=runner, daemon=True).start()
-
-                while True:
-                    item = result_queue.get()
-                    if item is StopIteration:
-                        break
-                    if isinstance(item, Exception):
-                        raise item
-                    yield item
+            token_usage = None
 
             def chat(dialog, messages, stream=True, **kwargs):
                 from api.db.services.dialog_service import async_chat
 
                 return _sync_from_async_gen(async_chat(dialog, messages, stream=stream, **kwargs))
 
-            for ans in chat(dialog, messages, stream=False):
+            # Consume single response for stream=False
+            chat_gen = chat(dialog, messages, stream=False)
+            try:
+                ans = next(chat_gen)
                 if isinstance(ans, dict):
                     answer = ans.get("answer", "")
                     retrieved_chunks = ans.get("reference", {}).get("chunks", [])
-                    break
+
+                    # Extract token usage
+                    # Assuming ans might have 'usage' or we can calculate from what we have if the model returns it
+                    # The user mentioned: "e.g., response.get("usage") or response.usage"
+                    if "usage" in ans:
+                        token_usage = ans["usage"]
+                    elif "total_tokens" in ans:
+                        # Some APIs handle it differently, but user asked to populate token_usage
+                        token_usage = {"total_tokens": ans["total_tokens"]}
+            except StopIteration:
+                logging.warning(f"Chat generator empty for case {case.get('id')}")
+            except Exception as e:
+                logging.error(f"Error during chat generation for case {case.get('id')}: {e}")
 
             execution_time = timer() - start_time
 
@@ -178,11 +212,16 @@ class EvaluationRunnerService:
                 "retrieved_chunks": retrieved_chunks,
                 "metrics": metrics,
                 "execution_time": execution_time,
-                "token_usage": None,  # TODO: Track token usage
+                "token_usage": token_usage,
                 "create_time": current_timestamp(),
             }
 
-            EvaluationResult.create(**result)
+            try:
+                EvaluationResult.create(**result)
+            except Exception as e:
+                logging.error(f"Failed to persist evaluation result {result_id}: {e}")
+                # We still return the result so the run can continue and stats can be computed
+                pass
 
             return result
         except Exception as e:

@@ -42,7 +42,7 @@ class EvaluationMetricsService:
         # Retrieval metrics (if ground truth chunks provided)
         if relevant_chunk_ids:
             retrieved_ids = [c.get("chunk_id") for c in retrieved_chunks]
-            metrics.update(cls._compute_retrieval_metrics(retrieved_ids, relevant_chunk_ids))
+            metrics.update(cls.compute_retrieval_metrics(retrieved_ids, relevant_chunk_ids))
 
         # Generation metrics
         if generated_answer:
@@ -51,13 +51,13 @@ class EvaluationMetricsService:
             metrics["has_answer"] = 1.0 if generated_answer.strip() else 0.0
 
             # Advanced metrics using LLM-as-judge
-            llm_metrics = cls._evaluate_with_llm(question=question, answer=generated_answer, reference=reference_answer, retrieved_chunks=retrieved_chunks, dialog=dialog)
+            llm_metrics = cls.evaluate_with_llm(question=question, answer=generated_answer, reference=reference_answer, retrieved_chunks=retrieved_chunks, dialog=dialog)
             metrics.update(llm_metrics)
 
         return metrics
 
     @classmethod
-    def _evaluate_with_llm(cls, question: str, answer: str, reference: Optional[str], retrieved_chunks: List[Dict[str, Any]], dialog: Any) -> Dict[str, float]:
+    def evaluate_with_llm(cls, question: str, answer: str, reference: Optional[str], retrieved_chunks: List[Dict[str, Any]], dialog: Any) -> Dict[str, float]:
         """
         Evaluate answer quality using LLM-as-judge.
 
@@ -150,7 +150,7 @@ class EvaluationMetricsService:
             return {"faithfulness": 0.0, "context_relevance": 0.0, "answer_relevance": 0.0, "semantic_similarity": None, "evaluation_status": "failed", "error": str(e)}
 
     @classmethod
-    def _compute_retrieval_metrics(cls, retrieved_ids: List[str], relevant_ids: List[str]) -> Dict[str, float]:
+    def compute_retrieval_metrics(cls, retrieved_ids: List[str], relevant_ids: List[str]) -> Dict[str, float]:
         """
         Compute retrieval metrics.
 

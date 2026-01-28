@@ -38,6 +38,8 @@ class EvaluationCase(DataBaseModel):
     relevant_chunk_ids = JSONField(null=True, help_text="expected relevant chunk IDs")
     metadata = JSONField(null=True, help_text="additional context/tags")
     create_time = BigIntegerField(null=False, help_text="creation timestamp")
+    update_time = BigIntegerField(null=True, help_text="last update timestamp")
+    status = IntegerField(null=False, default=1, help_text="1=valid, 0=invalid")
 
     class Meta:
         db_table = "evaluation_cases"

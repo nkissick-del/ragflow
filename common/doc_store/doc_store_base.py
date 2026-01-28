@@ -130,6 +130,28 @@ class FusionExpr:
 MatchExpr = MatchTextExpr | MatchDenseExpr | MatchSparseExpr | MatchTensorExpr | FusionExpr
 
 
+class FieldsAccessor:
+    """Read-only access to self._fields; preserves iteration and truthiness for callers."""
+
+    def __init__(self, fields):
+        self._fields = fields
+
+    def __iter__(self):
+        return iter(self._fields)
+
+    def __bool__(self):
+        return bool(self._fields)
+
+    def __call__(self):
+        return tuple(self._fields)
+
+    def __len__(self):
+        return len(self._fields)
+
+    def __getitem__(self, item):
+        return self._fields[item]
+
+
 class OrderByExpr:
     def __init__(self):
         self._fields = list()
@@ -144,28 +166,6 @@ class OrderByExpr:
 
     def fields(self):
         return self._fields
-
-
-class FieldsAccessor:
-    """Read-only access to self._fields; preserves iteration and truthiness for callers."""
-
-    def __init__(self, fields):
-        self._fields = fields
-
-    def __iter__(self):
-        return iter(self._fields)
-
-    def __bool__(self):
-        return bool(self._fields)
-
-    def __call__(self):
-        return self._fields
-
-    def __len__(self):
-        return len(self._fields)
-
-    def __getitem__(self, item):
-        return self._fields[item]
 
     @property
     def fields_prop(self):

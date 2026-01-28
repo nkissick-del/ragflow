@@ -113,7 +113,7 @@ class PGVectorConnection(PGVectorConnectionBase):
             )
             params = [query.query_text]
             params.extend(filter_params)
-            params.extend([query.query_text])
+            params.append(query.query_text)
             params.extend(dataset_params)
 
         elif query.mode == SearchMode.HYBRID:

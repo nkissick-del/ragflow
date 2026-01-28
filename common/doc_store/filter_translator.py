@@ -122,7 +122,13 @@ class ESFilterTranslator(BaseFilterTranslator):
                 range_op = _RANGE_OP_MAP[op]
                 must_filters.append({"range": {key: {range_op: val}}})
             elif op == "in" or op == Operator.IN:
-                must_filters.append({"terms": {key: val if isinstance(val, list) else [val]}})
+                if isinstance(val, (list, tuple)):
+                    if not val:
+                        raise ValueError("IN operator requires a non-empty list")
+                    formatted_val = val
+                else:
+                    formatted_val = [val]
+                must_filters.append({"terms": {key: formatted_val}})
             elif op == "range" or op == Operator.RANGE:
                 if not isinstance(val, dict):
                     raise TypeError(f"Value for 'range' operator must be a dict, got {type(val)}")

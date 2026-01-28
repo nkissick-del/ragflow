@@ -21,12 +21,12 @@ from collections import defaultdict
 from dataclasses import dataclass
 
 from rag.prompts.generator import relevant_chunks_with_toc
-from rag.nlp import rag_tokenizer, query
+from rag.nlp import query
 import numpy as np
-from common.doc_store.doc_store_base import MatchDenseExpr, FusionExpr, OrderByExpr, DocStoreConnection
+from common.doc_store.doc_store_base import MatchDenseExpr, OrderByExpr, DocStoreConnection
 from common.string_utils import remove_redundant_spaces
 from common.float_utils import get_float
-from common.constants import PAGERANK_FLD, TAG_FLD
+from common.constants import PAGERANK_FLD
 from common import settings
 from rag.nlp.citation_service import CitationService
 from rag.nlp.rerank_service import RerankService
@@ -89,97 +89,54 @@ class Dealer:
         ps = int(req.get("size", topk))
         offset, limit = pg * ps, ps
 
-        src = req.get(
-            "fields",
-            [
-                "docnm_kwd",
-                "content_ltks",
-                "kb_id",
-                "img_id",
-                "title_tks",
-                "important_kwd",
-                "position_int",
-                "doc_id",
-                "page_num_int",
-                "top_int",
-                "create_timestamp_flt",
-                "knowledge_graph_kwd",
-                "question_kwd",
-                "question_tks",
-                "doc_type_kwd",
-                "available_int",
-                "content_with_weight",
-                "mom_id",
-                PAGERANK_FLD,
-                TAG_FLD,
-            ],
-        )
-        kwds = set([])
-
         qst = req.get("question", "")
-        q_vec = []
-        if not qst:
+        if qst:
+            from common.doc_store.doc_store_models import VectorStoreQuery, SearchMode, MetadataFilters, MetadataFilter
+
+            # 1. Build MetadataFilters
+            mf = MetadataFilters()
+            for k, v in filters.items():
+                mf.filters.append(MetadataFilter(key=k, value=v))
+
+            # 2. Build VectorStoreQuery
+            search_mode = SearchMode.HYBRID if emb_mdl else SearchMode.FULLTEXT
+
+            q_vec = None
+            if emb_mdl:
+                q_vec = emb_mdl.encode([qst])[0]
+
+            v_query = VectorStoreQuery(query_vector=q_vec, query_text=qst, top_k=topk, filters=mf, mode=search_mode, extra_options={"offset": offset})
+
+            # 3. Execute Query
+            query_res = await asyncio.to_thread(self.dataStore.query, v_query, idx_names, kb_ids)
+
+            # 4. Map back to SearchResult for compatibility
+            ids = [hit.id for hit in query_res.hits]
+            fields = {}
+            highlights = {}
+            for hit in query_res.hits:
+                fields[hit.id] = {"content_with_weight": hit.text, "kb_id": kb_ids[0] if kb_ids else "", **hit.metadata}
+                if hit.highlight:
+                    highlights[hit.id] = hit.highlight
+
+            # Get keywords for citation insertion
+            _, keywords = self.qryr.question(qst, min_match=0.3)
+
+            return SearchResult(
+                total=query_res.total, ids=ids, query_vector=q_vec.tolist() if q_vec is not None else None, field=fields, highlight=highlights, aggregation=query_res.aggregations, keywords=keywords
+            )
+
+        else:
+            # Fallback for empty question (listing documents)
+            src = req.get("fields", ["id", "content_with_weight", "docnm_kwd", "kb_id"])
             if req.get("sort"):
                 orderBy.asc("page_num_int")
                 orderBy.asc("top_int")
                 orderBy.desc("create_timestamp_flt")
-            res = self.dataStore.search(src, [], filters, [], orderBy, offset, limit, idx_names, kb_ids)
+            res = await asyncio.to_thread(self.dataStore.search, src, [], filters, [], orderBy, offset, limit, idx_names, kb_ids)
             total = self.dataStore.get_total(res)
-            logging.debug("Dealer.search TOTAL: {}".format(total))
-        else:
-            highlightFields = ["content_ltks", "title_tks"]
-            if not highlight:
-                highlightFields = []
-            elif isinstance(highlight, list):
-                highlightFields = highlight
-            matchText, keywords = self.qryr.question(qst, min_match=0.3)
-            if emb_mdl is None:
-                matchExprs = [matchText]
-                res = await asyncio.to_thread(self.dataStore.search, src, highlightFields, filters, matchExprs, orderBy, offset, limit, idx_names, kb_ids, rank_feature=rank_feature)
-                total = self.dataStore.get_total(res)
-                logging.debug("Dealer.search TOTAL: {}".format(total))
-            else:
-                matchDense = await self.get_vector(qst, emb_mdl, topk, req.get("similarity", 0.1))
-                q_vec = matchDense.embedding_data
-                if not settings.DOC_ENGINE_INFINITY:
-                    src.append(f"q_{len(q_vec)}_vec")
-
-                fusionExpr = FusionExpr("weighted_sum", topk, {"weights": "0.05,0.95"})
-                matchExprs = [matchText, matchDense, fusionExpr]
-
-                res = await asyncio.to_thread(self.dataStore.search, src, highlightFields, filters, matchExprs, orderBy, offset, limit, idx_names, kb_ids, rank_feature=rank_feature)
-                total = self.dataStore.get_total(res)
-                logging.debug("Dealer.search TOTAL: {}".format(total))
-
-                # If result is empty, try again with lower min_match
-                if total == 0:
-                    if filters.get("doc_id"):
-                        res = await asyncio.to_thread(self.dataStore.search, src, [], filters, [], orderBy, offset, limit, idx_names, kb_ids)
-                        total = self.dataStore.get_total(res)
-                    else:
-                        matchText, _ = self.qryr.question(qst, min_match=0.1)
-                        matchDense.extra_options["similarity"] = 0.17
-                        res = await asyncio.to_thread(
-                            self.dataStore.search, src, highlightFields, filters, [matchText, matchDense, fusionExpr], orderBy, offset, limit, idx_names, kb_ids, rank_feature=rank_feature
-                        )
-                        total = self.dataStore.get_total(res)
-                    logging.debug("Dealer.search 2 TOTAL: {}".format(total))
-
-            for k in keywords:
-                kwds.add(k)
-                for kk in rag_tokenizer.fine_grained_tokenize(k).split():
-                    if len(kk) < 2:
-                        continue
-                    if kk in kwds:
-                        continue
-                    kwds.add(kk)
-
-        logging.debug(f"TOTAL: {total}")
-        ids = self.dataStore.get_doc_ids(res)
-        keywords = list(kwds)
-        highlight = self.dataStore.get_highlight(res, keywords, "content_with_weight")
-        aggs = self.dataStore.get_aggregation(res, "docnm_kwd")
-        return SearchResult(total=total, ids=ids, query_vector=q_vec, aggregation=aggs, highlight=highlight, field=self.dataStore.get_fields(res, src + ["_score"]), keywords=keywords)
+            ids = self.dataStore.get_doc_ids(res)
+            return SearchResult(total=total, ids=ids, field=self.dataStore.get_fields(res, src))
 
     @staticmethod
     def trans2floats(txt):

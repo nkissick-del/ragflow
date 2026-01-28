@@ -136,9 +136,7 @@ class Dealer:
             # Get keywords for citation insertion
             _, keywords = self.qryr.question(qst, min_match=0.3)
 
-            return SearchResult(
-                total=query_res.total, ids=ids, query_vector=q_vec.tolist() if q_vec is not None else None, field=fields, highlight=highlights, aggregation=query_res.aggregations, keywords=keywords
-            )
+            return SearchResult(total=query_res.total, ids=ids, query_vector=q_vec, field=fields, highlight=highlights, aggregation=query_res.aggregations, keywords=keywords)
 
         else:
             # Fallback for empty question (listing documents)

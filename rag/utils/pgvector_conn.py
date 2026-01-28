@@ -87,7 +87,9 @@ class PGVectorConnection(PGVectorConnectionBase):
                 dataset_filter=dataset_filter,
                 top_k=sql.Literal(top_k),
             )
-            params = [vector_val] + filter_params + dataset_params
+            params = [vector_val]
+            params.extend(filter_params)
+            params.extend(dataset_params)
 
         elif query.mode == SearchMode.FULLTEXT:
             # Fulltext Search
@@ -109,7 +111,10 @@ class PGVectorConnection(PGVectorConnectionBase):
                 dataset_filter=dataset_filter,
                 top_k=sql.Literal(top_k),
             )
-            params = [query.query_text] + filter_params + [query.query_text] + dataset_params
+            params = [query.query_text]
+            params.extend(filter_params)
+            params.extend([query.query_text])
+            params.extend(dataset_params)
 
         elif query.mode == SearchMode.HYBRID:
             # Hybrid Search (Weighted Sum)
@@ -152,7 +157,9 @@ class PGVectorConnection(PGVectorConnectionBase):
                 dataset_filter=dataset_filter,
                 top_k=sql.Literal(top_k),
             )
-            params = [vector_val, query.query_text] + filter_params + dataset_params
+            params = [vector_val, query.query_text]
+            params.extend(filter_params)
+            params.extend(dataset_params)
         else:
             raise ValueError(f"Unrecognized search mode: {query.mode}. Mode must be SEMANTIC, FULLTEXT, or HYBRID.")
 

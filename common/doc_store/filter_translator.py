@@ -82,7 +82,7 @@ class SQLFilterTranslator(BaseFilterTranslator):
             if op == "in" or op == Operator.IN:
                 if isinstance(val, list):
                     if not val:
-                        continue
+                        raise ValueError(f"Empty list provided for IN operator on key: {key}")
                     placeholders = ["%s"] * len(val)
                     formatted_val = f"({', '.join(placeholders)})"
                     params.extend(val)

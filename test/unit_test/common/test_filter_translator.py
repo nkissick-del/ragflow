@@ -90,6 +90,7 @@ class TestFilterTranslators(unittest.TestCase):
         # Assuming ES translator handles simple formatting.
         result = translator.translate(filters)
         self.assertEqual(len(result), 4)
+        self.assertIn({"term": {"v4": None}}, result)
 
         # Test GT/LT/GTE/LTE
         filters = MetadataFilters(

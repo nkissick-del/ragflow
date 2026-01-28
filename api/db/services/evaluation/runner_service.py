@@ -190,7 +190,7 @@ class EvaluationRunnerService:
             test_cases = EvaluationDatasetService.get_test_cases(dataset_id)
 
             if not test_cases:
-                EvaluationRun.update(status="FAILED", complete_time=current_timestamp()).where(EvaluationRun.id == run_id).execute()
+                EvaluationRun.mark_failed(run_id, complete_time=current_timestamp())
                 return
 
             # Execute each test case
@@ -210,7 +210,10 @@ class EvaluationRunnerService:
                         logging.info(f"Evaluation run {run_id} progress: {processed}/{total_cases}")
                     except Exception as e:
                         logging.warning(f"Failed to update progress for run {run_id}: {e}")
-                        EvaluationRun.mark_failed(run_id)
+                        try:
+                            EvaluationRun.mark_failed(run_id, complete_time=current_timestamp())
+                        except Exception as mark_err:
+                            logging.error(f"Error marking run {run_id} as failed during progress update: {mark_err}")
                         return
 
             # Final 100% update
@@ -218,13 +221,16 @@ class EvaluationRunnerService:
                 EvaluationRun.update(metrics_summary={"progress": total_cases, "total": total_cases}).where(EvaluationRun.id == run_id).execute()
             except Exception as e:
                 logging.warning(f"Failed to update completion progress for run {run_id}: {e}")
-                EvaluationRun.mark_failed(run_id)
+                try:
+                    EvaluationRun.mark_failed(run_id, complete_time=current_timestamp())
+                except Exception as mark_err:
+                    logging.error(f"Error marking run {run_id} as failed during completion progress update: {mark_err}")
                 return
 
             # Check if any results were obtained
             if not results:
                 logging.warning(f"No results generated for run {run_id}")
-                EvaluationRun.update(status="FAILED", complete_time=current_timestamp()).where(EvaluationRun.id == run_id).execute()
+                EvaluationRun.mark_failed(run_id, complete_time=current_timestamp())
                 return
 
             # Compute summary metrics
@@ -236,7 +242,7 @@ class EvaluationRunnerService:
 
         except Exception as e:
             logging.error(f"Error executing evaluation {run_id}: {e}")
-            EvaluationRun.update(status="FAILED", complete_time=current_timestamp()).where(EvaluationRun.id == run_id).execute()
+            EvaluationRun.mark_failed(run_id, complete_time=current_timestamp())
 
     @classmethod
     def evaluate_single_case(cls, run_id: str, case: Dict[str, Any], dialog: Any) -> Optional[Dict[str, Any]]:

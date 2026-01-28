@@ -1,4 +1,6 @@
 from __future__ import annotations
+import logging
+import traceback
 
 from peewee import BigIntegerField, CharField, FloatField, IntegerField, TextField, ForeignKeyField
 
@@ -72,19 +74,16 @@ class EvaluationRun(DataBaseModel):
     complete_time = BigIntegerField(null=True, help_text="completion timestamp")
 
     @classmethod
-    def mark_failed(cls, run_id):
+    def mark_failed(cls, run_id, complete_time=None):
         """
         Safely mark an evaluation run as failed by merging 'error':'failed' into metrics_summary
         and setting status to 'FAILED'.
         """
-        import logging
-        import traceback
-
         try:
-            run = cls.get_by_id(run_id)
+            run = cls.get_or_none(cls.id == run_id)
             merged = (run.metrics_summary or {}) if run else {}
             merged["error"] = "failed"
-            cls.update(metrics_summary=merged, status="FAILED").where(cls.id == run_id).execute()
+            cls.update(metrics_summary=merged, status="FAILED", complete_time=complete_time).where(cls.id == run_id).execute()
             return True
         except Exception as e:
             logging.error(f"Failed to mark run {run_id} as failed: {e}")

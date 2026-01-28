@@ -217,6 +217,8 @@ def setup_mocks():
     sys.modules["common"].token_utils = sys.modules["common.token_utils"]
     sys.modules["common"].constants = sys.modules["common.constants"]
     sys.modules["common"].parser_config_utils = sys.modules["common.parser_config_utils"]
+    sys.modules["common"].misc_utils = sys.modules["common.misc_utils"]
+    sys.modules["common"].time_utils = sys.modules["common.time_utils"]
 
     # Mock rag.nlp package
     mock_rag_nlp = MagicMock()

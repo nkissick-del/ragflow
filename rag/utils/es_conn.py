@@ -40,9 +40,10 @@ class ESConnection(ESConnectionBase):
         """
         # 1. Translate Filters (standard condition dict for existing code)
         condition = {}
-        if query.filters:
+        if query.filters and hasattr(query.filters, "filters") and query.filters.filters:
             for f in query.filters.filters:
-                condition[f.key] = f.value
+                if hasattr(f, "key") and hasattr(f, "value"):
+                    condition[f.key] = f.value
 
         # 2. Map VectorStoreQuery to old search() parameters
         match_exprs = []
@@ -56,7 +57,8 @@ class ESConnection(ESConnectionBase):
                 match_exprs.append(MatchDenseExpr(vector_column_name=vector_clmn, embedding_data=query.query_vector, embedding_data_type="float", distance_type="cosine", topn=query.top_k))
 
         if query.mode == SearchMode.HYBRID and len(match_exprs) > 1:
-            match_exprs.append(FusionExpr(method="weighted_sum", topn=query.top_k, fusion_params={"weights": f"{1 - query.alpha},{query.alpha}"}))
+            alpha = query.alpha if query.alpha is not None else 0.5
+            match_exprs.append(FusionExpr(method="weighted_sum", topn=query.top_k, fusion_params={"weights": f"{1 - alpha},{alpha}"}))
 
         # Call the existing search
         res = self.search(
@@ -76,15 +78,19 @@ class ESConnection(ESConnectionBase):
         total_hits = self.get_total(res)
         fields_data = self.get_fields(res, ["content_with_weight", "docnm_kwd"])
 
-        for d in res["hits"]["hits"]:
-            doc_id = d["_id"]
+        for d in res.get("hits", {}).get("hits", []):
+            doc_id = d.get("_id")
+            if doc_id is None:
+                continue
+            score = d.get("_score", 0.0)
             data = fields_data.get(doc_id, {})
 
             highlight = None
+            content = data.get("content_with_weight", "")
             if query.query_text:
-                highlight = PostProcessor.highlight(data.get("content_with_weight", ""), [query.query_text])
+                highlight = PostProcessor.highlight(content, [query.query_text])
 
-            hits.append(VectorStoreHit(id=doc_id, score=d["_score"], text=data.get("content_with_weight", ""), highlight=highlight, metadata={"doc_name": data.get("docnm_kwd", "")}))
+            hits.append(VectorStoreHit(id=doc_id, score=score, text=content, highlight=highlight, metadata={"doc_name": data.get("docnm_kwd", "")}))
 
         return VectorStoreQueryResult(hits=hits, total=total_hits)
 
@@ -153,7 +159,7 @@ class ESConnection(ESConnectionBase):
                 bool_query.boost = 1.0 - vector_similarity_weight
 
             elif isinstance(m, MatchDenseExpr):
-                assert bool_query is not None
+                # bool_query is initialized earlier as Q("bool", must=[])
                 similarity = 0.0
                 if "similarity" in m.extra_options:
                     similarity = m.extra_options["similarity"]
@@ -179,7 +185,7 @@ class ESConnection(ESConnectionBase):
 
         if order_by:
             orders = list()
-            for field, order in order_by.fields:
+            for field, order in order_by.fields():
                 order = "asc" if order == 0 else "desc"
                 if field in ["page_num_int", "top_int"]:
                     order_info = {"order": order, "unmapped_type": "float", "mode": "avg", "numeric_type": "double"}

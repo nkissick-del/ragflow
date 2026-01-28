@@ -20,6 +20,7 @@ from common.doc_store.doc_store_base import DocStoreConnection
 
 class PGVectorConnectionBase(DocStoreConnection, ABC):
     def __init__(self):
+        super().__init__()
         self.conn = None
         self.cursor = None
 
@@ -30,12 +31,14 @@ class PGVectorConnectionBase(DocStoreConnection, ABC):
         return res.get("total", 0)
 
     def get_doc_ids(self, res):
-        return [hit["id"] for hit in res.get("hits", [])]
+        return [hit.get("id") for hit in res.get("hits", []) if hit.get("id")]
 
     def get_fields(self, res, fields: list[str]) -> dict[str, dict]:
         ret = {}
         for hit in res.get("hits", []):
-            ret[hit["id"]] = {f: hit.get(f) for f in fields}
+            hit_id = hit.get("id")
+            if hit_id:
+                ret[hit_id] = {f: hit.get(f) for f in fields}
         return ret
 
     def get_highlight(self, res, keywords: list[str], field_name: str):

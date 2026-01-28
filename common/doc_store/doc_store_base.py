@@ -15,7 +15,7 @@
 #
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Union, List
+from typing import Union, List, TYPE_CHECKING
 import numpy as np
 
 DEFAULT_MATCH_VECTOR_TOPN = 10
@@ -132,21 +132,19 @@ MatchExpr = MatchTextExpr | MatchDenseExpr | MatchSparseExpr | MatchTensorExpr |
 
 class OrderByExpr:
     def __init__(self):
-        self.fields = list()
+        self._fields = list()
 
     def asc(self, field: str):
-        self.fields.append((field, 0))
+        self._fields.append((field, 0))
         return self
 
     def desc(self, field: str):
-        self.fields.append((field, 1))
+        self._fields.append((field, 1))
         return self
 
     def fields(self):
-        return self.fields
+        return self._fields
 
-
-from api.db.connection import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from common.doc_store.doc_store_models import VectorStoreQuery, VectorStoreQueryResult
@@ -221,7 +219,7 @@ class DocStoreConnection(ABC):
         dataset_ids: list[str],
         agg_fields: list[str] | None = None,
         rank_feature: dict | None = None,
-    ):
+    ) -> "VectorStoreQueryResult":
         """
         Search with given conjunctive equivalent filtering condition and return all fields of matched documents
         """

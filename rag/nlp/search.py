@@ -103,7 +103,14 @@ class Dealer:
 
             q_vec = None
             if emb_mdl:
-                q_vec = emb_mdl.encode([qst])[0]
+                if hasattr(emb_mdl, "encode_queries"):
+                    q_vec, _ = await asyncio.to_thread(emb_mdl.encode_queries, qst)
+                elif hasattr(emb_mdl, "get_vector"):
+                    q_vec = await asyncio.to_thread(emb_mdl.get_vector, qst)
+                else:
+                    q_vec = await asyncio.to_thread(emb_mdl.encode, [qst])
+                    if isinstance(q_vec, list) and len(q_vec) > 0:
+                        q_vec = q_vec[0]
 
             v_query = VectorStoreQuery(query_vector=q_vec, query_text=qst, top_k=topk, filters=mf, mode=search_mode, extra_options={"offset": offset})
 
@@ -241,7 +248,13 @@ class Dealer:
         end = begin + page_size
         page_idx = valid_idx[begin:end]
 
-        dim = len(sres.query_vector)
+        if sres.query_vector is not None:
+            dim = len(sres.query_vector)
+        elif embd_mdl and hasattr(embd_mdl, "dim"):
+            dim = embd_mdl.dim
+        else:
+            raise ValueError("query_vector is missing and embedding model dimension cannot be determined.")
+
         vector_column = f"q_{dim}_vec"
         zero_vector = [0.0] * dim
 

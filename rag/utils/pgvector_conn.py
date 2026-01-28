@@ -15,6 +15,7 @@
 #
 
 import logging
+from psycopg2 import sql
 from common.decorator import singleton
 from common.doc_store.pgvector_conn_base import PGVectorConnectionBase
 from common.doc_store.doc_store_models import VectorStoreQuery, VectorStoreQueryResult, VectorStoreHit, SearchMode
@@ -34,61 +35,104 @@ class PGVectorConnection(PGVectorConnectionBase):
         Implementation of standardized query interface using PGVector and TSVector.
         """
         # 1. Database Table
-        # In Postgres, index_name usually maps to a table name. RAGFlow uses 'ragflow_<tenant_id>'
-        table_name = index_names[0] if isinstance(index_names, list) else index_names
+        if not index_names or not isinstance(index_names, list) or not index_names[0]:
+            raise ValueError(f"index_names must be a non-empty list. Received: {index_names}. Tenant context is required.")
+        table_name = index_names[0]
 
         # 2. Filters
         translator = SQLFilterTranslator()
-        filter_cond = translator.translate(query.filters)
+        filter_cond_str = translator.translate(query.filters)
+        if not filter_cond_str:
+            filter_cond_str = "1=1"
 
-        # We also filter by dataset_ids if provided
+        dataset_filter = sql.SQL("")
+        dataset_params = []
         if dataset_ids:
-            kb_ids_str = ",".join([f"'{k}'" for k in dataset_ids])
-            filter_cond += f" AND kb_id IN ({kb_ids_str})"
+            placeholders = sql.SQL(",").join([sql.Placeholder()] * len(dataset_ids))
+            dataset_filter = sql.SQL(" AND kb_id IN ({})").format(placeholders)
+            dataset_params = dataset_ids
 
         # 3. Search Strategy
-        sql = ""
+        try:
+            top_k = int(query.top_k)
+        except (ValueError, TypeError):
+            logging.warning(f"Invalid top_k: {query.top_k}. Falling back to 10.")
+            top_k = 10
+
+        sql_query = None
         params = []
 
         if query.mode == SearchMode.SEMANTIC:
             # Vector Search
+            if query.query_vector is None:
+                raise ValueError("query_vector is required for SEMANTIC search mode")
             vector_col = f"q_{len(query.query_vector)}_vec"
-            sql = f"""
+            vector_val = query.query_vector.tolist() if hasattr(query.query_vector, "tolist") else query.query_vector
+            sql_query = sql.SQL("""
                 SELECT id, content_with_weight, docnm_kwd, kb_id, 
-                       1 - ({vector_col} <=> %s::vector) as score
-                FROM {table_name}
-                WHERE {filter_cond}
+                       1 - ({vector_col} <=> {vector_param}::vector) as score
+                FROM {table}
+                WHERE ({filter_cond}) {dataset_filter}
                 ORDER BY score DESC
-                LIMIT {query.top_k}
-            """
-            params = [query.query_vector.tolist() if hasattr(query.query_vector, "tolist") else query.query_vector]
+                LIMIT {top_k}
+            """).format(
+                vector_col=sql.Identifier(vector_col),
+                vector_param=sql.Placeholder(),
+                table=sql.Identifier(table_name),
+                filter_cond=sql.SQL(filter_cond_str),
+                dataset_filter=dataset_filter,
+                top_k=sql.Literal(top_k),
+            )
+            params = [vector_val] + dataset_params
 
         elif query.mode == SearchMode.FULLTEXT:
             # Fulltext Search
-            sql = f"""
+            sql_query = sql.SQL("""
                 SELECT id, content_with_weight, docnm_kwd, kb_id,
-                       ts_rank_cd(content_tsvector, websearch_to_tsquery('simple', %s)) as score
-                FROM {table_name}
-                WHERE {filter_cond} AND content_tsvector @@ websearch_to_tsquery('simple', %s)
+                       ts_rank_cd(content_tsvector, websearch_to_tsquery('simple', {query_text_p1})) as score
+                FROM {table}
+                WHERE ({filter_cond}) AND content_tsvector @@ websearch_to_tsquery('simple', {query_text_p2}) {dataset_filter}
                 ORDER BY score DESC
-                LIMIT {query.top_k}
-            """
-            params = [query.query_text, query.query_text]
+                LIMIT {top_k}
+            """).format(
+                query_text_p1=sql.Placeholder(),
+                query_text_p2=sql.Placeholder(),
+                table=sql.Identifier(table_name),
+                filter_cond=sql.SQL(filter_cond_str),
+                dataset_filter=dataset_filter,
+                top_k=sql.Literal(top_k),
+            )
+            params = [query.query_text, query.query_text] + dataset_params
 
         elif query.mode == SearchMode.HYBRID:
             # Hybrid Search (Weighted Sum)
+            if query.query_vector is None:
+                raise ValueError("query_vector is required for HYBRID search mode")
             vector_col = f"q_{len(query.query_vector)}_vec"
+            vector_val = query.query_vector.tolist() if hasattr(query.query_vector, "tolist") else query.query_vector
             alpha = query.alpha
-            sql = f"""
+            sql_query = sql.SQL("""
                 SELECT id, content_with_weight, docnm_kwd, kb_id,
-                       ({alpha} * (1 - ({vector_col} <=> %s::vector)) + 
-                        {1 - alpha} * ts_rank_cd(content_tsvector, websearch_to_tsquery('simple', %s))) as score
-                FROM {table_name}
-                WHERE {filter_cond}
+                       ({alpha} * (1 - ({vector_col} <=> {vector_param}::vector)) + 
+                        {one_minus_alpha} * ts_rank_cd(content_tsvector, websearch_to_tsquery('simple', {query_text_param}))) as score
+                FROM {table}
+                WHERE ({filter_cond}) {dataset_filter}
                 ORDER BY score DESC
-                LIMIT {query.top_k}
-            """
-            params = [query.query_vector.tolist() if hasattr(query.query_vector, "tolist") else query.query_vector, query.query_text]
+                LIMIT {top_k}
+            """).format(
+                alpha=sql.Literal(alpha),
+                vector_col=sql.Identifier(vector_col),
+                vector_param=sql.Placeholder(),
+                one_minus_alpha=sql.Literal(1 - alpha),
+                query_text_param=sql.Placeholder(),
+                table=sql.Identifier(table_name),
+                filter_cond=sql.SQL(filter_cond_str),
+                dataset_filter=dataset_filter,
+                top_k=sql.Literal(top_k),
+            )
+            params = [vector_val, query.query_text] + dataset_params
+        else:
+            raise ValueError(f"Unrecognized search mode: {query.mode}. Mode must be SEMANTIC, FULLTEXT, or HYBRID.")
 
         # 4. Execute (Mocking connection for now)
         if self.conn is None:
@@ -98,7 +142,7 @@ class PGVectorConnection(PGVectorConnectionBase):
         hits = []
         try:
             with self.conn.cursor() as cur:
-                cur.execute(sql, params)
+                cur.execute(sql_query, params)
                 rows = cur.fetchall()
                 for row in rows:
                     doc_id, content, doc_name, kb_id, score = row
@@ -110,6 +154,7 @@ class PGVectorConnection(PGVectorConnectionBase):
                     hits.append(VectorStoreHit(id=doc_id, score=float(score), text=content, highlight=highlight, metadata={"doc_name": doc_name, "kb_id": kb_id}))
         except Exception as e:
             logging.error(f"Postgres query failed: {e}")
+            raise
 
         return VectorStoreQueryResult(hits=hits, total=len(hits))
 
@@ -128,7 +173,22 @@ class PGVectorConnection(PGVectorConnectionBase):
         pass
 
     def index_exist(self, index_name: str, dataset_id: str) -> bool:
-        return True
+        if self.conn is None:
+            return False
+        try:
+            with self.conn.cursor() as cur:
+                cur.execute("SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = %s)", (index_name,))
+                return cur.fetchone()[0]
+        except Exception as e:
+            logging.error(f"Failed to check index existence: {e}")
+            return False
 
     def health(self) -> dict:
-        return {"status": "green"}
+        if self.conn is None:
+            return {"status": "down", "detail": "not connected"}
+        try:
+            with self.conn.cursor() as cur:
+                cur.execute("SELECT 1")
+                return {"status": "green", "detail": "connected"}
+        except Exception as e:
+            return {"status": "down", "detail": str(e)}

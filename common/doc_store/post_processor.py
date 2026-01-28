@@ -29,19 +29,19 @@ class PostProcessor:
             return text
 
         # Clean up newlines for better snippet generation
-        txt = re.sub(r"[\r\n]", " ", text, flags=re.IGNORECASE | re.MULTILINE)
+        txt = re.sub(r"[\r\n]", " ", text)
         txt_list = []
 
         # Split into sentences
-        sentences = re.split(r"[.?!;\n]", txt)
+        sentences = re.split(r"[.?!;]", txt)
 
         for t in sentences:
             found = False
             if is_english([t]):
-                for w in keywords:
-                    # Case-insensitive replacement with boundary check for English
-                    pattern = r"(^|[ .?/'\"\(\)!,:;-])(%s)([ .?/'\"\(\)!,:;-])" % re.escape(w)
-                    t_new = re.sub(pattern, r"\1<em>\2</em>\3", t, flags=re.IGNORECASE | re.MULTILINE)
+                for w in sorted(keywords, key=len, reverse=True):
+                    # Case-insensitive replacement with boundary check for English using zero-width assertions
+                    pattern = r"(?:^|(?<=[ .?/'\"()!,:;-]))(%s)(?=$|[ .?/'\"()!,:;-])" % re.escape(w)
+                    t_new = re.sub(pattern, r"<em>\g<0></em>", t, flags=re.IGNORECASE | re.MULTILINE)
                     if t_new != t:
                         t = t_new
                         found = True
@@ -49,7 +49,7 @@ class PostProcessor:
                 # For non-English (e.g. Chinese), match substrings directly
                 for w in sorted(keywords, key=len, reverse=True):
                     pattern = re.escape(w)
-                    t_new = re.sub(pattern, f"<em>{w}</em>", t, flags=re.IGNORECASE | re.MULTILINE)
+                    t_new = re.sub(pattern, r"<em>\g<0></em>", t, flags=re.IGNORECASE | re.MULTILINE)
                     if t_new != t:
                         t = t_new
                         found = True
@@ -59,7 +59,7 @@ class PostProcessor:
 
         if txt_list:
             return "...".join(txt_list)
-        return text[:200] + "..."  # Fallback for no keywords found in snippet
+        return text if len(text) <= 200 else text[:200] + "..."  # Fallback for no keywords found in snippet
 
     @staticmethod
     def normalize_scores(hits: List[Any], distance_type: str = "cosine") -> List[Any]:

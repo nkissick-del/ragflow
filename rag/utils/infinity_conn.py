@@ -26,6 +26,7 @@ from common.doc_store.doc_store_base import MatchExpr, MatchTextExpr, MatchDense
 from common.doc_store.infinity_conn_base import InfinityConnectionBase
 from common.doc_store.doc_store_models import VectorStoreQuery, VectorStoreQueryResult, VectorStoreHit, SearchMode
 from common.doc_store.post_processor import PostProcessor
+from common.doc_store.filter_translator import SQLFilterTranslator
 
 
 @singleton
@@ -39,8 +40,6 @@ class InfinityConnection(InfinityConnectionBase):
 
         # We pass filters through the 'extra_options' of the match expressions
         # because that's how the current search() method in InfinityConnection handles them.
-        from common.doc_store.filter_translator import SQLFilterTranslator
-
         sql_translator = SQLFilterTranslator()
         filter_cond = sql_translator.translate(query.filters)
 
@@ -58,7 +57,8 @@ class InfinityConnection(InfinityConnectionBase):
                 )
 
         if query.mode == SearchMode.HYBRID and len(match_exprs) > 1:
-            match_exprs.append(FusionExpr(method="weighted_sum", topn=query.top_k, fusion_params={"weights": f"{1 - query.alpha},{query.alpha}"}))
+            alpha = query.alpha if query.alpha is not None else 0.5
+            match_exprs.append(FusionExpr(method="weighted_sum", topn=query.top_k, fusion_params={"weights": f"{1 - alpha},{alpha}"}))
 
         # Call the existing search
         res_df, total_hits = self.search(
@@ -273,8 +273,8 @@ class InfinityConnection(InfinityConnectionBase):
                 self.logger.debug(f"INFINITY search FusionExpr: {json.dumps(matchExpr.__dict__)}")
 
         order_by_expr_list = list()
-        if order_by.fields:
-            for order_field in order_by.fields:
+        if order_by and order_by.fields():
+            for order_field in order_by.fields():
                 if order_field[1] == 0:
                     order_by_expr_list.append((order_field[0], SortType.Asc))
                 else:

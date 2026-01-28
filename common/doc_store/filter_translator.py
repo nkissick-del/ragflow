@@ -13,14 +13,18 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
+import re
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 from common.doc_store.doc_store_models import MetadataFilters
 
+logger = logging.getLogger(__name__)
+
 
 class BaseFilterTranslator(ABC):
     @abstractmethod
-    def translate(self, filters: MetadataFilters) -> Any:
+    def translate(self, filters: Optional[MetadataFilters]) -> Any:
         pass
 
 
@@ -33,19 +37,29 @@ class SQLFilterTranslator(BaseFilterTranslator):
         for f in filters.filters:
             key, val, op = f.key, f.value, f.operator
 
+            # SQL Injection Protection for keys: validate against strict allowlist (alphanumeric + underscore)
+            if not re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", key):
+                raise ValueError(f"Invalid identifier (column name) for filter: {key}")
+
             # Simple mapping of operators to SQL
-            if op == "==":
+            from common.doc_store.doc_store_models import Operator
+
+            if op == "==" or op == Operator.EQ:
                 sql_op = "="
-            elif op == "!=":
+            elif op == "!=" or op == Operator.NE:
                 sql_op = "!="
-            elif op == "in":
+            elif op == "in" or op == Operator.IN:
                 sql_op = "IN"
-            elif op == ">":
+            elif op == ">" or op == Operator.GT:
                 sql_op = ">"
-            elif op == "<":
+            elif op == "<" or op == Operator.LT:
                 sql_op = "<"
+            elif op == ">=" or op == Operator.GTE:
+                sql_op = ">="
+            elif op == "<=" or op == Operator.LTE:
+                sql_op = "<="
             else:
-                sql_op = "="  # Default
+                raise ValueError(f"Unsupported operator: {op}")
 
             if isinstance(val, str):
                 val = val.replace("'", "''")
@@ -66,8 +80,15 @@ class SQLFilterTranslator(BaseFilterTranslator):
 
             cond_list.append(f"{key} {sql_op} {formatted_val}")
 
-        joiner = f" {filters.condition} "
-        return joiner.join(cond_list) if cond_list else "1=1"
+        if not cond_list:
+            return "1=1"
+
+        condition = filters.condition
+        if hasattr(condition, "value"):
+            condition = condition.value
+        condition = (condition or "AND").strip().upper()
+        joiner = f" {condition} "
+        return joiner.join(cond_list)
 
 
 class ESFilterTranslator(BaseFilterTranslator):
@@ -75,19 +96,61 @@ class ESFilterTranslator(BaseFilterTranslator):
         if not filters or not filters.filters:
             return []
 
-        es_filters = []
+        must_filters = []
+        must_not_filters = []
         for f in filters.filters:
             key, val, op = f.key, f.value, f.operator
 
-            if op == "==":
-                es_filters.append({"term": {key: val}})
-            elif op == "in":
-                es_filters.append({"terms": {key: val if isinstance(val, list) else [val]}})
-            elif op == "range":
-                # Assuming val is a dict like {'gt': 1, 'lt': 10}
-                es_filters.append({"range": {key: val}})
-            else:
-                # Fallback to term
-                es_filters.append({"term": {key: val}})
+            from common.doc_store.doc_store_models import Operator
 
-        return es_filters
+            if op == "==" or op == Operator.EQ:
+                must_filters.append({"term": {key: val}})
+            elif op == "!=" or op == Operator.NE:
+                must_not_filters.append({"term": {key: val}})
+            elif op in [">", "<", ">=", "<=", Operator.GT, Operator.LT, Operator.GTE, Operator.LTE]:
+                range_op = {">": "gt", Operator.GT: "gt", "<": "lt", Operator.LT: "lt", ">=": "gte", Operator.GTE: "gte", "<=": "lte", Operator.LTE: "lte"}[op]
+                must_filters.append({"range": {key: {range_op: val}}})
+            elif op == "in" or op == Operator.IN:
+                must_filters.append({"terms": {key: val if isinstance(val, list) else [val]}})
+            elif op == "range" or op == Operator.RANGE:
+                if not isinstance(val, dict):
+                    raise TypeError(f"Value for 'range' operator must be a dict, got {type(val)}")
+                valid_range_ops = {"gt", "gte", "lt", "lte"}
+                for k, v in val.items():
+                    if k not in valid_range_ops:
+                        raise ValueError(f"Invalid range operator: {k}")
+                    if not isinstance(v, (int, float, str)):
+                        raise TypeError(f"Value for range operator '{k}' must be a scalar (int, float, str), got {type(v)}")
+                must_filters.append({"range": {key: val}})
+            else:
+                logger.warning(f"Unsupported ES operator: {op}, falling back to term")
+                must_filters.append({"term": {key: val}})
+
+        # Combine filters based on condition
+        if not must_filters and not must_not_filters:
+            return []
+
+        condition = filters.condition
+        if hasattr(condition, "value"):
+            condition = condition.value
+        condition = (condition or "AND").strip().upper()
+
+        if condition == "OR":
+            # For OR, combine into a list if no must_not, or handle accordingly.
+            # ES boolean logic: OR is usually "should"
+            clauses = []
+            if must_filters:
+                clauses.extend(must_filters)
+            if must_not_filters:
+                # This is tricky in OR: (A or B or not C)
+                for f in must_not_filters:
+                    clauses.append({"bool": {"must_not": [f]}})
+            return [{"bool": {"should": clauses, "minimum_should_match": 1}}]
+        else:
+            # AND condition (default)
+            res = []
+            if must_filters:
+                res.extend(must_filters)
+            if must_not_filters:
+                res.append({"bool": {"must_not": must_not_filters}})
+            return res

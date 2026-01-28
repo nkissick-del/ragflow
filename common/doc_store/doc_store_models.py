@@ -26,19 +26,38 @@ class SearchMode(Enum):
     SEMANTIC = "semantic"
     FULLTEXT = "fulltext"
     HYBRID = "hybrid"
+    TAG = "tag"
+
+
+class Operator(Enum):
+    EQ = "=="
+    NE = "!="
+    GT = ">"
+    LT = "<"
+    GTE = ">="
+    LTE = "<="
+    IN = "in"
+    NIN = "nin"
+    CONTAINS = "contains"
+    RANGE = "range"
+
+
+class Condition(Enum):
+    AND = "AND"
+    OR = "OR"
 
 
 @dataclass
 class MetadataFilter:
     key: str
     value: Any
-    operator: str = "=="  # ==, !=, >, <, >=, <=, in, nin, contains
+    operator: Operator = Operator.EQ
 
 
 @dataclass
 class MetadataFilters:
     filters: List[MetadataFilter] = field(default_factory=list)
-    condition: str = "AND"  # AND, OR
+    condition: Condition = Condition.AND
 
 
 @dataclass
@@ -50,6 +69,14 @@ class VectorStoreQuery:
     mode: SearchMode = SearchMode.DEFAULT
     alpha: float = 0.5  # Weight for hybrid search (semantic vs fulltext)
     extra_options: Dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self):
+        if not (0.0 <= self.alpha <= 1.0):
+            raise ValueError("alpha must be between 0.0 and 1.0")
+
+        if self.mode != SearchMode.TAG:
+            if self.query_vector is None and not self.query_text:
+                raise ValueError("Either query_vector or query_text must be provided for the selected search mode")
 
 
 @dataclass

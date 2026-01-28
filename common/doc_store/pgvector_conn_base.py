@@ -31,7 +31,7 @@ class PGVectorConnectionBase(DocStoreConnection, ABC):
         return res.get("total", 0)
 
     def get_doc_ids(self, res):
-        return [hit.get("id") for hit in res.get("hits", []) if hit.get("id")]
+        return [doc_id for hit in res.get("hits", []) if (doc_id := hit.get("id"))]
 
     def get_fields(self, res, fields: list[str]) -> dict[str, dict]:
         ret = {}

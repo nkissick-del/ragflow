@@ -17,9 +17,27 @@ import logging
 import re
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
-from common.doc_store.doc_store_models import MetadataFilters
+from common.doc_store.doc_store_models import MetadataFilters, Operator
 
 logger = logging.getLogger(__name__)
+
+
+_RANGE_OP_MAP = {
+    ">": "gt",
+    Operator.GT: "gt",
+    "<": "lt",
+    Operator.LT: "lt",
+    ">=": "gte",
+    Operator.GTE: "gte",
+    "<=": "lte",
+    Operator.LTE: "lte",
+}
+
+
+def _normalize_condition(condition: Any) -> str:
+    if hasattr(condition, "value"):
+        condition = condition.value
+    return (condition or "AND").strip().upper()
 
 
 class BaseFilterTranslator(ABC):
@@ -29,11 +47,12 @@ class BaseFilterTranslator(ABC):
 
 
 class SQLFilterTranslator(BaseFilterTranslator):
-    def translate(self, filters: Optional[MetadataFilters]) -> str:
+    def translate(self, filters: Optional[MetadataFilters]) -> tuple[str, list]:
         if not filters or not filters.filters:
-            return "1=1"
+            return "1=1", []
 
         cond_list = []
+        params = []
         for f in filters.filters:
             key, val, op = f.key, f.value, f.operator
 
@@ -42,7 +61,6 @@ class SQLFilterTranslator(BaseFilterTranslator):
                 raise ValueError(f"Invalid identifier (column name) for filter: {key}")
 
             # Simple mapping of operators to SQL
-            from common.doc_store.doc_store_models import Operator
 
             if op == "==" or op == Operator.EQ:
                 sql_op = "="
@@ -61,34 +79,29 @@ class SQLFilterTranslator(BaseFilterTranslator):
             else:
                 raise ValueError(f"Unsupported operator: {op}")
 
-            if isinstance(val, str):
-                val = val.replace("'", "''")
-                formatted_val = f"'{val}'"
-            elif isinstance(val, list):
-                if not val:
-                    continue
-                items = []
-                for i in val:
-                    if isinstance(i, str):
-                        i = i.replace("'", "''")
-                        items.append(f"'{i}'")
-                    else:
-                        items.append(str(i))
-                formatted_val = f"({', '.join(items)})"
+            if op == "in" or op == Operator.IN:
+                if isinstance(val, list):
+                    if not val:
+                        continue
+                    placeholders = ["%s"] * len(val)
+                    formatted_val = f"({', '.join(placeholders)})"
+                    params.extend(val)
+                else:
+                    # Treat single value as 1-element list for IN
+                    formatted_val = "(%s)"
+                    params.append(val)
             else:
-                formatted_val = str(val)
+                formatted_val = "%s"
+                params.append(val)
 
             cond_list.append(f"{key} {sql_op} {formatted_val}")
 
         if not cond_list:
-            return "1=1"
+            return "1=1", []
 
-        condition = filters.condition
-        if hasattr(condition, "value"):
-            condition = condition.value
-        condition = (condition or "AND").strip().upper()
+        condition = _normalize_condition(filters.condition)
         joiner = f" {condition} "
-        return joiner.join(cond_list)
+        return joiner.join(cond_list), params
 
 
 class ESFilterTranslator(BaseFilterTranslator):
@@ -101,14 +114,12 @@ class ESFilterTranslator(BaseFilterTranslator):
         for f in filters.filters:
             key, val, op = f.key, f.value, f.operator
 
-            from common.doc_store.doc_store_models import Operator
-
             if op == "==" or op == Operator.EQ:
                 must_filters.append({"term": {key: val}})
             elif op == "!=" or op == Operator.NE:
                 must_not_filters.append({"term": {key: val}})
-            elif op in [">", "<", ">=", "<=", Operator.GT, Operator.LT, Operator.GTE, Operator.LTE]:
-                range_op = {">": "gt", Operator.GT: "gt", "<": "lt", Operator.LT: "lt", ">=": "gte", Operator.GTE: "gte", "<=": "lte", Operator.LTE: "lte"}[op]
+            elif op in _RANGE_OP_MAP:
+                range_op = _RANGE_OP_MAP[op]
                 must_filters.append({"range": {key: {range_op: val}}})
             elif op == "in" or op == Operator.IN:
                 must_filters.append({"terms": {key: val if isinstance(val, list) else [val]}})
@@ -123,17 +134,13 @@ class ESFilterTranslator(BaseFilterTranslator):
                         raise TypeError(f"Value for range operator '{k}' must be a scalar (int, float, str), got {type(v)}")
                 must_filters.append({"range": {key: val}})
             else:
-                logger.warning(f"Unsupported ES operator: {op}, falling back to term")
-                must_filters.append({"term": {key: val}})
+                raise ValueError(f"Unsupported ES operator: {op}")
 
         # Combine filters based on condition
         if not must_filters and not must_not_filters:
             return []
 
-        condition = filters.condition
-        if hasattr(condition, "value"):
-            condition = condition.value
-        condition = (condition or "AND").strip().upper()
+        condition = _normalize_condition(filters.condition)
 
         if condition == "OR":
             # For OR, combine into a list if no must_not, or handle accordingly.
@@ -143,6 +150,7 @@ class ESFilterTranslator(BaseFilterTranslator):
                 clauses.extend(must_filters)
             if must_not_filters:
                 # This is tricky in OR: (A or B or not C)
+                # Elasticsearch requires wrapping negations this way so the NOT is applied per-clause
                 for f in must_not_filters:
                     clauses.append({"bool": {"must_not": [f]}})
             return [{"bool": {"should": clauses, "minimum_should_match": 1}}]

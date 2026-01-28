@@ -112,6 +112,13 @@ class Dealer:
                     if isinstance(q_vec, list) and len(q_vec) > 0:
                         q_vec = q_vec[0]
 
+            # Normalize q_vec to list if it's a numpy array or other iterable
+            if q_vec is not None:
+                if hasattr(q_vec, "tolist"):
+                    q_vec = q_vec.tolist()
+                elif not isinstance(q_vec, list):
+                    q_vec = list(q_vec)
+
             v_query = VectorStoreQuery(query_vector=q_vec, query_text=qst, top_k=topk, filters=mf, mode=search_mode, extra_options={"offset": offset})
 
             # 3. Execute Query

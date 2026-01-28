@@ -44,6 +44,8 @@ class ESConnection(ESConnectionBase):
             for f in query.filters.filters:
                 if hasattr(f, "key") and hasattr(f, "value"):
                     condition[f.key] = f.value
+                else:
+                    self.logger.warning(f"Skipping malformed filter (missing key or value): {str(f)}")
 
         # 2. Map VectorStoreQuery to old search() parameters
         match_exprs = []

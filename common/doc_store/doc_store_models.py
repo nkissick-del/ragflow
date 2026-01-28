@@ -75,7 +75,12 @@ class VectorStoreQuery:
             raise ValueError("alpha must be between 0.0 and 1.0")
 
         if self.mode != SearchMode.TAG:
-            if self.query_vector is None and not self.query_text:
+            # Check if query_vector is provided and not empty (if it's a list/sequence)
+            has_vector = self.query_vector is not None
+            if has_vector and hasattr(self.query_vector, "__len__") and len(self.query_vector) == 0:
+                has_vector = False
+
+            if not has_vector and not self.query_text:
                 raise ValueError("Either query_vector or query_text must be provided for the selected search mode")
 
 

@@ -41,9 +41,10 @@ class PGVectorConnection(PGVectorConnectionBase):
 
         # 2. Filters
         translator = SQLFilterTranslator()
-        filter_cond_str = translator.translate(query.filters)
+        filter_cond_str, filter_params = translator.translate(query.filters)
         if not filter_cond_str:
             filter_cond_str = "1=1"
+            filter_params = []
 
         dataset_filter = sql.SQL("")
         dataset_params = []
@@ -66,6 +67,9 @@ class PGVectorConnection(PGVectorConnectionBase):
             # Vector Search
             if query.query_vector is None:
                 raise ValueError("query_vector is required for SEMANTIC search mode")
+            if hasattr(query.query_vector, "__len__") and len(query.query_vector) == 0:
+                raise ValueError("query_vector must be a non-empty sequence")
+
             vector_col = f"q_{len(query.query_vector)}_vec"
             vector_val = query.query_vector.tolist() if hasattr(query.query_vector, "tolist") else query.query_vector
             sql_query = sql.SQL("""
@@ -83,10 +87,13 @@ class PGVectorConnection(PGVectorConnectionBase):
                 dataset_filter=dataset_filter,
                 top_k=sql.Literal(top_k),
             )
-            params = [vector_val] + dataset_params
+            params = [vector_val] + filter_params + dataset_params
 
         elif query.mode == SearchMode.FULLTEXT:
             # Fulltext Search
+            if not query.query_text or not str(query.query_text).strip():
+                raise ValueError("query_text is required for FULLTEXT search")
+
             sql_query = sql.SQL("""
                 SELECT id, content_with_weight, docnm_kwd, kb_id,
                        ts_rank_cd(content_tsvector, websearch_to_tsquery('simple', {query_text_p1})) as score
@@ -102,15 +109,30 @@ class PGVectorConnection(PGVectorConnectionBase):
                 dataset_filter=dataset_filter,
                 top_k=sql.Literal(top_k),
             )
-            params = [query.query_text, query.query_text] + dataset_params
+            params = [query.query_text] + filter_params + [query.query_text] + dataset_params
 
         elif query.mode == SearchMode.HYBRID:
             # Hybrid Search (Weighted Sum)
             if query.query_vector is None:
                 raise ValueError("query_vector is required for HYBRID search mode")
+
+            if query.alpha is None:
+                raise ValueError("alpha is required for HYBRID search mode")
+
+            try:
+                alpha_val = float(query.alpha)
+            except (ValueError, TypeError):
+                raise ValueError(f"alpha must be a float, got {query.alpha}")
+
+            if not (0.0 <= alpha_val <= 1.0):
+                raise ValueError(f"alpha must be between 0.0 and 1.0, got {alpha_val}")
+
+            if not query.query_text or not str(query.query_text).strip():
+                raise ValueError("query_text is required for HYBRID search mode")
+
             vector_col = f"q_{len(query.query_vector)}_vec"
             vector_val = query.query_vector.tolist() if hasattr(query.query_vector, "tolist") else query.query_vector
-            alpha = query.alpha
+
             sql_query = sql.SQL("""
                 SELECT id, content_with_weight, docnm_kwd, kb_id,
                        ({alpha} * (1 - ({vector_col} <=> {vector_param}::vector)) + 
@@ -120,17 +142,17 @@ class PGVectorConnection(PGVectorConnectionBase):
                 ORDER BY score DESC
                 LIMIT {top_k}
             """).format(
-                alpha=sql.Literal(alpha),
+                alpha=sql.Literal(alpha_val),
                 vector_col=sql.Identifier(vector_col),
                 vector_param=sql.Placeholder(),
-                one_minus_alpha=sql.Literal(1 - alpha),
+                one_minus_alpha=sql.Literal(1 - alpha_val),
                 query_text_param=sql.Placeholder(),
                 table=sql.Identifier(table_name),
                 filter_cond=sql.SQL(filter_cond_str),
                 dataset_filter=dataset_filter,
                 top_k=sql.Literal(top_k),
             )
-            params = [vector_val, query.query_text] + dataset_params
+            params = [vector_val, query.query_text] + filter_params + dataset_params
         else:
             raise ValueError(f"Unrecognized search mode: {query.mode}. Mode must be SEMANTIC, FULLTEXT, or HYBRID.")
 
@@ -173,6 +195,8 @@ class PGVectorConnection(PGVectorConnectionBase):
         pass
 
     def index_exist(self, index_name: str, dataset_id: str) -> bool:
+        # dataset_id is currently unused but kept for API compatibility
+
         if self.conn is None:
             return False
         try:

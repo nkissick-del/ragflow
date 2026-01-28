@@ -41,7 +41,7 @@ class PostProcessor:
                 for w in sorted(keywords, key=len, reverse=True):
                     # Case-insensitive replacement with boundary check for English using zero-width assertions
                     pattern = r"(?:^|(?<=[ .?/'\"()!,:;-]))(%s)(?=$|[ .?/'\"()!,:;-])" % re.escape(w)
-                    t_new = re.sub(pattern, r"<em>\g<0></em>", t, flags=re.IGNORECASE | re.MULTILINE)
+                    t_new = re.sub(pattern, r"<em>\g<0></em>", t, flags=re.IGNORECASE)
                     if t_new != t:
                         t = t_new
                         found = True
@@ -49,7 +49,7 @@ class PostProcessor:
                 # For non-English (e.g. Chinese), match substrings directly
                 for w in sorted(keywords, key=len, reverse=True):
                     pattern = re.escape(w)
-                    t_new = re.sub(pattern, r"<em>\g<0></em>", t, flags=re.IGNORECASE | re.MULTILINE)
+                    t_new = re.sub(pattern, r"<em>\g<0></em>", t, flags=re.IGNORECASE)
                     if t_new != t:
                         t = t_new
                         found = True

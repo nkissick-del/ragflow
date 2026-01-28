@@ -273,8 +273,12 @@ class InfinityConnection(InfinityConnectionBase):
                 self.logger.debug(f"INFINITY search FusionExpr: {json.dumps(matchExpr.__dict__)}")
 
         order_by_expr_list = list()
-        if order_by and order_by.fields():
-            for order_field in order_by.fields():
+        if order_by and order_by.fields:
+            # Check if fields is a method (callable) or a property (list/attribute)
+            # We want to support both for transition
+            fields_val = order_by.fields() if callable(order_by.fields) else order_by.fields
+
+            for order_field in fields_val:
                 if order_field[1] == 0:
                     order_by_expr_list.append((order_field[0], SortType.Asc))
                 else:

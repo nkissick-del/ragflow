@@ -71,6 +71,19 @@ class EvaluationRun(DataBaseModel):
     create_time = BigIntegerField(null=False, index=True, help_text="creation timestamp")
     complete_time = BigIntegerField(null=True, help_text="completion timestamp")
 
+    @classmethod
+    def mark_failed(cls, run_id):
+        """
+        Safely mark an evaluation run as failed by merging 'error':'failed' into metrics_summary.
+        """
+        try:
+            run = cls.get_by_id(run_id)
+            merged = (run.metrics_summary or {}) if run else {}
+            merged["error"] = "failed"
+            cls.update(metrics_summary=merged).where(cls.id == run_id).execute()
+        except Exception:
+            pass
+
     class Meta:
         db_table = "evaluation_runs"
 

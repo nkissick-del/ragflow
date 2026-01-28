@@ -387,8 +387,25 @@ async def list_evaluation_runs():
     - page_size: Items per page (default: 20)
     """
     try:
-        # TODO: Implement list_runs in EvaluationService
-        return get_json_result(data={"runs": [], "total": 0})
+        try:
+            page = int(request.args.get("page", 1))
+            page_size = int(request.args.get("page_size", 20))
+        except ValueError:
+            return get_data_error_result(message="Invalid page or page_size", code=RetCode.DATA_ERROR)
+
+        if page < 1:
+            return get_data_error_result(message="Page must be greater than 0")
+        if page_size < 1:
+            return get_data_error_result(message="Page size must be greater than 0")
+        if page_size > MAX_PAGE_SIZE:
+            return get_data_error_result(message=f"Page size must be <= {MAX_PAGE_SIZE}")
+
+        dataset_id = request.args.get("dataset_id")
+        dialog_id = request.args.get("dialog_id")
+
+        runs, total = EvaluationService.list_runs(tenant_id=current_user.id, dataset_id=dataset_id, dialog_id=dialog_id, page=page, page_size=page_size)
+
+        return get_json_result(data={"runs": runs, "total": total})
     except Exception as e:
         return server_error_response(e)
 

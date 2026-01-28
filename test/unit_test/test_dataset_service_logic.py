@@ -1,6 +1,5 @@
 import unittest
 from unittest.mock import MagicMock, patch
-import types
 
 
 class TestDatasetServiceLogic(unittest.TestCase):
@@ -9,19 +8,11 @@ class TestDatasetServiceLogic(unittest.TestCase):
         # We need to be careful: mocking a parent as MagicMock makes it NOT a package
         # So we create ModuleType objects instead for parents
 
-        # Create package-like mocks
-        api_mock = types.ModuleType("api")
-        api_db_mock = types.ModuleType("api.db")
-        api_db_services_mock = types.ModuleType("api.db.services")
-
         # Patch sys.modules
         cls.mocks_patcher = patch.dict(
             "sys.modules",
             {
                 "peewee": MagicMock(),
-                "api": api_mock,
-                "api.db": api_db_mock,
-                "api.db.services": api_db_services_mock,
                 "api.db.db_models": MagicMock(),
                 "common": MagicMock(),
                 "common.constants": MagicMock(),
@@ -29,10 +20,14 @@ class TestDatasetServiceLogic(unittest.TestCase):
         )
         cls.mocks_patcher.start()
 
-        # Setup mock_utils mocks
-        from test.mocks.mock_utils import setup_mocks
+        try:
+            # Setup mock_utils mocks
+            from test.mocks.mock_utils import setup_mocks
 
-        setup_mocks()
+            setup_mocks()
+        except Exception:
+            cls.mocks_patcher.stop()
+            raise
 
     @classmethod
     def tearDownClass(cls):
@@ -59,7 +54,23 @@ class TestDatasetServiceLogic(unittest.TestCase):
             self.assertTrue(result)
             MockEvaluationDataset.get_or_none.assert_not_called()
             MockEvaluationDataset.update.assert_called_once()
-            self.assertGreater(len(mock_update.where.call_args[0]), 0)
+
+            # Verify WHERE clause includes the status condition
+            # The exact implementation of the WHERE expression in peewee mocks can vary,
+            # but we check that it's called with arguments.
+            where_args = mock_update.where.call_args[0]
+            self.assertGreater(len(where_args), 0)
+
+            # Check if any of the where arguments involve "status"
+            # In peewee, expressions often have a .column attribute or similar
+            # Since we're using MagicMocks, we'll look for 'status' in the string representation
+            # if the mock allows, or just check that multiple conditions are passed.
+            found_status = False
+            for arg in where_args:
+                if "status" in str(arg).lower():
+                    found_status = True
+                    break
+            self.assertTrue(found_status, "WHERE clause should include 'status' condition")
 
 
 if __name__ == "__main__":

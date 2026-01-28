@@ -21,7 +21,7 @@ import queue
 import threading
 from datetime import datetime
 from timeit import default_timer as timer
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional, Tuple, List
 
 from api.db.db_models import EvaluationRun, EvaluationResult
 from api.db.services.dialog_service import DialogService, async_chat
@@ -160,6 +160,27 @@ class EvaluationRunnerService:
             return False, str(e)
 
     @classmethod
+    def list_runs(cls, tenant_id: str, dataset_id: Optional[str] = None, dialog_id: Optional[str] = None, page: int = 1, page_size: int = 20) -> Tuple[List[Dict[str, Any]], int]:
+        """
+        List evaluation runs with tenant isolation and filtering.
+        """
+        try:
+            query = EvaluationRun.select().join(EvaluationRun.dataset_id).where(EvaluationRun.dataset_id.tenant_id == tenant_id)
+
+            if dataset_id:
+                query = query.where(EvaluationRun.dataset_id == dataset_id)
+            if dialog_id:
+                query = query.where(EvaluationRun.dialog_id == dialog_id)
+
+            total = query.count()
+            runs = list(query.order_by(EvaluationRun.create_time.desc()).paginate(page, page_size).dicts())
+
+            return runs, total
+        except Exception as e:
+            logging.error(f"Error listing evaluation runs: {e}")
+            return [], 0
+
+    @classmethod
     def execute_evaluation(cls, run_id: str, dataset_id: str, dialog: Any):
         """
         Execute evaluation for all test cases.
@@ -189,28 +210,14 @@ class EvaluationRunnerService:
                         logging.info(f"Evaluation run {run_id} progress: {processed}/{total_cases}")
                     except Exception as e:
                         logging.warning(f"Failed to update progress for run {run_id}: {e}")
-                        try:
-                            # Merge error into existing metrics_summary
-                            run = EvaluationRun.get_by_id(run_id)
-                            merged = (run.metrics_summary or {}) if run else {}
-                            merged["error"] = "failed"
-                            EvaluationRun.update(metrics_summary=merged).where(EvaluationRun.id == run_id).execute()
-                        except Exception:
-                            pass
+                        EvaluationRun.mark_failed(run_id)
 
             # Final 100% update
             try:
                 EvaluationRun.update(metrics_summary={"progress": total_cases, "total": total_cases}).where(EvaluationRun.id == run_id).execute()
             except Exception as e:
                 logging.warning(f"Failed to update completion progress for run {run_id}: {e}")
-                try:
-                    # Merge error into existing metrics_summary
-                    run = EvaluationRun.get_by_id(run_id)
-                    merged = (run.metrics_summary or {}) if run else {}
-                    merged["error"] = "failed"
-                    EvaluationRun.update(metrics_summary=merged).where(EvaluationRun.id == run_id).execute()
-                except Exception:
-                    pass
+                EvaluationRun.mark_failed(run_id)
 
             # Check if any results were obtained
             if not results:

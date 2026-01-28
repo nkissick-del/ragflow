@@ -105,6 +105,10 @@ class EvaluationService(CommonService):
     def start_evaluation(cls, dataset_id: str, dialog_id: str, user_id: str, name: Optional[str] = None) -> Tuple[bool, str]:
         return EvaluationRunnerService.start_evaluation(dataset_id, dialog_id, user_id, name)
 
+    @classmethod
+    def list_runs(cls, tenant_id: str, dataset_id: Optional[str] = None, dialog_id: Optional[str] = None, page: int = 1, page_size: int = 20) -> Tuple[List[Dict[str, Any]], int]:
+        return EvaluationRunnerService.list_runs(tenant_id, dataset_id, dialog_id, page, page_size)
+
     # ==================== Results & Analysis ====================
 
     @classmethod

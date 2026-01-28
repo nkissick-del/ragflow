@@ -14,6 +14,13 @@ def setup_mocks():
     """
     # Save original modules to restore later
     original_modules = sys.modules.copy()
+
+    def mock_package(name):
+        m = sys.modules.setdefault(name, types.ModuleType(name))
+        if not hasattr(m, "__path__"):
+            m.__path__ = []
+        return m
+
     # Base system mocks
     sys.modules["opendal"] = MagicMock()
     # Mock opendal submodules that might be accessed
@@ -136,8 +143,9 @@ def setup_mocks():
 
     # DB & API
     sys.modules["peewee"] = MagicMock()
-    sys.modules["api.db"] = MagicMock()
-    sys.modules["api.db.services"] = MagicMock()
+    mock_package("api.db")
+    mock_package("api.db.services")
+    mock_package("api.db.services.evaluation")
     sys.modules["api.db.services.llm_service"] = MagicMock()
     sys.modules["api.db.services.user_service"] = MagicMock()
 
@@ -222,9 +230,6 @@ def setup_mocks():
     sys.modules["olefile"] = MagicMock()
 
     # Web & API Helpers
-    def mock_package(name):
-        return sys.modules.setdefault(name, types.ModuleType(name))
-
     mock_package("werkzeug")
     sys.modules["werkzeug.security"] = MagicMock()
 
@@ -240,7 +245,7 @@ def setup_mocks():
         def dumps(self, obj):
             return str(obj)
 
-        def loads(self, token):
+        def loads(self, token, **kwargs):
             return token
 
     mock_its_url.URLSafeTimedSerializer = MockSerializer

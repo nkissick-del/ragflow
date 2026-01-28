@@ -1,9 +1,28 @@
+import unittest
 from unittest.mock import MagicMock, patch
+
+try:
+    import sys
+    from test.mocks.mock_utils import setup_mocks
+
+    setup_mocks()
+    # Remove mocks that interfere with importing the service under test
+    # We want to test the REAL service logic, but it depends on mocked base stuff
+    for m in ["api.db", "api.db.services", "api.db.services.user_service", "common"]:
+        if m in sys.modules:
+            del sys.modules[m]
+
+    # Specifically mock db_models to avoid its heavy and conflicting dependencies
+    sys.modules["api.db.db_models"] = MagicMock()
+
+except ImportError:
+    pass
+
 from api.db.services.evaluation.dataset_service import EvaluationDatasetService
 from common.constants import StatusEnum
 
 
-class TestDatasetServiceLogic:
+class TestDatasetServiceLogic(unittest.TestCase):
     @patch("api.db.services.evaluation.dataset_service.EvaluationDataset")
     def test_update_dataset_race_condition_fix(self, MockEvaluationDataset):
         """
@@ -33,8 +52,7 @@ class TestDatasetServiceLogic:
 
         # Verify update call structure
         MockEvaluationDataset.update.assert_called_once()
-        # Verify update call structure
-        MockEvaluationDataset.update.assert_called_once()
+
         mock_update.where.assert_called_once()
 
         # Verify status check in where clause
@@ -143,3 +161,7 @@ class TestDatasetServiceLogic:
         # Assert
         assert total == 1000
         assert MockEvaluationCase.select.call_count == 2
+
+
+if __name__ == "__main__":
+    unittest.main()

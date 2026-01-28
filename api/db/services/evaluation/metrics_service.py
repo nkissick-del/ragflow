@@ -30,7 +30,7 @@ class EvaluationMetricsService:
     @classmethod
     def compute_metrics(
         cls, question: str, generated_answer: str, reference_answer: Optional[str], retrieved_chunks: List[Dict[str, Any]], relevant_chunk_ids: Optional[List[str]], dialog: Any
-    ) -> Dict[str, float]:
+    ) -> Dict[str, Any]:
         """
         Compute evaluation metrics for a single test case.
 

@@ -221,6 +221,54 @@ def setup_mocks():
     sys.modules["PyPDF2"] = MagicMock()
     sys.modules["olefile"] = MagicMock()
 
+    # Web & API Helpers
+    def mock_package(name):
+        return sys.modules.setdefault(name, types.ModuleType(name))
+
+    mock_package("werkzeug")
+    sys.modules["werkzeug.security"] = MagicMock()
+
+    mock_package("playhouse")
+    sys.modules["playhouse.pool"] = MagicMock()
+    sys.modules["playhouse.migrate"] = MagicMock()
+
+    sys.modules["itsdangerous"] = MagicMock()
+    mock_its_url = MagicMock()
+    sys.modules["itsdangerous.url_safe"] = mock_its_url
+
+    class MockSerializer:
+        pass
+
+    mock_its_url.URLSafeTimedSerializer = MockSerializer
+
+    mock_q_auth = mock_package("quart_auth")
+
+    class MockAuthUser:
+        pass
+
+    mock_q_auth.AuthUser = MockAuthUser
+
+    mock_package("quart")
+    sys.modules["flask"] = MagicMock()
+    sys.modules["flask_login"] = MagicMock()
+    sys.modules["flask_cors"] = MagicMock()
+    sys.modules["xxhash"] = MagicMock()
+
+    # tenacity decorator mock
+    mock_tenacity = mock_package("tenacity")
+    mock_tenacity.retry = lambda **kwargs: (lambda f: f)
+    mock_tenacity.stop_after_attempt = MagicMock()
+    mock_tenacity.wait_exponential = MagicMock()
+    mock_tenacity.retry_if_exception_type = MagicMock()
+
+    # peewee exceptions if mocked
+    import peewee
+
+    if isinstance(peewee, MagicMock):
+        peewee.InterfaceError = type("InterfaceError", (Exception,), {})
+        peewee.OperationalError = type("OperationalError", (Exception,), {})
+        peewee.DoesNotExist = type("DoesNotExist", (Exception,), {})
+
     return original_modules
 
 

@@ -130,8 +130,10 @@ class EvaluationReportService:
         """
         try:
             run = EvaluationRun.get_by_id(run_id)
-            if not run or not run.metrics_summary:
-                return False, []
+            if not run:
+                return False, "Run not found"
+            if not run.metrics_summary:
+                return False, "No metrics_summary"
 
             metrics = run.metrics_summary
             recommendations = []

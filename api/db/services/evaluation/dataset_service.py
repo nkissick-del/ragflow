@@ -91,6 +91,10 @@ class EvaluationDatasetService(CommonService):
             allowed_fields = {"name", "description", "kb_ids", "metadata"}
             filtered_kwargs = {k: v for k, v in kwargs.items() if k in allowed_fields}
 
+            if not filtered_kwargs:
+                logging.warning(f"No valid fields to update for dataset {dataset_id}")
+                return False
+
             filtered_kwargs["update_time"] = current_timestamp()
             # Check existence and status directly in the update query to avoid TOCTOU race
             return EvaluationDataset.update(**filtered_kwargs).where((EvaluationDataset.id == dataset_id) & (EvaluationDataset.status == StatusEnum.VALID.value)).execute() > 0
@@ -197,6 +201,7 @@ class EvaluationDatasetService(CommonService):
         success_count = 0
         failure_count = 0
         case_instances = []
+        valid_cases = []
 
         if not cases:
             return success_count, failure_count
@@ -210,7 +215,6 @@ class EvaluationDatasetService(CommonService):
                 logging.error(f"Dataset {dataset_id} not found or invalid during import")
                 return success_count, failure_count
 
-            valid_cases = []
             for case_data in cases:
                 if not case_data.get("question"):
                     # Skip empty questions
@@ -257,10 +261,10 @@ class EvaluationDatasetService(CommonService):
                 else:
                     success_count = 0
 
-                total_attempted = len(valid_cases) if "valid_cases" in locals() else 0
+                total_attempted = len(valid_cases)
                 failure_count = total_attempted - success_count
             except Exception:
-                total_attempted = len(valid_cases) if "valid_cases" in locals() else 0
+                total_attempted = len(valid_cases)
                 failure_count = total_attempted
                 success_count = 0
 

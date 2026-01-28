@@ -64,11 +64,13 @@ async def create_dataset():
         if not kb_ids or not isinstance(kb_ids, list):
             return get_data_error_result(message="kb_ids must be a non-empty list")
 
+        stripped_kb_ids = []
         for kb_id in kb_ids:
             if not isinstance(kb_id, str) or not kb_id.strip():
                 return get_data_error_result(message="kb_ids must contain valid strings")
+            stripped_kb_ids.append(kb_id.strip())
 
-        success, result = EvaluationService.create_dataset(name=name, description=description, kb_ids=kb_ids, tenant_id=current_user.id, user_id=current_user.id)
+        success, result = EvaluationService.create_dataset(name=name, description=description, kb_ids=stripped_kb_ids, tenant_id=current_user.id, user_id=current_user.id)
 
         if not success:
             return get_data_error_result(message=result)
@@ -151,12 +153,22 @@ async def update_dataset(dataset_id):
         if not sanitized_payload:
             return get_data_error_result(message="No updatable fields provided", code=RetCode.DATA_ERROR)
 
-        if "name" in sanitized_payload and not sanitized_payload["name"]:
-            return get_data_error_result(message="Name cannot be empty")
+        if "name" in sanitized_payload:
+            sanitized_payload["name"] = sanitized_payload["name"].strip()
+            if not sanitized_payload["name"]:
+                return get_data_error_result(message="Name cannot be empty")
 
         if "kb_ids" in sanitized_payload:
-            if not isinstance(sanitized_payload["kb_ids"], list) or not sanitized_payload["kb_ids"]:
+            kb_ids = sanitized_payload["kb_ids"]
+            if not isinstance(kb_ids, list) or not kb_ids:
                 return get_data_error_result(message="kb_ids must be a non-empty list")
+
+            stripped_kb_ids = []
+            for kb_id in kb_ids:
+                if not isinstance(kb_id, str) or not kb_id.strip():
+                    return get_data_error_result(message="kb_ids must contain valid strings")
+                stripped_kb_ids.append(kb_id.strip())
+            sanitized_payload["kb_ids"] = stripped_kb_ids
 
         success = EvaluationService.update_dataset(dataset_id, **sanitized_payload)
 

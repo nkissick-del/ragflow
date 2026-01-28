@@ -96,10 +96,8 @@ def _sync_from_async_gen(async_gen, timeout=60, total_timeout=None):
                     if remaining <= 0:
                         stop_event.set()
                         raise RuntimeError(f"Async generator total timeout after {total_timeout} seconds")
-                    # If total_timeout is enforced, we need to respect it for the wait
-                    # The user requested: pass remaining to result_queue.get(timeout=remaining or timeout)
-                    # We use 'remaining' if total_timeout is set.
-                    wait_time = remaining
+                    # Respect total_timeout
+                    wait_time = min(remaining, timeout)
 
                 item = result_queue.get(timeout=wait_time)
                 if item is _SENTINEL:
@@ -191,12 +189,20 @@ class EvaluationRunnerService:
                         logging.info(f"Evaluation run {run_id} progress: {processed}/{total_cases}")
                     except Exception as e:
                         logging.warning(f"Failed to update progress for run {run_id}: {e}")
+                        try:
+                            EvaluationRun.update(metrics_summary={"error": "failed"}).where(EvaluationRun.id == run_id).execute()
+                        except Exception:
+                            pass
 
             # Final 100% update
             try:
                 EvaluationRun.update(metrics_summary={"progress": total_cases, "total": total_cases}).where(EvaluationRun.id == run_id).execute()
             except Exception as e:
                 logging.warning(f"Failed to update completion progress for run {run_id}: {e}")
+                try:
+                    EvaluationRun.update(metrics_summary={"error": "failed"}).where(EvaluationRun.id == run_id).execute()
+                except Exception:
+                    pass
 
             # Check if any results were obtained
             if not results:
@@ -255,11 +261,17 @@ class EvaluationRunnerService:
                 else:
                     # Handle object response
                     # Update this branch to also populate answer and retrieved_chunks from the object by using getattr
-                    answer = getattr(ans, "answer", getattr(ans, "content", ""))
+                    answer = getattr(ans, "answer", None)
+                    if answer is None:
+                        answer = getattr(ans, "content", "")
                     if not isinstance(answer, str):
                         answer = str(answer)
 
-                    retrieved_chunks = getattr(ans, "retrieved_chunks", getattr(ans, "chunks", []))
+                    retrieved_chunks = getattr(ans, "retrieved_chunks", None)
+                    if retrieved_chunks is None:
+                        retrieved_chunks = getattr(ans, "chunks", [])
+                    if not isinstance(retrieved_chunks, list):
+                        retrieved_chunks = []
 
                     if getattr(ans, "usage", None):
                         token_usage = getattr(ans, "usage")
@@ -291,7 +303,7 @@ class EvaluationRunnerService:
             result = {
                 "id": result_id,
                 "run_id": run_id,
-                "case_id": case["id"],
+                "case_id": case_id,
                 "generated_answer": answer,
                 "retrieved_chunks": retrieved_chunks,
                 "metrics": metrics,

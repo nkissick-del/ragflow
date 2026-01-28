@@ -59,8 +59,8 @@ class EvaluationDatasetService(CommonService):
     def get_dataset(cls, dataset_id: str) -> Optional[Dict[str, Any]]:
         """Get dataset by ID"""
         try:
-            dataset = EvaluationDataset.get_by_id(dataset_id)
-            if dataset and dataset.status == StatusEnum.VALID.value:
+            dataset = EvaluationDataset.get_or_none(EvaluationDataset.id == dataset_id, EvaluationDataset.status == StatusEnum.VALID.value)
+            if dataset:
                 return dataset.to_dict()
             return None
         except Exception as e:
@@ -87,10 +87,13 @@ class EvaluationDatasetService(CommonService):
     def update_dataset(cls, dataset_id: str, **kwargs) -> bool:
         """Update dataset"""
         try:
-            # Check existence and status
+            # Filter kwargs to allowlist
+            allowed_fields = {"name", "description", "kb_ids", "metadata"}
+            filtered_kwargs = {k: v for k, v in kwargs.items() if k in allowed_fields}
+
+            filtered_kwargs["update_time"] = current_timestamp()
             # Check existence and status directly in the update query to avoid TOCTOU race
-            kwargs["update_time"] = current_timestamp()
-            return EvaluationDataset.update(**kwargs).where((EvaluationDataset.id == dataset_id) & (EvaluationDataset.status == StatusEnum.VALID.value)).execute() > 0
+            return EvaluationDataset.update(**filtered_kwargs).where((EvaluationDataset.id == dataset_id) & (EvaluationDataset.status == StatusEnum.VALID.value)).execute() > 0
         except Exception as e:
             logging.error(f"Error updating dataset {dataset_id}: {e}")
             return False
@@ -160,6 +163,12 @@ class EvaluationDatasetService(CommonService):
     def get_test_cases(cls, dataset_id: str, page: int = 1, page_size: int = 20) -> Tuple[List[Dict[str, Any]], int]:
         """Get all test cases for a dataset with pagination"""
         try:
+            # Verify dataset exists and is valid
+            dataset = EvaluationDataset.get_or_none(EvaluationDataset.id == dataset_id, EvaluationDataset.status == StatusEnum.VALID.value)
+            if not dataset:
+                logging.warning(f"Dataset {dataset_id} not found or invalid when fetching test cases")
+                return [], 0
+
             # Only return valid test cases for valid datasets
             query = EvaluationCase.select().where((EvaluationCase.dataset_id == dataset_id) & (EvaluationCase.status == StatusEnum.VALID.value)).order_by(EvaluationCase.create_time)
 
@@ -234,11 +243,12 @@ class EvaluationDatasetService(CommonService):
             # This is more robust than timestamp
             expected_ids = [c.id for c in case_instances]
             success_count = cls._count_cases_in_batches(dataset_id, expected_ids)
-            failure_count = len(cases) - success_count
+            total_attempted = len(valid_cases)
+            failure_count = total_attempted - success_count
 
         except Exception as e:
             logging.error(f"Error bulk importing test cases: {str(e)}")
-            # Fallback to len(cases) failure if something major broke
+            # Fallback to len(valid_cases) failure if something major broke
             # We try to calculate success_count if possible, effectively 0 if bulk_create failed entirely
             try:
                 if case_instances:
@@ -246,9 +256,12 @@ class EvaluationDatasetService(CommonService):
                     success_count = cls._count_cases_in_batches(dataset_id, expected_ids)
                 else:
                     success_count = 0
-                failure_count = len(cases) - success_count
+
+                total_attempted = len(valid_cases) if "valid_cases" in locals() else 0
+                failure_count = total_attempted - success_count
             except Exception:
-                failure_count = len(cases)
+                total_attempted = len(valid_cases) if "valid_cases" in locals() else 0
+                failure_count = total_attempted
                 success_count = 0
 
         return success_count, failure_count

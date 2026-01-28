@@ -46,8 +46,13 @@ class EvaluationService(CommonService):
         return EvaluationDatasetService.create_dataset(name, description, kb_ids, tenant_id, user_id)
 
     @classmethod
-    def get_dataset(cls, dataset_id: str) -> Optional[Dict[str, Any]]:
-        return EvaluationDatasetService.get_dataset(dataset_id)
+    def get_dataset(cls, dataset_id: str, tenant_id: str = None) -> Optional[Dict[str, Any]]:
+        dataset = EvaluationDatasetService.get_dataset(dataset_id)
+        if not dataset:
+            return None
+        if tenant_id and dataset.get("tenant_id") != tenant_id:
+            return None
+        return dataset
 
     @classmethod
     def list_datasets(cls, tenant_id: str, user_id: str, page: int = 1, page_size: int = 20) -> Dict[str, Any]:
@@ -73,7 +78,14 @@ class EvaluationService(CommonService):
         relevant_chunk_ids: Optional[List[str]] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> Tuple[bool, str]:
-        return EvaluationDatasetService.add_test_case(dataset_id, question, reference_answer, relevant_doc_ids, relevant_chunk_ids, metadata)
+        return EvaluationDatasetService.add_test_case(
+            dataset_id,
+            question,
+            reference_answer,
+            relevant_doc_ids,
+            relevant_chunk_ids,
+            metadata,
+        )
 
     @classmethod
     def get_test_cases(cls, dataset_id: str, page: int = 1, page_size: int = 20) -> Tuple[List[Dict[str, Any]], int]:

@@ -32,6 +32,7 @@ from api.utils.api_utils import get_data_error_result, get_json_result, get_requ
 from common.constants import RetCode
 
 MAX_PAGE_SIZE = 100
+MAX_BULK_IMPORT = 1000
 
 
 # ==================== Dataset Management ====================
@@ -62,6 +63,10 @@ async def create_dataset():
 
         if not kb_ids or not isinstance(kb_ids, list):
             return get_data_error_result(message="kb_ids must be a non-empty list")
+
+        for kb_id in kb_ids:
+            if not isinstance(kb_id, str) or not kb_id.strip():
+                return get_data_error_result(message="kb_ids must contain valid strings")
 
         success, result = EvaluationService.create_dataset(name=name, description=description, kb_ids=kb_ids, tenant_id=current_user.id, user_id=current_user.id)
 
@@ -109,7 +114,7 @@ async def list_datasets():
 async def get_dataset(dataset_id):
     """Get dataset details by ID"""
     try:
-        dataset = EvaluationService.get_dataset(dataset_id)
+        dataset = EvaluationService.get_dataset(dataset_id, tenant_id=current_user.id)
         if not dataset:
             return get_data_error_result(message="Dataset not found", code=RetCode.DATA_ERROR)
 
@@ -134,12 +139,24 @@ async def update_dataset(dataset_id):
     try:
         req = await get_request_json()
 
+        # Check ownership
+        dataset = EvaluationService.get_dataset(dataset_id, tenant_id=current_user.id)
+        if not dataset:
+            return get_data_error_result(message="Dataset not found or access denied", code=RetCode.DATA_ERROR)
+
         # Defines allowed update fields (Whitelist)
         allowed_fields = {"name", "description", "kb_ids"}
         sanitized_payload = {k: v for k, v in req.items() if k in allowed_fields}
 
         if not sanitized_payload:
             return get_data_error_result(message="No updatable fields provided", code=RetCode.DATA_ERROR)
+
+        if "name" in sanitized_payload and not sanitized_payload["name"]:
+            return get_data_error_result(message="Name cannot be empty")
+
+        if "kb_ids" in sanitized_payload:
+            if not isinstance(sanitized_payload["kb_ids"], list) or not sanitized_payload["kb_ids"]:
+                return get_data_error_result(message="kb_ids must be a non-empty list")
 
         success = EvaluationService.update_dataset(dataset_id, **sanitized_payload)
 
@@ -192,13 +209,21 @@ async def add_test_case(dataset_id):
         if not question:
             return get_data_error_result(message="Question cannot be empty")
 
+        metadata = req.get("metadata")
+        if metadata:
+            if not isinstance(metadata, dict):
+                return get_data_error_result(message="Metadata must be a dictionary")
+            # Simple size limit check (approximate)
+            if len(str(metadata)) > 10240:  # 10KB Limit
+                return get_data_error_result(message="Metadata too large")
+
         success, result = EvaluationService.add_test_case(
             dataset_id=dataset_id,
             question=question,
             reference_answer=req.get("reference_answer"),
             relevant_doc_ids=req.get("relevant_doc_ids"),
             relevant_chunk_ids=req.get("relevant_chunk_ids"),
-            metadata=req.get("metadata"),
+            metadata=metadata,
         )
 
         if not success:
@@ -235,8 +260,6 @@ async def import_test_cases(dataset_id):
         req = await get_request_json()
         cases = req.get("cases", [])
 
-        MAX_BULK_IMPORT = 1000
-
         if not cases or not isinstance(cases, list):
             return get_data_error_result(message="cases must be a non-empty list")
 
@@ -258,14 +281,15 @@ async def get_test_cases(dataset_id):
         try:
             page = int(request.args.get("page", 1))
             page_size = int(request.args.get("page_size", 20))
-            if page < 1:
-                return get_data_error_result(message="Page must be greater than 0")
-            if page_size < 1:
-                return get_data_error_result(message="Page size must be greater than 0")
-            if page_size > MAX_PAGE_SIZE:
-                return get_data_error_result(message=f"Page size must be <= {MAX_PAGE_SIZE}")
         except ValueError:
             return get_data_error_result(message="Invalid page or page_size params", code=RetCode.DATA_ERROR)
+
+        if page < 1:
+            return get_data_error_result(message="Page must be greater than 0")
+        if page_size < 1:
+            return get_data_error_result(message="Page size must be greater than 0")
+        if page_size > MAX_PAGE_SIZE:
+            return get_data_error_result(message=f"Page size must be <= {MAX_PAGE_SIZE}")
 
         cases, total = EvaluationService.get_test_cases(dataset_id, page=page, page_size=page_size)
         return get_json_result(data={"cases": cases, "total": total})
@@ -401,6 +425,9 @@ async def compare_runs():
 
         if not run_ids or not isinstance(run_ids, list) or len(run_ids) < 2:
             return get_data_error_result(message="run_ids must be a list with at least 2 run IDs")
+
+        if len(run_ids) > 10:
+            return get_data_error_result(message="Cannot compare more than 10 runs at once")
 
         success, result = EvaluationService.compare_runs(run_ids)
 

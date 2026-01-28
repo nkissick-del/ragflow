@@ -105,15 +105,15 @@ class EvaluationReportService:
                     "Reference Answer": sanitize_csv_cell(case_dict.get("reference_answer", "")),
                     "Generated Answer": sanitize_csv_cell(result_dict.get("generated_answer", "")),
                     "Execution Time": result_dict.get("execution_time", 0),
-                    "Retrieved Chunks": json.dumps(result_dict.get("retrieved_chunks", []), ensure_ascii=False),
-                    "Relevant Chunk IDs": json.dumps(case_dict.get("relevant_chunk_ids", []), ensure_ascii=False),
+                    "Retrieved Chunks": sanitize_csv_cell(json.dumps(result_dict.get("retrieved_chunks", []), ensure_ascii=False)),
+                    "Relevant Chunk IDs": sanitize_csv_cell(json.dumps(case_dict.get("relevant_chunk_ids", []), ensure_ascii=False)),
                 }
 
                 # Handle metrics
                 metrics = result_dict.get("metrics", {})
                 if metrics:
                     for k, v in metrics.items():
-                        row[f"metric_{k}"] = v
+                        row[f"metric_{k}"] = sanitize_csv_cell(str(v))
 
                 writer.writerow(row)
 
@@ -131,7 +131,7 @@ class EvaluationReportService:
         try:
             run = EvaluationRun.get_by_id(run_id)
             if not run or not run.metrics_summary:
-                return []
+                return False, []
 
             metrics = run.metrics_summary
             recommendations = []

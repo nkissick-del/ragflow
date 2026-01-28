@@ -41,7 +41,7 @@ class EvaluationMetricsService:
 
         # Retrieval metrics (if ground truth chunks provided)
         if relevant_chunk_ids:
-            retrieved_ids = [c.get("chunk_id") for c in retrieved_chunks]
+            retrieved_ids = [c.get("chunk_id") for c in retrieved_chunks if c.get("chunk_id") is not None]
             metrics.update(cls.compute_retrieval_metrics(retrieved_ids, relevant_chunk_ids))
 
         # Generation metrics
@@ -57,7 +57,7 @@ class EvaluationMetricsService:
         return metrics
 
     @classmethod
-    def evaluate_with_llm(cls, question: str, answer: str, reference: Optional[str], retrieved_chunks: List[Dict[str, Any]], dialog: Any) -> Dict[str, float]:
+    def evaluate_with_llm(cls, question: str, answer: str, reference: Optional[str], retrieved_chunks: List[Dict[str, Any]], dialog: Any) -> Dict[str, Any]:
         """
         Evaluate answer quality using LLM-as-judge.
 

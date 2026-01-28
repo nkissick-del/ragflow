@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 
+import time
 import asyncio
 import logging
 import queue
@@ -23,7 +24,7 @@ from timeit import default_timer as timer
 from typing import Dict, Any, Optional, Tuple
 
 from api.db.db_models import EvaluationRun, EvaluationResult
-from api.db.services.dialog_service import DialogService
+from api.db.services.dialog_service import DialogService, async_chat
 from api.db.services.evaluation.dataset_service import EvaluationDatasetService
 from api.db.services.evaluation.metrics_service import EvaluationMetricsService
 from common.misc_utils import get_uuid
@@ -33,9 +34,18 @@ from common.time_utils import current_timestamp
 _SENTINEL = object()
 
 
-def _sync_from_async_gen(async_gen, timeout=60):
+def _sync_from_async_gen(async_gen, timeout=60, total_timeout=None):
+    """
+    Consumes an async generator in a background thread and yields items synchronously.
+
+    Args:
+        async_gen: The async generator to consume.
+        timeout (int): Timeout in seconds for each read from the queue (per-item timeout).
+        total_timeout (int, optional): Global timeout in seconds for the entire operation.
+    """
     result_queue = queue.Queue(maxsize=10)
     stop_event = threading.Event()
+    start_time = time.monotonic()
 
     def runner():
         loop = asyncio.new_event_loop()
@@ -78,7 +88,20 @@ def _sync_from_async_gen(async_gen, timeout=60):
     try:
         while True:
             try:
-                item = result_queue.get(timeout=timeout)
+                # Calculate timeout for this read
+                wait_time = timeout
+                if total_timeout is not None:
+                    elapsed = time.monotonic() - start_time
+                    remaining = total_timeout - elapsed
+                    if remaining <= 0:
+                        stop_event.set()
+                        raise RuntimeError(f"Async generator total timeout after {total_timeout} seconds")
+                    # If total_timeout is enforced, we need to respect it for the wait
+                    # The user requested: pass remaining to result_queue.get(timeout=remaining or timeout)
+                    # We use 'remaining' if total_timeout is set.
+                    wait_time = remaining
+
+                item = result_queue.get(timeout=wait_time)
                 if item is _SENTINEL:
                     break
                 if isinstance(item, Exception):
@@ -86,7 +109,8 @@ def _sync_from_async_gen(async_gen, timeout=60):
                 yield item
             except queue.Empty:
                 stop_event.set()
-                raise RuntimeError(f"Async generator timed out after {timeout} seconds")
+                timeout_type = "total" if total_timeout is not None and (time.monotonic() - start_time) >= total_timeout else "per-read"
+                raise RuntimeError(f"Async generator ({timeout_type}) timed out after {wait_time} seconds (timeout={timeout}, total_timeout={total_timeout})")
     except GeneratorExit:
         stop_event.set()
         raise
@@ -152,10 +176,27 @@ class EvaluationRunnerService:
 
             # Execute each test case
             results = []
+            processed = 0
+            total_cases = len(test_cases)
+
             for case in test_cases:
                 result = cls.evaluate_single_case(run_id, case, dialog)
                 if result:
                     results.append(result)
+
+                processed += 1
+                if processed % 10 == 0:
+                    try:
+                        EvaluationRun.update(metrics_summary={"progress": processed, "total": total_cases}).where(EvaluationRun.id == run_id).execute()
+                        logging.info(f"Evaluation run {run_id} progress: {processed}/{total_cases}")
+                    except Exception as e:
+                        logging.warning(f"Failed to update progress for run {run_id}: {e}")
+
+            # Final 100% update
+            try:
+                EvaluationRun.update(metrics_summary={"progress": total_cases, "total": total_cases}).where(EvaluationRun.id == run_id).execute()
+            except Exception as e:
+                logging.warning(f"Failed to update completion progress for run {run_id}: {e}")
 
             # Check if any results were obtained
             if not results:
@@ -180,6 +221,12 @@ class EvaluationRunnerService:
         Evaluate a single test case.
         """
         try:
+            # Validate case ID
+            case_id = case.get("id")
+            if not case_id:
+                logging.error(f"Test case missing ID: {case}")
+                return None
+
             # Prepare messages
             messages = [{"role": "user", "content": case["question"]}]
 
@@ -190,8 +237,6 @@ class EvaluationRunnerService:
             token_usage = None
 
             def chat(dialog, messages, stream=True, **kwargs):
-                from api.db.services.dialog_service import async_chat
-
                 return _sync_from_async_gen(async_chat(dialog, messages, stream=stream, **kwargs))
 
             # Consume single response for stream=False
@@ -203,17 +248,19 @@ class EvaluationRunnerService:
                     retrieved_chunks = ans.get("reference", {}).get("chunks", [])
 
                     # Extract token usage
-                    # Assuming ans might have 'usage' or we can calculate from what we have if the model returns it
-                    # The user mentioned: "e.g., response.get("usage") or response.usage"
                     if "usage" in ans:
                         token_usage = ans["usage"]
                     elif "total_tokens" in ans:
                         token_usage = {"total_tokens": ans["total_tokens"]}
-
-                    # Normalize token_usage if needed (e.g. if it came from a dict but is an object or vice versa, though based on current logic it usually is just assigned)
-                    # The goal is to maximize chance of getting a valid dict
                 else:
                     # Handle object response
+                    # Update this branch to also populate answer and retrieved_chunks from the object by using getattr
+                    answer = getattr(ans, "answer", getattr(ans, "content", ""))
+                    if not isinstance(answer, str):
+                        answer = str(answer)
+
+                    retrieved_chunks = getattr(ans, "retrieved_chunks", getattr(ans, "chunks", []))
+
                     if getattr(ans, "usage", None):
                         token_usage = getattr(ans, "usage")
                     elif getattr(ans, "total_tokens", None):
@@ -223,9 +270,9 @@ class EvaluationRunnerService:
                 if token_usage and not isinstance(token_usage, dict) and hasattr(token_usage, "total_tokens"):
                     token_usage = {"total_tokens": token_usage.total_tokens}
             except StopIteration:
-                logging.warning(f"Chat generator empty for case {case.get('id')}")
+                logging.warning(f"Chat generator empty for case {case_id}")
             except Exception as e:
-                logging.error(f"Error during chat generation for case {case.get('id')}: {e}")
+                logging.error(f"Error during chat generation for case {case_id}: {e}")
 
             execution_time = timer() - start_time
 

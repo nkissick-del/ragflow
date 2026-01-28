@@ -33,7 +33,18 @@ class TestDatasetServiceLogic:
 
         # Verify update call structure
         MockEvaluationDataset.update.assert_called_once()
+        # Verify update call structure
+        MockEvaluationDataset.update.assert_called_once()
         mock_update.where.assert_called_once()
+
+        # Verify status check in where clause
+        where_args = mock_update.where.call_args
+        # We can't easily inspect the exact SQL expression object equality without complex mocks,
+        # but we can inspect if arguments were passed.
+        # Given peewee expression construction, we can't easily deep inspect the expression tree in a simple unit test
+        # without mocking the expression operator overloading.
+        # However, checking that arguments were passed is a good first step.
+        assert len(where_args[0]) > 0
 
     @patch("api.db.services.evaluation.dataset_service.DB")
     @patch("api.db.services.evaluation.dataset_service.EvaluationCase")

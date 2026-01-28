@@ -116,6 +116,7 @@ def test_evaluate_with_llm_error(mock_env):
     from api.db.services.evaluation.metrics_service import EvaluationMetricsService
 
     dialog = MagicMock()
+    mock_env["tenant_llm_service"].TenantLLMService.llm_id2llm_type.return_value = "chat"
     mock_bundle = mock_env["llm_service"].LLMBundle.return_value
     mock_bundle.chat.return_value = "Invalid"
 

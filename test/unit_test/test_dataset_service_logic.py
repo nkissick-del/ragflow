@@ -44,7 +44,7 @@ class TestDatasetServiceLogic:
         """
         dataset_id = "ds_delete_123"
 
-        # Reset mocks
+        # Configure atomic context mock
         mock_atomic_ctx = MagicMock()
         MockDB.atomic.return_value = mock_atomic_ctx
         mock_atomic_ctx.__enter__.return_value = None
@@ -93,7 +93,6 @@ class TestDatasetServiceLogic:
         MockEvaluationDataset.get_or_none.return_value = MagicMock(id=dataset_id, status=StatusEnum.VALID.value)
 
         # Mock bulk_create
-        # EvaluationCase.bulk_create = MagicMock() # Handled by patch
 
         # Mock success count query
         # logic: EvaluationCase.select().where().count()
@@ -110,6 +109,6 @@ class TestDatasetServiceLogic:
         # Verify bulk_create called
         MockEvaluationCase.bulk_create.assert_called_once()
 
-        # Verify counting
+        # Verify counting; f (failure count) = total cases - success count
         assert s == 1
         assert f == 0

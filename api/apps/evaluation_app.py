@@ -31,6 +31,8 @@ from api.db.services.evaluation_service import EvaluationService
 from api.utils.api_utils import get_data_error_result, get_json_result, get_request_json, server_error_response, validate_request
 from common.constants import RetCode
 
+MAX_PAGE_SIZE = 100
+
 
 # ==================== Dataset Management ====================
 
@@ -92,6 +94,8 @@ async def list_datasets():
             return get_data_error_result(message="Page must be greater than 0")
         if page_size < 1:
             return get_data_error_result(message="Page size must be greater than 0")
+        if page_size > MAX_PAGE_SIZE:
+            return get_data_error_result(message=f"Page size must be <= {MAX_PAGE_SIZE}")
 
         result = EvaluationService.list_datasets(tenant_id=current_user.id, user_id=current_user.id, page=page, page_size=page_size)
 
@@ -133,6 +137,9 @@ async def update_dataset(dataset_id):
         # Defines allowed update fields (Whitelist)
         allowed_fields = {"name", "description", "kb_ids"}
         sanitized_payload = {k: v for k, v in req.items() if k in allowed_fields}
+
+        if not sanitized_payload:
+            return get_data_error_result(message="No updatable fields provided", code=RetCode.DATA_ERROR)
 
         success = EvaluationService.update_dataset(dataset_id, **sanitized_payload)
 
@@ -255,6 +262,8 @@ async def get_test_cases(dataset_id):
                 return get_data_error_result(message="Page must be greater than 0")
             if page_size < 1:
                 return get_data_error_result(message="Page size must be greater than 0")
+            if page_size > MAX_PAGE_SIZE:
+                return get_data_error_result(message=f"Page size must be <= {MAX_PAGE_SIZE}")
         except ValueError:
             return get_data_error_result(message="Invalid page or page_size params", code=RetCode.DATA_ERROR)
 
@@ -415,7 +424,8 @@ async def export_results(run_id):
             if not csv_data:
                 return get_data_error_result(message="Evaluation run not found or failed to generate CSV", code=RetCode.DATA_ERROR)
 
-            return Response(csv_data, mimetype="text/csv", headers={"Content-Type": "text/csv; charset=utf-8", "Content-Disposition": f"attachment; filename=evaluation_run_{run_id}.csv"})
+            safe_run_id = "".join(c for c in run_id if c.isalnum() or c in ("-", "_"))
+            return Response(csv_data, headers={"Content-Type": "text/csv; charset=utf-8", "Content-Disposition": f"attachment; filename=evaluation_run_{safe_run_id}.csv"})
 
         success, result = EvaluationService.get_run_results(run_id)
 
@@ -447,12 +457,6 @@ async def evaluate_single():
     """
     try:
         # Check validation
-        req = await get_request_json()
-        question = req.get("question")
-        dialog_id = req.get("dialog_id")
-
-        if not question or not dialog_id:
-            return get_data_error_result(message="question and dialog_id are required")
 
         # FEATURE NOT IMPLEMENTED
         # Return 501 Not Implemented

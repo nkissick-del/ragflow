@@ -207,20 +207,21 @@ class EvaluationRunnerService:
                     # The user mentioned: "e.g., response.get("usage") or response.usage"
                     if "usage" in ans:
                         token_usage = ans["usage"]
-                    elif getattr(ans, "usage", None):
-                        token_usage = getattr(ans, "usage")
-                        # Normalize if it's an object with attributes to dict if possible, or leave as is if services expect object
-                        # But based on "normalize to a dict assigned to token_usage", we should try to make it a dict if it isn't
-                        if hasattr(token_usage, "total_tokens") and not isinstance(token_usage, dict):
-                            token_usage = {"total_tokens": token_usage.total_tokens}
+                    elif "total_tokens" in ans:
+                        token_usage = {"total_tokens": ans["total_tokens"]}
 
-                    if not token_usage:
-                        if "total_tokens" in ans:
-                            token_usage = {"total_tokens": ans["total_tokens"]}
-                        elif getattr(ans, "total_tokens", None):
-                            token_usage = {"total_tokens": getattr(ans, "total_tokens")}
-                        elif getattr(ans, "usage", None) and hasattr(getattr(ans, "usage"), "total_tokens"):
-                            token_usage = {"total_tokens": getattr(ans, "usage").total_tokens}
+                    # Normalize token_usage if needed (e.g. if it came from a dict but is an object or vice versa, though based on current logic it usually is just assigned)
+                    # The goal is to maximize chance of getting a valid dict
+                else:
+                    # Handle object response
+                    if getattr(ans, "usage", None):
+                        token_usage = getattr(ans, "usage")
+                    elif getattr(ans, "total_tokens", None):
+                        token_usage = {"total_tokens": getattr(ans, "total_tokens")}
+
+                # Final normalization: ensure token_usage is a dict if it has total_tokens attribute
+                if token_usage and not isinstance(token_usage, dict) and hasattr(token_usage, "total_tokens"):
+                    token_usage = {"total_tokens": token_usage.total_tokens}
             except StopIteration:
                 logging.warning(f"Chat generator empty for case {case.get('id')}")
             except Exception as e:
@@ -256,7 +257,6 @@ class EvaluationRunnerService:
                 EvaluationResult.create(**result)
             except Exception as e:
                 logging.error(f"Failed to persist evaluation result {result_id}: {e}")
-                # We still return the result so the run can continue and stats can be computed
                 # We still return the result so the run can continue and stats can be computed
 
             return result

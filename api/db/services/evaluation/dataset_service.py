@@ -205,7 +205,6 @@ class EvaluationDatasetService(CommonService):
             for case_data in cases:
                 if not case_data.get("question"):
                     # Skip empty questions
-                    failure_count += 1
                     continue
                 valid_cases.append(case_data)
 
@@ -234,16 +233,14 @@ class EvaluationDatasetService(CommonService):
             # Determine success by checking how many of the generated IDs are present in DB
             # This is more robust than timestamp
             expected_ids = [c.id for c in case_instances]
-            # Chunk the ID list if it's too large for a single query (SQLite limit is 999 usually)
-            # For simplicity, we assume reasonable batch size or rely on peewee handling
-            # Better: query count of cases in this dataset with IDs in our list
 
-            # Since peewee's in_() can be slow for large lists, let's just count valid cases
-            # with these IDs in this dataset.
-            # For massive imports, we would handle differently, but here 300 batch size suggests moderate scale.
+            # Chunk the ID list to avoid SQLite limit (usually 999 variables)
+            batch_size = 900
+            success_count = 0
 
-            # Construct check:
-            success_count = EvaluationCase.select().where((EvaluationCase.dataset_id == dataset_id) & (EvaluationCase.id.in_(expected_ids))).count()
+            for i in range(0, len(expected_ids), batch_size):
+                batch_ids = expected_ids[i : i + batch_size]
+                success_count += EvaluationCase.select().where((EvaluationCase.dataset_id == dataset_id) & (EvaluationCase.id.in_(batch_ids))).count()
 
             failure_count = len(cases) - success_count
 
@@ -254,7 +251,12 @@ class EvaluationDatasetService(CommonService):
             try:
                 if case_instances:
                     expected_ids = [c.id for c in case_instances]
-                    success_count = EvaluationCase.select().where((EvaluationCase.dataset_id == dataset_id) & (EvaluationCase.id.in_(expected_ids))).count()
+                    # Also chunk in fallback to be safe
+                    batch_size = 900
+                    success_count = 0
+                    for i in range(0, len(expected_ids), batch_size):
+                        batch_ids = expected_ids[i : i + batch_size]
+                        success_count += EvaluationCase.select().where((EvaluationCase.dataset_id == dataset_id) & (EvaluationCase.id.in_(batch_ids))).count()
                 else:
                     success_count = 0
                 failure_count = len(cases) - success_count

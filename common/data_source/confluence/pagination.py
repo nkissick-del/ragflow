@@ -110,13 +110,7 @@ class ConfluencePaginationMixin:
                 url_suffix = urlunparse(new_parts)
 
                 # Deduplicate while preserving order
-                seen = set()
-                final_expands = []
-                for x in existing_expands:
-                    if x not in seen:
-                        final_expands.append(x)
-                        seen.add(x)
-                params["expand"] = ",".join(final_expands)
+                params["expand"] = ",".join(dict.fromkeys(existing_expands))
 
                 params["body-format"] = "atlas_doc_format"
 

@@ -5,7 +5,7 @@ import logging
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from threading import Lock
-from typing import Any, Hashable
+from typing import Any
 import weakref
 
 from cachetools import TTLCache
@@ -70,7 +70,7 @@ from common.data_source.confluence.connection import ConfluenceConnectionMixin
 from common.data_source.confluence.pagination import ConfluencePaginationMixin
 
 _USER_CACHE_LOCK = Lock()
-_USER_LOCKS: weakref.WeakValueDictionary[Hashable, Lock] = weakref.WeakValueDictionary()
+_USER_LOCKS: weakref.WeakValueDictionary[str, Lock] = weakref.WeakValueDictionary()
 _USER_LOCKS_LOCK = Lock()
 
 

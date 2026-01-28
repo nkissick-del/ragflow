@@ -74,15 +74,22 @@ class EvaluationRun(DataBaseModel):
     @classmethod
     def mark_failed(cls, run_id):
         """
-        Safely mark an evaluation run as failed by merging 'error':'failed' into metrics_summary.
+        Safely mark an evaluation run as failed by merging 'error':'failed' into metrics_summary
+        and setting status to 'FAILED'.
         """
+        import logging
+        import traceback
+
         try:
             run = cls.get_by_id(run_id)
             merged = (run.metrics_summary or {}) if run else {}
             merged["error"] = "failed"
-            cls.update(metrics_summary=merged).where(cls.id == run_id).execute()
-        except Exception:
-            pass
+            cls.update(metrics_summary=merged, status="FAILED").where(cls.id == run_id).execute()
+            return True
+        except Exception as e:
+            logging.error(f"Failed to mark run {run_id} as failed: {e}")
+            logging.error(traceback.format_exc())
+            return False
 
     class Meta:
         db_table = "evaluation_runs"

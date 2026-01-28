@@ -44,6 +44,14 @@ def setup_mocks():
     mock_file_utils = types.ModuleType("common.file_utils")
     mock_file_utils.get_project_base_directory = lambda: "/tmp"
     sys.modules["common.file_utils"] = mock_file_utils
+
+    sys.modules["common.misc_utils"] = types.ModuleType("common.misc_utils")
+    sys.modules["common.misc_utils"].get_uuid = lambda: "mock_uuid"
+
+    sys.modules["common.time_utils"] = types.ModuleType("common.time_utils")
+    sys.modules["common.time_utils"].current_timestamp = lambda: 1234567890
+    sys.modules["common.time_utils"].datetime_format = lambda ts: "2026-01-28 22:00:00"
+
     sys.modules["common.float_utils"] = MagicMock()
     sys.modules["rag.utils.s3_conn"] = MagicMock()
     sys.modules["rag.utils.minio_conn"] = MagicMock()
@@ -143,11 +151,9 @@ def setup_mocks():
 
     # DB & API
     sys.modules["peewee"] = MagicMock()
-    mock_package("api.db")
-    mock_package("api.db.services")
-    mock_package("api.db.services.evaluation")
     sys.modules["api.db.services.llm_service"] = MagicMock()
     sys.modules["api.db.services.user_service"] = MagicMock()
+    sys.modules["api.db.db_models"] = MagicMock()
 
     # Cloud Providers
     sys.modules["tencentcloud"] = MagicMock()

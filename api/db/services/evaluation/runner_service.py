@@ -23,7 +23,7 @@ from datetime import datetime
 from timeit import default_timer as timer
 from typing import Dict, Any, Optional, Tuple, List
 
-from api.db.db_models import EvaluationRun, EvaluationResult
+from api.db.db_models import EvaluationRun, EvaluationResult, EvaluationDataset
 from api.db.services.dialog_service import DialogService, async_chat
 from api.db.services.evaluation.dataset_service import EvaluationDatasetService
 from api.db.services.evaluation.metrics_service import EvaluationMetricsService
@@ -165,7 +165,7 @@ class EvaluationRunnerService:
         List evaluation runs with tenant isolation and filtering.
         """
         try:
-            query = EvaluationRun.select().join(EvaluationRun.dataset_id).where(EvaluationRun.dataset_id.tenant_id == tenant_id)
+            query = EvaluationRun.select().join(EvaluationDataset, on=(EvaluationRun.dataset_id == EvaluationDataset.id)).where(EvaluationDataset.tenant_id == tenant_id)
 
             if dataset_id:
                 query = query.where(EvaluationRun.dataset_id == dataset_id)
@@ -211,6 +211,7 @@ class EvaluationRunnerService:
                     except Exception as e:
                         logging.warning(f"Failed to update progress for run {run_id}: {e}")
                         EvaluationRun.mark_failed(run_id)
+                        return
 
             # Final 100% update
             try:
@@ -218,6 +219,7 @@ class EvaluationRunnerService:
             except Exception as e:
                 logging.warning(f"Failed to update completion progress for run {run_id}: {e}")
                 EvaluationRun.mark_failed(run_id)
+                return
 
             # Check if any results were obtained
             if not results:

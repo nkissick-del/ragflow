@@ -63,8 +63,6 @@ class HunyuanChat(Base):
 
         gen_conf.pop("max_tokens", None)
 
-        gen_conf.pop("max_tokens", None)
-
         # Merge cleaned config
         _gen_conf.update(self._clean_conf(gen_conf))
         req = models.ChatCompletionsRequest()

@@ -155,7 +155,7 @@ def register_bot_routes(manager):
             similarity_threshold = float(req.get("similarity_threshold", 0.0))
             vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
             top = int(req.get("top_k", 1024))
-            if top > MAX_TOP_K:
+            if top < 1 or top > MAX_TOP_K:
                 raise ValueError(f"top_k must be between 1 and {MAX_TOP_K}")
             if page < 1 or size < 1:
                 raise ValueError("Page and size must be greater than 0")

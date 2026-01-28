@@ -39,6 +39,8 @@ class GoogleChat(Base):
             else:
                 self.client = AnthropicVertex(region=region, project_id=project_id)
                 self.credentials = None
+                self.project_id = project_id
+                self.region = region
         else:
             from google import genai
 
@@ -63,19 +65,23 @@ class GoogleChat(Base):
                     del gen_conf[k]
         return gen_conf
 
+    def _refresh_anthropic_client_if_needed(self):
+        if getattr(self, "credentials", None):
+            from google.auth.transport.requests import Request
+            from anthropic import AnthropicVertex
+
+            if not self.credentials.valid or self.credentials.expired:
+                request = Request()
+                self.credentials.refresh(request)
+                self.client = AnthropicVertex(region=self.region, project_id=self.project_id, access_token=self.credentials.token)
+
     def _chat(self, history, gen_conf=None, **kwargs):
         gen_conf = {} if gen_conf is None else gen_conf.copy()
         system = history[0]["content"] if history and history[0]["role"] == "system" else ""
 
         if "claude" in self.model_name:
             # Refresh token if credentials exist
-            if getattr(self, "credentials", None):
-                from google.auth.transport.requests import Request
-                from anthropic import AnthropicVertex
-
-                request = Request()
-                self.credentials.refresh(request)
-                self.client = AnthropicVertex(region=self.region, project_id=self.project_id, access_token=self.credentials.token)
+            self._refresh_anthropic_client_if_needed()
 
             gen_conf = self._clean_conf(gen_conf)
             response = self.client.messages.create(
@@ -152,13 +158,7 @@ class GoogleChat(Base):
         gen_conf = {} if gen_conf is None else gen_conf.copy()
         if "claude" in self.model_name:
             # Refresh token if credentials exist
-            if getattr(self, "credentials", None):
-                from google.auth.transport.requests import Request
-                from anthropic import AnthropicVertex
-
-                request = Request()
-                self.credentials.refresh(request)
-                self.client = AnthropicVertex(region=self.region, project_id=self.project_id, access_token=self.credentials.token)
+            self._refresh_anthropic_client_if_needed()
 
             gen_conf = self._clean_conf(gen_conf)
             ans = ""

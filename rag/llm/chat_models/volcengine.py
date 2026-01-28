@@ -13,7 +13,7 @@ class VolcEngineChat(Base):
         """
         try:
             key_dict = json.loads(key)
-        except json.JSONDecodeError as e:
+        except (json.JSONDecodeError, TypeError) as e:
             raise ValueError(f"Invalid key format for VolcEngine: {e}")
 
         ark_api_key = key_dict.get("ark_api_key", "")
@@ -24,8 +24,12 @@ class VolcEngineChat(Base):
         else:
             ep_id = key_dict.get("ep_id", "")
             endpoint_id = key_dict.get("endpoint_id", "")
-            if ep_id or endpoint_id:
+            if ep_id and endpoint_id:
                 final_model_name = f"{ep_id}-{endpoint_id}"
+            elif ep_id:
+                final_model_name = ep_id
+            elif endpoint_id:
+                final_model_name = endpoint_id
             else:
                 # Fallback if neither exists, though one should ideally be present
                 final_model_name = "volcengine-model"

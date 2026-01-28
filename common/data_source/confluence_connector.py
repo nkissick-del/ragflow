@@ -6,6 +6,7 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from threading import Lock
 from typing import Any
+import weakref
 
 from cachetools import TTLCache
 
@@ -69,15 +70,17 @@ from common.data_source.confluence.connection import ConfluenceConnectionMixin
 from common.data_source.confluence.pagination import ConfluencePaginationMixin
 
 _USER_CACHE_LOCK = Lock()
-_USER_LOCKS: dict[str, Lock] = {}
+_USER_LOCKS: weakref.WeakValueDictionary = weakref.WeakValueDictionary()
 _USER_LOCKS_LOCK = Lock()
 
 
 def _get_per_user_lock(user_key: str) -> Lock:
     with _USER_LOCKS_LOCK:
-        if user_key not in _USER_LOCKS:
-            _USER_LOCKS[user_key] = Lock()
-        return _USER_LOCKS[user_key]
+        lock = _USER_LOCKS.get(user_key)
+        if lock is None:
+            lock = Lock()
+            _USER_LOCKS[user_key] = lock
+        return lock
 
 
 _USER_ID_TO_DISPLAY_NAME_CACHE: TTLCache = TTLCache(maxsize=10000, ttl=3600)

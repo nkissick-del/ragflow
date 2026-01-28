@@ -1,4 +1,5 @@
 import json
+import logging
 import copy
 import tiktoken
 from quart import Response, jsonify, request
@@ -33,9 +34,7 @@ def register_agent_routes(manager):
         try:
             API4ConversationService.save(**conv)
         except Exception as e:
-            import logging
-
-            logging.exception(e)
+            logging.exception("Failed to save conversation")
             return get_error_data_result("Failed to save conversation")
 
         conv["agent_id"] = conv.pop("dialog_id")
@@ -75,9 +74,10 @@ def register_agent_routes(manager):
 
         session_id = req.pop("session_id", None)
         if not session_id:
-            session_id = req.get("id", "")
+            session_id = req.pop("id", None)
             if not session_id:
-                session_id = req.get("metadata", {}).get("id", "")
+                if metadata := req.get("metadata", {}):
+                    session_id = metadata.pop("id", None)
         stream = req.pop("stream", False)
         if stream:
             resp = Response(
@@ -320,10 +320,8 @@ def register_agent_routes(manager):
                 res = API4ConversationService.delete_by_id(session_id)
                 if res:
                     success_count += 1
-            except Exception as e:
-                import logging
-
-                logging.exception(e)
+            except Exception:
+                logging.exception("Failed to delete session %s", session_id)
                 errors.append(f"Failed to delete session {session_id}")
 
         if errors:

@@ -10,6 +10,7 @@ from copy import deepcopy
 
 import json_repair
 import litellm
+import time
 
 from common.token_utils import num_tokens_from_string, total_token_count_from_response
 from rag.llm import FACTORY_DEFAULT_BASE_URL, LITELLM_PROVIDER_PREFIX, SupportedLiteLLMProvider
@@ -68,6 +69,8 @@ class LiteLLMBase(ABC):
         self.tools = []
         self.toolcall_sessions = {}
         self._bedrock_creds_lock = threading.Lock()
+        self._cached_bedrock_creds = None
+        self._cached_bedrock_expiration = 0
 
         # Factory specific fields
         if self.provider == SupportedLiteLLMProvider.OpenRouter:
@@ -76,7 +79,7 @@ class LiteLLMBase(ABC):
                 self.api_key = parsed_key.get("api_key", "")
                 self.provider_order = parsed_key.get("provider_order", "")
             except json.JSONDecodeError as e:
-                logging.error(f"Invalid JSON in OpenRouter key: {self.provider}, error: {e}")
+                logging.error(f"Invalid JSON in OpenRouter key: error: {e}")
                 raise
         elif self.provider == SupportedLiteLLMProvider.Azure_OpenAI:
             try:
@@ -84,7 +87,7 @@ class LiteLLMBase(ABC):
                 self.api_key = parsed_key.get("api_key", "")
                 self.api_version = parsed_key.get("api_version", "2024-02-01")
             except json.JSONDecodeError as e:
-                logging.error(f"Invalid JSON in Azure_OpenAI key: {self.provider}, error: {e}")
+                logging.error(f"Invalid JSON in Azure_OpenAI key: error: {e}")
                 raise
 
     def _get_delay(self):
@@ -522,7 +525,6 @@ class LiteLLMBase(ABC):
                 completion_args.update({"aws_secret_access_key": bedrock_key.get("bedrock_sk")})
             elif mode == "iam_role":
                 aws_role_arn = bedrock_key.get("aws_role_arn")
-                import time
 
                 with self._bedrock_creds_lock:
                     now = time.time()

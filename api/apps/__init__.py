@@ -309,5 +309,5 @@ async def unauthorized_werkzeug(error):
 @app.teardown_request
 def _db_close(exception):
     if exception:
-        logging.exception("Request failed")
+        logging.error("Request failed", exc_info=(type(exception), exception, exception.__traceback__))
     close_connection()

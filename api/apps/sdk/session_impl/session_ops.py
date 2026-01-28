@@ -23,13 +23,9 @@ def register_ops_routes(manager):
         req["kb_ids"] = req.pop("dataset_ids")
         for kb_id in req["kb_ids"]:
             kbs = KnowledgebaseService.query(id=kb_id)
-            if not kbs:
-                return get_error_data_result(f"The dataset {kb_id} is not found")
-            if not KnowledgebaseService.accessible(kb_id, tenant_id):
-                return get_error_data_result(f"You don't own the dataset {kb_id}.")
-            kb = kbs[0]
-            if kb.chunk_num == 0:
-                return get_error_data_result(f"The dataset {kb_id} doesn't own parsed file")
+            if not kbs or not KnowledgebaseService.accessible(kb_id, tenant_id) or kbs[0].chunk_num == 0:
+                return get_error_data_result("Dataset not found or inaccessible")
+
         uid = tenant_id
 
         async def stream():

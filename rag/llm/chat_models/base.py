@@ -287,7 +287,7 @@ class Base(ABC):
         try:
             if isinstance(tool_res, dict):
                 tool_res = json.dumps(tool_res, ensure_ascii=False)
-        except Exception:
+        except (TypeError, ValueError):
             pass
 
         hist.append({"role": "tool", "tool_call_id": tool_call.id, "content": str(tool_res)})

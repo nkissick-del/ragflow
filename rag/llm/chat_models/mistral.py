@@ -1,4 +1,5 @@
 from mistralai.client import MistralClient
+from mistralai.exceptions import MistralAPIException
 
 from common.token_utils import total_token_count_from_response, num_tokens_from_string
 from rag.nlp import is_chinese
@@ -56,6 +57,8 @@ class MistralChat(Base):
                         full_ans += LENGTH_NOTIFICATION_EN
                 yield ans
 
+        except MistralAPIException as e:
+            yield full_ans + "\n**ERROR**: " + str(e)
         except Exception as e:
             yield full_ans + "\n**ERROR**: " + str(e)
 

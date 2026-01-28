@@ -28,21 +28,27 @@ class GoogleChat(Base):
             from google.auth.transport.requests import Request
 
             if service_account_info:
-                credentials = service_account.Credentials.from_service_account_info(service_account_info, scopes=scopes)
+                self.credentials = service_account.Credentials.from_service_account_info(service_account_info, scopes=scopes)
+                self.project_id = project_id
+                self.region = region
+
+                # Initial refresh to get token
                 request = Request()
-                credentials.refresh(request)
-                token = credentials.token
-                self.client = AnthropicVertex(region=region, project_id=project_id, access_token=token)
+                self.credentials.refresh(request)
+                self.client = AnthropicVertex(region=region, project_id=project_id, access_token=self.credentials.token)
             else:
                 self.client = AnthropicVertex(region=region, project_id=project_id)
+                self.credentials = None
         else:
             from google import genai
 
             if service_account_info:
-                credentials = service_account.Credentials.from_service_account_info(service_account_info, scopes=scopes)
-                self.client = genai.Client(vertexai=True, project=project_id, location=region, credentials=credentials)
+                # Store credentials for later use if needed, though genai client handles it well
+                self.credentials = service_account.Credentials.from_service_account_info(service_account_info, scopes=scopes)
+                self.client = genai.Client(vertexai=True, project=project_id, location=region, credentials=self.credentials)
             else:
                 self.client = genai.Client(vertexai=True, project=project_id, location=region)
+                self.credentials = None
 
     def _clean_conf(self, gen_conf):
         if "claude" in self.model_name:
@@ -62,6 +68,15 @@ class GoogleChat(Base):
         system = history[0]["content"] if history and history[0]["role"] == "system" else ""
 
         if "claude" in self.model_name:
+            # Refresh token if credentials exist
+            if getattr(self, "credentials", None):
+                from google.auth.transport.requests import Request
+                from anthropic import AnthropicVertex
+
+                request = Request()
+                self.credentials.refresh(request)
+                self.client = AnthropicVertex(region=self.region, project_id=self.project_id, access_token=self.credentials.token)
+
             gen_conf = self._clean_conf(gen_conf)
             response = self.client.messages.create(
                 model=self.model_name,
@@ -136,6 +151,15 @@ class GoogleChat(Base):
     def chat_streamly(self, system, history, gen_conf=None, **kwargs):
         gen_conf = {} if gen_conf is None else gen_conf.copy()
         if "claude" in self.model_name:
+            # Refresh token if credentials exist
+            if getattr(self, "credentials", None):
+                from google.auth.transport.requests import Request
+                from anthropic import AnthropicVertex
+
+                request = Request()
+                self.credentials.refresh(request)
+                self.client = AnthropicVertex(region=self.region, project_id=self.project_id, access_token=self.credentials.token)
+
             gen_conf = self._clean_conf(gen_conf)
             ans = ""
             total_tokens = 0
@@ -163,7 +187,6 @@ class GoogleChat(Base):
             ans = ""
             total_tokens = 0
 
-            # Set default thinking_budget=0 if not specified
             # Set default thinking_budget=0 if not specified
             thinking_budget = gen_conf.pop("thinking_budget", 0)
             gen_conf = self._clean_conf(gen_conf)

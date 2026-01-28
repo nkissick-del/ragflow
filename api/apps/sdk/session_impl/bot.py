@@ -21,6 +21,9 @@ from rag.app.tag import label_question
 from rag.prompts.generator import cross_languages, keyword_extraction
 from rag.prompts.template import load_prompt
 from agent.canvas import Canvas
+from elasticsearch.exceptions import NotFoundError
+
+MAX_TOP_K = 10_000
 
 
 def require_api_token(func):
@@ -32,6 +35,8 @@ def require_api_token(func):
 
         token_parts = auth_header.split()
         if len(token_parts) != 2:
+            return get_error_data_result(message="Authorization is not valid")
+        if token_parts[0].lower() != "bearer":
             return get_error_data_result(message="Authorization is not valid")
         token = token_parts[1]
         objs = APIToken.query(beta=token)
@@ -110,8 +115,8 @@ def register_bot_routes(manager):
         return get_result(data={"title": cvs.title, "avatar": cvs.avatar, "inputs": canvas.get_component_input_form("begin"), "prologue": canvas.get_prologue(), "mode": canvas.get_mode()})
 
     @manager.route("/searchbots/ask", methods=["POST"])
-    @validate_request("question", "kb_ids")
     @require_api_token
+    @validate_request("question", "kb_ids")
     async def ask_about_embedded():
         req = await get_request_json()
         uid = request.api_token.tenant_id
@@ -140,8 +145,8 @@ def register_bot_routes(manager):
         return resp
 
     @manager.route("/searchbots/retrieval_test", methods=["POST"])
-    @validate_request("kb_id", "question")
     @require_api_token
+    @validate_request("kb_id", "question")
     async def retrieval_test_embedded():
         req = await get_request_json()
         try:
@@ -150,6 +155,8 @@ def register_bot_routes(manager):
             similarity_threshold = float(req.get("similarity_threshold", 0.0))
             vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
             top = int(req.get("top_k", 1024))
+            if top > MAX_TOP_K:
+                raise ValueError(f"top_k must be between 1 and {MAX_TOP_K}")
             if page < 1 or size < 1:
                 raise ValueError("Page and size must be greater than 0")
             if not (0 <= similarity_threshold <= 1):
@@ -249,14 +256,14 @@ def register_bot_routes(manager):
 
         try:
             return await _retrieval()
+        except NotFoundError:
+            return get_json_result(data=False, message="No chunk found! Check the chunk status please!", code=RetCode.DATA_ERROR)
         except Exception as e:
-            if "not_found" in str(e):
-                return get_json_result(data=False, message="No chunk found! Check the chunk status please!", code=RetCode.DATA_ERROR)
             return server_error_response(e)
 
     @manager.route("/searchbots/related_questions", methods=["POST"])
-    @validate_request("question")
     @require_api_token
+    @validate_request("question")
     async def related_questions_embedded():
         req = await get_request_json()
         tenant_id = request.api_token.tenant_id
@@ -317,8 +324,8 @@ Related search terms:
             return server_error_response(e)
 
     @manager.route("/searchbots/mindmap", methods=["POST"])
-    @validate_request("question", "kb_ids")
     @require_api_token
+    @validate_request("question", "kb_ids")
     async def mindmap():
         tenant_id = request.api_token.tenant_id
         req = await get_request_json()

@@ -4,6 +4,7 @@ import logging
 import os
 import random
 import re
+import threading
 from abc import ABC
 from copy import deepcopy
 
@@ -66,6 +67,7 @@ class LiteLLMBase(ABC):
         self.is_tools = False
         self.tools = []
         self.toolcall_sessions = {}
+        self._bedrock_creds_lock = threading.Lock()
 
         # Factory specific fields
         if self.provider == SupportedLiteLLMProvider.OpenRouter:
@@ -73,16 +75,16 @@ class LiteLLMBase(ABC):
                 parsed_key = json.loads(key)
                 self.api_key = parsed_key.get("api_key", "")
                 self.provider_order = parsed_key.get("provider_order", "")
-            except json.JSONDecodeError:
-                logging.error(f"Invalid JSON in OpenRouter key: {key}")
+            except json.JSONDecodeError as e:
+                logging.error(f"Invalid JSON in OpenRouter key: {self.provider}, error: {e}")
                 raise
         elif self.provider == SupportedLiteLLMProvider.Azure_OpenAI:
             try:
                 parsed_key = json.loads(key)
                 self.api_key = parsed_key.get("api_key", "")
                 self.api_version = parsed_key.get("api_version", "2024-02-01")
-            except json.JSONDecodeError:
-                logging.error(f"Invalid JSON in Azure_OpenAI key: {key}")
+            except json.JSONDecodeError as e:
+                logging.error(f"Invalid JSON in Azure_OpenAI key: {self.provider}, error: {e}")
                 raise
 
     def _get_delay(self):
@@ -154,8 +156,9 @@ class LiteLLMBase(ABC):
 
     async def async_chat_streamly(self, system, history, gen_conf, **kwargs):
         hist = list(history) if history else []
-        if system and hist and hist[0].get("role") != "system":
-            hist.insert(0, {"role": "system", "content": system})
+        if system:
+            if not hist or hist[0].get("role") != "system":
+                hist.insert(0, {"role": "system", "content": system})
         logging.info("[HISTORY STREAMLY]" + json.dumps(hist, ensure_ascii=False, indent=4))
         gen_conf = self._clean_conf(gen_conf)
         reasoning_start = False
@@ -503,7 +506,7 @@ class LiteLLMBase(ABC):
             try:
                 bedrock_key = json.loads(self.api_key)
             except json.JSONDecodeError:
-                logging.error(f"Invalid JSON in Bedrock api_key: {self.api_key}")
+                logging.error("Invalid JSON in Bedrock api_key")
                 raise ValueError("Invalid Bedrock api_key JSON")
 
             mode = bedrock_key.get("auth_mode")
@@ -521,20 +524,22 @@ class LiteLLMBase(ABC):
                 aws_role_arn = bedrock_key.get("aws_role_arn")
                 import time
 
-                now = time.time()
-                # Check cache
-                cached = getattr(self, "_cached_bedrock_creds", None)
-                expiry = getattr(self, "_cached_bedrock_expiration", 0)
-                # Refresh if no cache or expiring in < 5 mins (300s)
-                if not cached or (expiry - now) < 300:
-                    sts_client = boto3.client("sts", region_name=bedrock_region)
-                    resp = sts_client.assume_role(RoleArn=aws_role_arn, RoleSessionName="BedrockSession")
-                    creds = resp["Credentials"]
-                    self._cached_bedrock_creds = creds
-                    # creds["Expiration"] is datetime, convert to timestamp
-                    self._cached_bedrock_expiration = creds["Expiration"].timestamp()
+                with self._bedrock_creds_lock:
+                    now = time.time()
+                    # Check cache
+                    cached = getattr(self, "_cached_bedrock_creds", None)
+                    expiry = getattr(self, "_cached_bedrock_expiration", 0)
+                    # Refresh if no cache or expiring in < 5 mins (300s)
+                    if not cached or (expiry - now) < 300:
+                        sts_client = boto3.client("sts", region_name=bedrock_region)
+                        resp = sts_client.assume_role(RoleArn=aws_role_arn, RoleSessionName="BedrockSession")
+                        creds = resp["Credentials"]
+                        self._cached_bedrock_creds = creds
+                        # creds["Expiration"] is datetime, convert to timestamp
+                        self._cached_bedrock_expiration = creds["Expiration"].timestamp()
 
-                creds = self._cached_bedrock_creds
+                    creds = self._cached_bedrock_creds
+
                 completion_args.update({"aws_region_name": bedrock_region})
                 completion_args.update({"aws_access_key_id": creds["AccessKeyId"]})
                 completion_args.update({"aws_secret_access_key": creds["SecretAccessKey"]})

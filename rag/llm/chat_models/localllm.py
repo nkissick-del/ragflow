@@ -15,6 +15,13 @@ class LocalLLM(Base):
 
         if base_url:
             parsed = urlparse(base_url)
+            if not parsed.scheme and not parsed.hostname:
+                # If no scheme is provided, urlparse might parse the whole string as path or something else depending on python versions
+                # But typically "localhost:8080" -> scheme='', netloc='', path='localhost:8080'
+                if "://" not in base_url:
+                    base_url = "http://" + base_url
+                    parsed = urlparse(base_url)
+
             if parsed.hostname:
                 host = parsed.hostname
             if parsed.port:

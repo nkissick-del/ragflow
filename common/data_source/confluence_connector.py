@@ -10,6 +10,8 @@ from typing import Any
 from cachetools import TTLCache
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from typing_extensions import override
 from urllib.parse import quote
 
@@ -67,6 +69,17 @@ from common.data_source.confluence.connection import ConfluenceConnectionMixin
 from common.data_source.confluence.pagination import ConfluencePaginationMixin
 
 _USER_CACHE_LOCK = Lock()
+_USER_LOCKS: dict[str, Lock] = {}
+_USER_LOCKS_LOCK = Lock()
+
+
+def _get_per_user_lock(user_key: str) -> Lock:
+    with _USER_LOCKS_LOCK:
+        if user_key not in _USER_LOCKS:
+            _USER_LOCKS[user_key] = Lock()
+        return _USER_LOCKS[user_key]
+
+
 _USER_ID_TO_DISPLAY_NAME_CACHE: TTLCache = TTLCache(maxsize=10000, ttl=3600)
 _USER_EMAIL_CACHE: TTLCache = TTLCache(maxsize=10000, ttl=3600)
 
@@ -119,6 +132,16 @@ class OnyxConfluence(ConfluenceConnectionMixin, ConfluencePaginationMixin):
             self.static_credentials = self._credentials_provider.get_credentials()
 
         self._confluence = Confluence(url)
+        self._session = self._confluence.session
+        retry_strategy = Retry(
+            total=3,
+            backoff_factor=1,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["HEAD", "GET", "OPTIONS"],
+        )
+        adapter = HTTPAdapter(max_retries=retry_strategy)
+        self._session.mount("https://", adapter)
+        self._session.mount("http://", adapter)
         self.credential_key: str = self.CREDENTIAL_PREFIX + f":credential_{self._credentials_provider.get_provider_key()}"
 
         self._kwargs: Any = None
@@ -186,33 +209,33 @@ class OnyxConfluence(ConfluenceConnectionMixin, ConfluencePaginationMixin):
             raise
         return response
 
-    def fetch_attachment(self, attachment_link: str) -> requests.Response:
+    def fetch_attachment(self, attachment_link: str, timeout: int = 30) -> requests.Response:
         """
         Fetch an attachment from Confluence.
         """
-        return self._session.get(attachment_link)
+        return self._session.get(attachment_link, timeout=timeout)
 
 
 def get_user_email_from_username__server(confluence_client: OnyxConfluence, user_name: str) -> str | None:
-    global _USER_EMAIL_CACHE
     with _USER_CACHE_LOCK:
         if user_name in _USER_EMAIL_CACHE:
             return _USER_EMAIL_CACHE[user_name]
 
-    try:
-        response = confluence_client.get_mobile_parameters(user_name)
-        email = response.get("email")
-    except Exception:
-        logging.warning(f"failed to get confluence email for {user_name}")
-        # For now, we'll just return None and log a warning. This means
-        # we will keep retrying to get the email every group sync.
-        email = None
-        # We may want to just return a string that indicates failure so we don't
-        # keep retrying
-        # email = f"FAILED TO GET CONFLUENCE EMAIL FOR {user_name}"
+    with _get_per_user_lock(user_name):
+        # double check cache after acquiring lock
+        with _USER_CACHE_LOCK:
+            if user_name in _USER_EMAIL_CACHE:
+                return _USER_EMAIL_CACHE[user_name]
 
-    with _USER_CACHE_LOCK:
-        _USER_EMAIL_CACHE[user_name] = email
+        try:
+            response = confluence_client.get_mobile_parameters(user_name)
+            email = response.get("email")
+        except Exception:
+            logging.warning(f"failed to get confluence email for {user_name}")
+            email = None
+
+        with _USER_CACHE_LOCK:
+            _USER_EMAIL_CACHE[user_name] = email
 
     return email
 
@@ -227,26 +250,31 @@ def _get_user(confluence_client: OnyxConfluence, user_id: str) -> str:
     Returns:
         str: The User Display Name. 'Unknown User' if the user is deactivated or not found
     """
-    global _USER_ID_TO_DISPLAY_NAME_CACHE
     with _USER_CACHE_LOCK:
         if user_id in _USER_ID_TO_DISPLAY_NAME_CACHE:
             return _USER_ID_TO_DISPLAY_NAME_CACHE[user_id] or _USER_NOT_FOUND
 
-    try:
-        result = confluence_client.get_user_details_by_userkey(user_id)
-        found_display_name = result.get("displayName")
-    except Exception:
-        found_display_name = None
+    with _get_per_user_lock(user_id):
+        # double check cache after acquiring lock
+        with _USER_CACHE_LOCK:
+            if user_id in _USER_ID_TO_DISPLAY_NAME_CACHE:
+                return _USER_ID_TO_DISPLAY_NAME_CACHE[user_id] or _USER_NOT_FOUND
 
-    if not found_display_name:
         try:
-            result = confluence_client.get_user_details_by_accountid(user_id)
+            result = confluence_client.get_user_details_by_userkey(user_id)
             found_display_name = result.get("displayName")
         except Exception:
             found_display_name = None
 
-    with _USER_CACHE_LOCK:
-        _USER_ID_TO_DISPLAY_NAME_CACHE[user_id] = found_display_name
+        if not found_display_name:
+            try:
+                result = confluence_client.get_user_details_by_accountid(user_id)
+                found_display_name = result.get("displayName")
+            except Exception:
+                found_display_name = None
+
+        with _USER_CACHE_LOCK:
+            _USER_ID_TO_DISPLAY_NAME_CACHE[user_id] = found_display_name
 
     return found_display_name or _USER_NOT_FOUND
 

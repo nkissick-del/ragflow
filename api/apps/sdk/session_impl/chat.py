@@ -25,7 +25,7 @@ def register_chat_routes(manager):
             "id": get_uuid(),
             "dialog_id": req["dialog_id"],
             "name": req.get("name", "New session"),
-            "message": [{"role": "assistant", "content": (dia[0].prompt_config or {}).get("prologue")}],
+            "message": [{"role": "assistant", "content": (dia[0].prompt_config or {}).get("prologue") or ""}],
             "user_id": req.get("user_id", ""),
             "reference": [],
         }
@@ -266,7 +266,7 @@ def register_chat_routes(manager):
                 # focus answer content only
                 answer = ans
                 break
-            if answer is None:
+            if not answer:
                 return get_error_data_result(message="No response from async_chat")
             content = answer["answer"]
 
@@ -312,10 +312,10 @@ def register_chat_routes(manager):
         try:
             page_number = int(request.args.get("page", 1))
             items_per_page = int(request.args.get("page_size", 30))
-            if page_number < 1 or items_per_page < 1:
-                raise ValueError("Page and page_size must be positive integers")
         except ValueError:
-            return get_error_data_result(message="Invalid page or page_size parameters")
+            return get_error_data_result(message="Invalid page or page_size: must be integers")
+        if page_number < 1 or items_per_page < 1:
+            return get_error_data_result(message="page and page_size must be positive integers")
         orderby = request.args.get("orderby", "create_time")
         user_id = request.args.get("user_id")
         if request.args.get("desc") == "False" or request.args.get("desc") == "false":

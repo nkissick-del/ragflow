@@ -14,11 +14,14 @@ class HunyuanChat(Base):
         try:
             key_json = json.loads(key)
         except json.JSONDecodeError:
-            raise ValueError(f"Failed to parse configuration key: {key}. Please ensure it is a valid JSON string with 'hunyuan_sid' and 'hunyuan_sk'.")
+            raise ValueError("Failed to parse configuration key: invalid JSON")
 
         sid = key_json.get("hunyuan_sid", "")
         sk = key_json.get("hunyuan_sk", "")
         region = key_json.get("hunyuan_region", None)
+
+        if not sid or not sk:
+            raise ValueError("hunyuan_sid and hunyuan_sk are required")
 
         cred = credential.Credential(sid, sk)
         self.model_name = model_name
@@ -60,10 +63,10 @@ class HunyuanChat(Base):
 
         gen_conf.pop("max_tokens", None)
 
-        if "temperature" in gen_conf:
-            _gen_conf["Temperature"] = gen_conf["temperature"]
-        if "top_p" in gen_conf:
-            _gen_conf["TopP"] = gen_conf["top_p"]
+        gen_conf.pop("max_tokens", None)
+
+        # Merge cleaned config
+        _gen_conf.update(self._clean_conf(gen_conf))
         req = models.ChatCompletionsRequest()
         params = {
             "Model": self.model_name,

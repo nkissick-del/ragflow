@@ -54,7 +54,8 @@ class BaiduYiyanChat(Base):
                 yield ans
 
         except Exception as e:
-            yield ans + "\n**ERROR**: " + str(e), 0
+            yield ans + "\n**ERROR**: " + str(e)
+            yield 0
             return
 
         yield total_tokens

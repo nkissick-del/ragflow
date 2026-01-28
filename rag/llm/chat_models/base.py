@@ -96,7 +96,7 @@ class Base(ABC):
         return LLMErrorCode.ERROR_GENERIC
 
     def _clean_conf(self, gen_conf):
-        gen_conf = gen_conf.copy()
+        gen_conf = gen_conf.copy() if gen_conf else {}
         model_name_lower = (self.model_name or "").lower()
         # gpt-5 and gpt-5.1 endpoints have inconsistent parameter support, clear custom generation params to prevent unexpected issues
         if "gpt-5" in model_name_lower:
@@ -168,19 +168,6 @@ class Base(ABC):
                 else:
                     ans = delta_content
 
-            # Streaming filter for reasoning models if needed (optional logic from request 1)
-            # The user request mentioned "modify the stream handling... to maintain a buffer".
-            # However, looking at lines 147-157, it seems this method handles standard streaming
-            # while a specific "filtering" logic was mentioned in request 1.
-            # Request 1 says: "The current streaming filter inside _async_chat_streamly is fragile because it checks chunk boundaries with delta.startswith("<think>") / delta.endswith("</think>")"
-            # It seems like I need to apply Fix 1 (filtering) AND Fix 10 (tag handling).
-            # Let's re-read carefully.
-            # There are TWO different usages of _async_chat_streamly.
-            # One is the definition itself (lines 134-168), and the other is the CALLER at lines 447-451.
-            # Fix 1 applies to the CALLER (lines 447-451).
-            # Fix 10 applies to THIS definition (lines 149-157).
-
-            # Implementing Fix 10 here:
             if kwargs.get("with_reasoning", True) and hasattr(resp.choices[0].delta, "reasoning_content") and resp.choices[0].delta.reasoning_content:
                 ans = ""
                 if not reasoning_start:
@@ -301,7 +288,7 @@ class Base(ABC):
             if isinstance(tool_res, dict):
                 tool_res = json.dumps(tool_res, ensure_ascii=False)
         except Exception:
-            tool_res = str(tool_res)
+            pass
 
         hist.append({"role": "tool", "tool_call_id": tool_call.id, "content": str(tool_res)})
         return hist

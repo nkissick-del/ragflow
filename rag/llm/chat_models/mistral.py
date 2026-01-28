@@ -1,5 +1,5 @@
 from mistralai.client import MistralClient
-from mistralai.exceptions import MistralAPIException
+
 from common.token_utils import total_token_count_from_response, num_tokens_from_string
 from rag.nlp import is_chinese
 from .base import Base, LENGTH_NOTIFICATION_CN, LENGTH_NOTIFICATION_EN
@@ -10,7 +10,7 @@ class MistralChat(Base):
 
     def __init__(self, key, model_name, base_url=None, **kwargs):
         super().__init__(key, model_name, base_url=base_url, **kwargs)
-        self.client = MistralClient(api_key=key, base_url=base_url) if base_url else MistralClient(api_key=key)
+        self.client = MistralClient(api_key=key, base_url=base_url)
         self.model_name = model_name
 
     def _clean_conf(self, gen_conf):
@@ -56,8 +56,6 @@ class MistralChat(Base):
                         full_ans += LENGTH_NOTIFICATION_EN
                 yield ans
 
-        except MistralAPIException as e:
-            yield full_ans + "\n**ERROR**: " + str(e)
         except Exception as e:
             yield full_ans + "\n**ERROR**: " + str(e)
 

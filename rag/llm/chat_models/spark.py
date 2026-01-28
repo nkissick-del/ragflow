@@ -18,7 +18,7 @@ class SparkChat(Base):
             base_url = "https://spark-api-open.xf-yun.com/v1"
 
         if model_name not in self.MODEL_TO_VERSION and model_name not in self.VERSION_TO_MODEL:
-            raise ValueError(f"The given model name is not supported yet. Support: {list(self.MODEL_TO_VERSION.keys())}")
+            raise ValueError(f"The given model name is not supported yet. Supported models: {list(self.MODEL_TO_VERSION.keys())}, Supported versions: {list(self.VERSION_TO_MODEL.keys())}")
 
         if model_name in self.MODEL_TO_VERSION:
             model_version = self.MODEL_TO_VERSION[model_name]

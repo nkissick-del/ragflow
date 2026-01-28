@@ -40,7 +40,7 @@ class BaiChuanChat(Base):
     def chat_streamly(self, system, history, gen_conf=None, **kwargs):
         local_gen_conf = dict(gen_conf) if gen_conf else {}
         local_history = list(history) if history else []
-        if system and local_history and local_history[0].get("role") != "system":
+        if system and (not local_history or local_history[0].get("role") != "system"):
             local_history.insert(0, {"role": "system", "content": system})
         local_gen_conf.pop("max_tokens", None)
         ans = ""
@@ -52,7 +52,7 @@ class BaiChuanChat(Base):
                 messages=local_history,
                 extra_body={"tools": [{"type": "web_search", "web_search": {"enable": True, "search_mode": "performance_first"}}]},
                 stream=True,
-                **self._format_params(local_gen_conf),
+                **local_gen_conf,
             )
             for resp in response:
                 if not resp.choices:

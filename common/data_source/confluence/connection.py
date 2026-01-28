@@ -287,10 +287,15 @@ class ConfluenceConnectionMixin:
 
     def __getattr__(self, name: str) -> Any:
         """Dynamically intercept attribute/method access."""
-        if not self._confluence:
+        try:
+            confluence = object.__getattribute__(self, "_confluence")
+        except AttributeError:
+            confluence = None
+
+        if not confluence:
             raise RuntimeError("Confluence connection not initialized. Call _initialize_connection first.")
 
-        attr = getattr(self._confluence, name, None)
+        attr = getattr(confluence, name, None)
         if attr is None:
             # The underlying Confluence client doesn't have this attribute
             raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")

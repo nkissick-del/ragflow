@@ -22,11 +22,11 @@ def register_ops_routes(manager):
             return get_error_data_result("`dataset_ids` should be a list.")
         req["kb_ids"] = req.pop("dataset_ids")
         for kb_id in req["kb_ids"]:
-            if not KnowledgebaseService.accessible(kb_id, tenant_id):
-                return get_error_data_result(f"You don't own the dataset {kb_id}.")
             kbs = KnowledgebaseService.query(id=kb_id)
             if not kbs:
                 return get_error_data_result(f"The dataset {kb_id} is not found")
+            if not KnowledgebaseService.accessible(kb_id, tenant_id):
+                return get_error_data_result(f"You don't own the dataset {kb_id}.")
             kb = kbs[0]
             if kb.chunk_num == 0:
                 return get_error_data_result(f"The dataset {kb_id} doesn't own parsed file")
@@ -36,9 +36,9 @@ def register_ops_routes(manager):
             try:
                 async for ans in async_ask(req["question"], req["kb_ids"], uid):
                     yield "data:" + json.dumps({"code": 0, "message": "", "data": ans}, ensure_ascii=False) + "\n\n"
+                yield "data:" + json.dumps({"code": 0, "message": "", "data": True}, ensure_ascii=False) + "\n\n"
             except Exception as e:
                 yield "data:" + json.dumps({"code": 500, "message": str(e), "data": {"answer": "**ERROR**: " + str(e), "reference": []}}, ensure_ascii=False) + "\n\n"
-            yield "data:" + json.dumps({"code": 0, "message": "", "data": True}, ensure_ascii=False) + "\n\n"
 
         resp = Response(stream(), mimetype="text/event-stream")
         resp.headers.add_header("Cache-control", "no-cache")
@@ -98,6 +98,6 @@ Related search terms:
                 {"temperature": 0.9},
             )
         except Exception as e:
-            logging.exception(f"Error in related_questions: {e}")
+            logging.exception("Error in related_questions")
             return get_error_data_result(str(e))
         return get_result(data=[re.sub(r"^[0-9]+\. ", "", a) for a in ans.split("\n") if re.match(r"^[0-9]+\. ", a)])

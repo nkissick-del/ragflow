@@ -1,6 +1,6 @@
 import logging
 from typing import Any, Callable, Generator, Iterator, cast
-from urllib.parse import quote
+from urllib.parse import quote, urlparse, parse_qs, urlencode, urlunparse
 
 from common.data_source.config import _DEFAULT_PAGINATION_LIMIT, _PROBLEMATIC_EXPANSIONS, _REPLACEMENT_EXPANSIONS
 from common.data_source.utils import update_param_in_path, get_start_param_from_url
@@ -85,8 +85,33 @@ class ConfluencePaginationMixin:
         while url_suffix:
             params = {}
             if include_body_format:
+                # Need to be careful here because the url_suffix might already have an expand
+                # parameter purely by happenstance (e.g. from the next link)
+                # We need to merge them if so
+                if "expand" not in params:
+                    # check if it is in the url
+                    parsed_url = urlparse(url_suffix)
+                    existing_query = parse_qs(parsed_url.query)
+                    if "expand" in existing_query:
+                        existing_expands = existing_query["expand"][0].split(",")
+                        if "body.atlas_doc_format" not in existing_expands:
+                            existing_expands.append("body.atlas_doc_format")
+
+                        # update URL without expand param to avoid duplicates/conflicts
+                        # we will pass it in params instead
+                        new_query = existing_query.copy()
+                        del new_query["expand"]
+
+                        # rebuild url without expand in query
+                        new_parts = list(parsed_url)
+                        new_parts[4] = urlencode(new_query, doseq=True)
+                        url_suffix = urlunparse(new_parts)
+
+                        params["expand"] = ",".join(existing_expands)
+                    else:
+                        params["expand"] = "body.atlas_doc_format"
+
                 params["body-format"] = "atlas_doc_format"
-                params["expand"] = "body.atlas_doc_format"
 
             logging.debug(f"Making confluence call to {url_suffix}")
             try:
@@ -308,11 +333,17 @@ class ConfluencePaginationMixin:
                 )
         else:
             for user in self._paginate_url("rest/api/user/list", limit):
+                user_key = user.get("userKey")
+                display_name = user.get("displayName")
+                if not user_key or not display_name:
+                    logging.warning(f"Skipping user with missing userKey or displayName: {user}")
+                    continue
+
                 yield ConfluenceUser(
-                    user_id=user["userKey"],
-                    username=user["username"],
-                    display_name=user["displayName"],
-                    email=None,
+                    user_id=user_key,
+                    username=user.get("username"),
+                    display_name=display_name,
+                    email=user.get("email"),
                     type=user.get("type", "user"),
                 )
 
@@ -327,7 +358,7 @@ class ConfluencePaginationMixin:
         """
         user_field = "accountId" if self._is_cloud else "key"
         # Server uses userKey (but calls it key during the API call), Cloud uses accountId
-        user_query = f"{user_field}={quote(user_id)}"
+        user_query = f"{user_field}={quote(user_id, safe='')}"
 
         url = f"rest/api/user/memberof?{user_query}"
         yield from self._paginate_url(url, limit, force_offset_pagination=True)

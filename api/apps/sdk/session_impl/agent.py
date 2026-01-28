@@ -33,7 +33,10 @@ def register_agent_routes(manager):
         try:
             API4ConversationService.save(**conv)
         except Exception as e:
-            return get_error_data_result(f"Failed to save conversation: {str(e)}")
+            import logging
+
+            logging.exception(e)
+            return get_error_data_result("Failed to save conversation")
 
         conv["agent_id"] = conv.pop("dialog_id")
         return get_result(data=conv)
@@ -70,7 +73,11 @@ def register_agent_routes(manager):
 
         question = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
 
-        session_id = req.pop("session_id", req.get("id", "")) or req.get("metadata", {}).get("id", "")
+        session_id = req.pop("session_id", None)
+        if not session_id:
+            session_id = req.get("id", "")
+            if not session_id:
+                session_id = req.get("metadata", {}).get("id", "")
         stream = req.pop("stream", False)
         if stream:
             resp = Response(
@@ -210,6 +217,7 @@ def register_agent_routes(manager):
             items_per_page = int(request.args.get("page_size", 30))
             if items_per_page < 1:
                 items_per_page = 30
+            items_per_page = min(items_per_page, 200)
         except ValueError:
             items_per_page = 30
         orderby = request.args.get("orderby", "update_time")
@@ -313,7 +321,10 @@ def register_agent_routes(manager):
                 if res:
                     success_count += 1
             except Exception as e:
-                errors.append(f"Failed to delete session {session_id}: {str(e)}")
+                import logging
+
+                logging.exception(e)
+                errors.append(f"Failed to delete session {session_id}")
 
         if errors:
             if success_count > 0:

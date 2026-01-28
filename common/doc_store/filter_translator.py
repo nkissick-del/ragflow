@@ -80,9 +80,9 @@ class SQLFilterTranslator(BaseFilterTranslator):
                 raise ValueError(f"Unsupported operator: {op}")
 
             if op == "in" or op == Operator.IN:
-                if isinstance(val, list):
+                if isinstance(val, (list, tuple)):
                     if not val:
-                        raise ValueError(f"Empty list provided for IN operator on key: {key}")
+                        raise ValueError(f"Empty list or tuple provided for IN operator on key: {key}")
                     placeholders = ["%s"] * len(val)
                     formatted_val = f"({', '.join(placeholders)})"
                     params.extend(val)
@@ -124,7 +124,7 @@ class ESFilterTranslator(BaseFilterTranslator):
             elif op == "in" or op == Operator.IN:
                 if isinstance(val, (list, tuple)):
                     if not val:
-                        raise ValueError("IN operator requires a non-empty list")
+                        raise ValueError(f"IN operator for '{key}' requires a non-empty list or tuple")
                     formatted_val = val
                 else:
                     formatted_val = [val]

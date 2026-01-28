@@ -165,7 +165,7 @@ class OrderByExpr:
         return self
 
     def fields(self):
-        return self._fields
+        return tuple(self._fields)
 
     @property
     def fields_prop(self):

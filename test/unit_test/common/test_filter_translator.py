@@ -27,6 +27,12 @@ class TestFilterTranslators(unittest.TestCase):
         self.assertEqual(sql, "id IN (%s, %s, %s)")
         self.assertEqual(params, [1, 2, 3])
 
+        # Test IN operator with tuple
+        filters = MetadataFilters(filters=[MetadataFilter(key="id", value=(4, 5), operator="in")])
+        sql, params = translator.translate(filters)
+        self.assertEqual(sql, "id IN (%s, %s)")
+        self.assertEqual(params, [4, 5])
+
         # Test SQL injection in key
         filters = MetadataFilters(filters=[MetadataFilter(key="age; DROP TABLE users", value=25, operator="==")])
         with self.assertRaisesRegex(ValueError, "Invalid identifier"):
@@ -74,6 +80,16 @@ class TestFilterTranslators(unittest.TestCase):
         # Test unsupported operator
         filters = MetadataFilters(filters=[MetadataFilter(key="status", value="active", operator="invalid_op")])
         with self.assertRaisesRegex(ValueError, "Unsupported ES operator"):
+            translator.translate(filters)
+
+        # Test IN operator with tuple in ES
+        filters = MetadataFilters(filters=[MetadataFilter(key="id", value=(10, 20), operator="in")])
+        result = translator.translate(filters)
+        self.assertEqual(result[0]["terms"]["id"], (10, 20))
+
+        # Test empty IN in ES
+        filters = MetadataFilters(filters=[MetadataFilter(key="tags", value=[], operator="in")])
+        with self.assertRaisesRegex(ValueError, "IN operator for 'tags' requires a non-empty list or tuple"):
             translator.translate(filters)
 
         # Test additional operators and boundary values

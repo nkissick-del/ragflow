@@ -425,6 +425,9 @@ async def export_results(run_id):
                 return get_data_error_result(message="Evaluation run not found or failed to generate CSV", code=RetCode.DATA_ERROR)
 
             safe_run_id = "".join(c for c in run_id if c.isalnum() or c in ("-", "_"))
+            if not safe_run_id:
+                safe_run_id = "unknown"
+
             return Response(csv_data, headers={"Content-Type": "text/csv; charset=utf-8", "Content-Disposition": f"attachment; filename=evaluation_run_{safe_run_id}.csv"})
 
         success, result = EvaluationService.get_run_results(run_id)
@@ -442,7 +445,6 @@ async def export_results(run_id):
 
 @manager.route("/evaluate_single", methods=["POST"])  # noqa: F821
 @login_required
-@validate_request("question", "dialog_id")
 async def evaluate_single():
     """
     Evaluate a single question-answer pair in real-time.
@@ -456,10 +458,10 @@ async def evaluate_single():
     }
     """
     try:
-        # Check validation
-
         # FEATURE NOT IMPLEMENTED
         # Return 501 Not Implemented
-        return get_json_result(data={"message": "Single evaluation not yet implemented."}, retmsg="Not Implemented", retcode=501)
+        response = get_json_result(data={"message": "Single evaluation not yet implemented."}, retmsg="Not Implemented", retcode=501)
+        response.status_code = 501
+        return response
     except Exception as e:
         return server_error_response(e)

@@ -233,15 +233,7 @@ class EvaluationDatasetService(CommonService):
             # Determine success by checking how many of the generated IDs are present in DB
             # This is more robust than timestamp
             expected_ids = [c.id for c in case_instances]
-
-            # Chunk the ID list to avoid SQLite limit (usually 999 variables)
-            batch_size = 900
-            success_count = 0
-
-            for i in range(0, len(expected_ids), batch_size):
-                batch_ids = expected_ids[i : i + batch_size]
-                success_count += EvaluationCase.select().where((EvaluationCase.dataset_id == dataset_id) & (EvaluationCase.id.in_(batch_ids))).count()
-
+            success_count = cls._count_cases_in_batches(dataset_id, expected_ids)
             failure_count = len(cases) - success_count
 
         except Exception as e:
@@ -251,12 +243,7 @@ class EvaluationDatasetService(CommonService):
             try:
                 if case_instances:
                     expected_ids = [c.id for c in case_instances]
-                    # Also chunk in fallback to be safe
-                    batch_size = 900
-                    success_count = 0
-                    for i in range(0, len(expected_ids), batch_size):
-                        batch_ids = expected_ids[i : i + batch_size]
-                        success_count += EvaluationCase.select().where((EvaluationCase.dataset_id == dataset_id) & (EvaluationCase.id.in_(batch_ids))).count()
+                    success_count = cls._count_cases_in_batches(dataset_id, expected_ids)
                 else:
                     success_count = 0
                 failure_count = len(cases) - success_count
@@ -265,3 +252,17 @@ class EvaluationDatasetService(CommonService):
                 success_count = 0
 
         return success_count, failure_count
+
+    @classmethod
+    def _count_cases_in_batches(cls, dataset_id: str, ids: List[str], batch_size: int = 900) -> int:
+        """
+        Helper to count existing cases in batches to verify successful creation.
+        """
+        count = 0
+        if not ids:
+            return 0
+
+        for i in range(0, len(ids), batch_size):
+            batch_ids = ids[i : i + batch_size]
+            count += EvaluationCase.select().where((EvaluationCase.dataset_id == dataset_id) & (EvaluationCase.id.in_(batch_ids))).count()
+        return count

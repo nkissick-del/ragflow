@@ -92,8 +92,6 @@ class TestDatasetServiceLogic:
         # Mock dataset existence check
         MockEvaluationDataset.get_or_none.return_value = MagicMock(id=dataset_id, status=StatusEnum.VALID.value)
 
-        # Mock bulk_create
-
         # Mock success count query
         # logic: EvaluationCase.select().where().count()
         mock_select = MagicMock()
@@ -112,3 +110,25 @@ class TestDatasetServiceLogic:
         # Verify counting; f (failure count) = total cases - success count
         assert s == 1
         assert f == 0
+
+    @patch("api.db.services.evaluation.dataset_service.EvaluationCase")
+    def test_count_cases_in_batches_chunking(self, MockEvaluationCase):
+        """
+        Verify _count_cases_in_batches correctly chunks large lists.
+        """
+        dataset_id = "ds_batch_test"
+        # Create list larger than batch_size 900
+        ids = [f"id_{i}" for i in range(1000)]
+
+        # Mock count return value
+        # It will be called twice: once for 900, once for 100
+        mock_select = MagicMock()
+        mock_select.where.return_value.count.side_effect = [900, 100]
+        MockEvaluationCase.select.return_value = mock_select
+
+        # Execute
+        total = EvaluationDatasetService._count_cases_in_batches(dataset_id, ids, batch_size=900)
+
+        # Assert
+        assert total == 1000
+        assert MockEvaluationCase.select.call_count == 2

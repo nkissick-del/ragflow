@@ -27,6 +27,8 @@ export const getDocumentIdsFromConversionReference = (data: IConversation) => {
   return documentIds.join(',');
 };
 
+const EMPTY_REFERENCE = { doc_aggs: [], chunks: [], total: 0 };
+
 export const buildMessageItemReference = (
   conversation: { message: IMessage[]; reference: IReference[] },
   message: IMessage,
@@ -44,5 +46,5 @@ export const buildMessageItemReference = (
     ? message?.reference
     : (conversation?.reference ?? [])[referenceIndex];
 
-  return reference ?? { doc_aggs: [], chunks: [], total: 0 };
+  return reference ?? EMPTY_REFERENCE;
 };

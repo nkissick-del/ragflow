@@ -146,6 +146,14 @@ WORKDIR /ragflow
 # install dependencies from uv.lock file
 COPY pyproject.toml uv.lock ./
 
+# Build argument for optional dependencies
+# Default: "all" installs everything for backward compatibility
+# Examples:
+#   - "all" - Full installation (default, backward compatible)
+#   - "minimal" - Core + S3 + Elasticsearch (for Docling sidecar users)
+#   - "db-postgres,storage-s3,vectorstore-elasticsearch,deepdoc" - Custom selection
+ARG RAGFLOW_EXTRAS="all"
+
 # https://github.com/astral-sh/uv/issues/10462
 # uv records index url into uv.lock but doesn't failover among multiple indexes
 RUN --mount=type=cache,id=ragflow_uv,target=/root/.cache/uv,sharing=locked \
@@ -154,7 +162,11 @@ RUN --mount=type=cache,id=ragflow_uv,target=/root/.cache/uv,sharing=locked \
     else \
     sed -i 's|pypi.tuna.tsinghua.edu.cn|pypi.org|g' uv.lock; \
     fi; \
-    uv sync --python 3.12 --frozen && \
+    if [ "$RAGFLOW_EXTRAS" = "all" ] || [ -z "$RAGFLOW_EXTRAS" ]; then \
+        uv sync --python 3.12 --frozen --all-extras; \
+    else \
+        uv sync --python 3.12 --frozen --extra ${RAGFLOW_EXTRAS}; \
+    fi && \
     # Install pip for runtime use by entrypoint.sh ensure_pip_dependency() function
     # which installs optional dependencies (e.g., docling) at container startup
     uv pip install pip==24.3.1

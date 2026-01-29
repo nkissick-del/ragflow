@@ -312,6 +312,51 @@ docker build --platform linux/amd64 \
   -f Dockerfile -t infiniflow/ragflow:nightly .
 ```
 
+## 📦 Optional Dependencies
+
+RAGFlow supports flexible dependency configurations for faster builds and smaller images.
+
+### Configuration Examples
+
+| Use Case | RAGFLOW_EXTRAS Value |
+|----------|---------------------|
+| Full (default) | `all` |
+| Full-lite (no deepdoc, pgvector, all features) | `full-lite` |
+| Docling sidecar (minimal) | `db-postgres,storage-s3,vectorstore-elasticsearch` |
+| With Garage storage + deepdoc | `db-postgres,storage-s3,vectorstore-elasticsearch,deepdoc` |
+| Custom selection | `minimal,llm-anthropic,observability` |
+
+### Dependency Groups
+
+| Group | Description |
+|-------|-------------|
+| `db-postgres` / `db-mysql` | Application database driver |
+| `storage-minio` / `storage-s3` / `storage-azure` | Object storage backend |
+| `vectorstore-elasticsearch` / `vectorstore-opensearch` | Vector database |
+| `deepdoc` | Built-in document processing (skip if using Docling) |
+| `llm-*` | LLM provider integrations |
+| `integrations-*` | Data source connectors |
+
+### Building with Custom Dependencies
+
+```bash
+# Full image (default - backward compatible)
+docker build -t ragflow:full .
+
+# Docling user (no deepdoc, smaller image)
+docker build --build-arg RAGFLOW_EXTRAS="db-postgres,storage-s3,vectorstore-elasticsearch" -t ragflow:docling .
+
+# Custom selection
+docker build --build-arg RAGFLOW_EXTRAS="minimal,llm-anthropic,observability" -t ragflow:custom .
+```
+
+### Using Docling Instead of Deepdoc
+
+1. Skip `deepdoc` in RAGFLOW_EXTRAS when building
+2. Run Docling as sidecar: `docker run -p 5001:5001 ds4sd/docling-serve`
+3. Configure: `DOCLING_BASE_URL=http://docling:5001` in `.env`
+4. Set parser: `layout_recognizer: "Docling"` in service_conf.yaml
+
 ## 🔨 Launch service from source for development
 
 1. Install `uv` and `pre-commit`, or skip this step if they are already installed:

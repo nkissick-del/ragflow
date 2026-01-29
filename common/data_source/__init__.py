@@ -1,4 +1,3 @@
-
 """
 Thanks to https://github.com/onyx-dot-app/onyx
 
@@ -23,31 +22,64 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 
-from .blob_connector import BlobStorageConnector
-from .slack_connector import SlackConnector
-from .gmail_connector import GmailConnector
-from .notion_connector import NotionConnector
-from .confluence_connector import ConfluenceConnector
-from .discord_connector import DiscordConnector
-from .dropbox_connector import DropboxConnector
-from .google_drive.connector import GoogleDriveConnector
-from .jira.connector import JiraConnector
-from .sharepoint_connector import SharePointConnector
-from .teams_connector import TeamsConnector
-from .moodle_connector import MoodleConnector
-from .airtable_connector import AirtableConnector
-from .asana_connector import AsanaConnector
-from .imap_connector import ImapConnector
-from .zendesk_connector import ZendeskConnector
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .blob_connector import BlobStorageConnector
+    from .slack_connector import SlackConnector
+    from .gmail_connector import GmailConnector
+    from .notion_connector import NotionConnector
+    from .confluence_connector import ConfluenceConnector
+    from .discord_connector import DiscordConnector
+    from .dropbox_connector import DropboxConnector
+    from .google_drive.connector import GoogleDriveConnector
+    from .jira.connector import JiraConnector
+    from .sharepoint_connector import SharePointConnector
+    from .teams_connector import TeamsConnector
+    from .moodle_connector import MoodleConnector
+    from .airtable_connector import AirtableConnector
+    from .asana_connector import AsanaConnector
+    from .imap_connector import ImapConnector
+    from .zendesk_connector import ZendeskConnector
+
+_LAZY_CONNECTORS = {
+    "BlobStorageConnector": (".blob_connector", "BlobStorageConnector"),
+    "SlackConnector": (".slack_connector", "SlackConnector"),
+    "GmailConnector": (".gmail_connector", "GmailConnector"),
+    "NotionConnector": (".notion_connector", "NotionConnector"),
+    "ConfluenceConnector": (".confluence_connector", "ConfluenceConnector"),
+    "DiscordConnector": (".discord_connector", "DiscordConnector"),
+    "DropboxConnector": (".dropbox_connector", "DropboxConnector"),
+    "GoogleDriveConnector": (".google_drive.connector", "GoogleDriveConnector"),
+    "JiraConnector": (".jira.connector", "JiraConnector"),
+    "SharePointConnector": (".sharepoint_connector", "SharePointConnector"),
+    "TeamsConnector": (".teams_connector", "TeamsConnector"),
+    "MoodleConnector": (".moodle_connector", "MoodleConnector"),
+    "AirtableConnector": (".airtable_connector", "AirtableConnector"),
+    "AsanaConnector": (".asana_connector", "AsanaConnector"),
+    "ImapConnector": (".imap_connector", "ImapConnector"),
+    "ZendeskConnector": (".zendesk_connector", "ZendeskConnector"),
+}
+
+
+def __getattr__(name):
+    if name in _LAZY_CONNECTORS:
+        module_path, class_name = _LAZY_CONNECTORS[name]
+        try:
+            import importlib
+
+            module = importlib.import_module(module_path, package=__package__)
+            cls = getattr(module, class_name)
+            globals()[name] = cls
+            return cls
+        except (ImportError, AttributeError) as e:
+            raise ImportError(f"Could not lazy load {name} from {module_path}: {e}")
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
 from .config import BlobType, DocumentSource
 from .models import Document, TextSection, ImageSection, BasicExpertInfo
-from .exceptions import (
-    ConnectorMissingCredentialError,
-    ConnectorValidationError,
-    CredentialExpiredError,
-    InsufficientPermissionsError,
-    UnexpectedValidationError
-)
+from .exceptions import ConnectorMissingCredentialError, ConnectorValidationError, CredentialExpiredError, InsufficientPermissionsError, UnexpectedValidationError
 
 __all__ = [
     "BlobStorageConnector",

@@ -31,9 +31,10 @@ from common import settings
 from common.constants import LLMType
 from common.misc_utils import get_uuid
 from deepdoc.parser import ExcelParser
-from deepdoc.parser.pdf_parser import PlainParser, RAGFlowPdfParser, VisionParser
+from rag.parsers.deepdoc.parser.pdf_parser import PlainParser, RAGFlowPdfParser, VisionParser
 from deepdoc.parser.tcadp_parser import TCADPParser
-from rag.app.naive import Docx
+from rag.parsers import DocxParser as Docx
+
 from rag.flow.base import ProcessBase, ProcessParamBase
 from rag.flow.parser.schema import ParserFromUpstream
 from rag.llm.cv_model import Base as VLM
@@ -580,12 +581,13 @@ class Parser(ProcessBase):
     def _markdown(self, name, blob):
         from functools import reduce
 
-        from rag.app.naive import Markdown as naive_markdown_parser
         from rag.nlp import concat_img
 
         self.callback(random.randint(1, 5) / 100.0, "Start to work on a markdown.")
         conf = self._param.setups["text&markdown"]
         self.set_output("output_format", conf["output_format"])
+
+        from rag.orchestration.orchestrator import Markdown as naive_markdown_parser
 
         markdown_parser = naive_markdown_parser()
         sections, tables, section_images = markdown_parser(
@@ -646,11 +648,13 @@ class Parser(ProcessBase):
             else:
                 txt = cv_model.describe(img_binary.read())
 
-        json_result = [{
-            "text": txt,
-            "image": img,
-            "doc_type_kwd": "image",
-        }]
+        json_result = [
+            {
+                "text": txt,
+                "image": img,
+                "doc_type_kwd": "image",
+            }
+        ]
         self.set_output("json", json_result)
 
     def _audio(self, name, blob):

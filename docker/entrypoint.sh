@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 
+# Enable verbose debugging
+if [[ "${DEBUG_ENTRYPOINT}" == "true" ]]; then
+    set -x
+fi
 set -e
 
 # -----------------------------------------------------------------------------
@@ -158,24 +162,40 @@ CONF_FILE="${CONF_DIR}/service_conf.yaml"
 rm -f "${CONF_FILE}"
 DEF_ENV_VALUE_PATTERN="\$\{([^:]+):-([^}]+)\}"
 while IFS= read -r line || [[ -n "$line" ]]; do
-    if [[ "$line" =~ DEF_ENV_VALUE_PATTERN ]]; then
+    if [[ "$line" =~ $DEF_ENV_VALUE_PATTERN ]]; then
         varname="${BASH_REMATCH[1]}"
         default="${BASH_REMATCH[2]}"
 
         if [ -n "${!varname}" ]; then
+            set +x
             eval "echo \"$line"\" >> "${CONF_FILE}"
+            if [[ "${DEBUG_ENTRYPOINT}" == "true" ]]; then set -x; fi
         else
             echo "$line" | sed -E "s/\\\$\{[^:]+:-([^}]+)\}/\1/g" >> "${CONF_FILE}"
         fi
     else
+        set +x
         eval "echo \"$line\"" >> "${CONF_FILE}"
+        if [[ "${DEBUG_ENTRYPOINT}" == "true" ]]; then set -x; fi
     fi
 done < "${TEMPLATE_FILE}"
 
 export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu/"
 PY=python3
 
-# -----------------------------------------------------------------------------
+# Ensure database exists before any service accesses it
+echo "Ensuring database exists..."
+db_init_output=$("$PY" -c "from api.db.connection import ensure_database_exists; ensure_database_exists()" 2>&1)
+db_init_status=$?
+if [ $db_init_status -ne 0 ]; then
+  echo "Database initialization failed running: $PY -c 'from api.db.connection import ensure_database_exists; ensure_database_exists()' (exit $db_init_status)" >&2
+  if [ -n "$db_init_output" ]; then
+    echo "$db_init_output" >&2
+  fi
+  exit $db_init_status
+fi
+
+# ------------------------------------------------------------------------------
 # Function(s)
 # -----------------------------------------------------------------------------
 
@@ -205,17 +225,72 @@ function start_mcp_server() {
         "${MCP_JSON_RESPONSE_FLAG}" &
 }
 
-function ensure_docling() {
-    [[ "${USE_DOCLING}" == "true" ]] || { echo "[docling] disabled by USE_DOCLING"; return 0; }
-    DOCLING_PIN="${DOCLING_VERSION:-==2.58.0}"
-    "$PY" -c "import importlib.util,sys; sys.exit(0 if importlib.util.find_spec('docling') else 1)" \
-      || uv pip install -i https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://pypi.org/simple --no-cache-dir "docling${DOCLING_PIN}"
+# Generalized pip dependency installation with persistent caching
+# Follows AGENTS.md modularization principles: reusable, testable components
+# Usage: ensure_pip_dependency <package_name> <package_spec> <env_flag> [import_name]
+# Example: ensure_pip_dependency "docling" "docling==2.58.0" "USE_DOCLING"
+# Example with different import name: ensure_pip_dependency "Pillow" "Pillow==10.0.0" "USE_PIL" "PIL"
+# Future: If adding 3+ optional dependencies, refactor to config-driven approach
+function ensure_pip_dependency() {
+    local package_name="$1"
+    local package_spec="$2"
+    local env_flag="$3"
+    local import_name="${4:-$package_name}"  # Use package_name as default if import_name not provided
+    
+    [[ "${!env_flag}" == "true" ]] || { echo "[$package_name] disabled by $env_flag"; return 0; }
+    
+    local marker_file="/opt/ragflow/.deps/${package_name}-installed"
+    
+    # Verify cache validity: marker exists AND package actually imports
+    # Use import_name for Python import check, package_name for display/marker
+    if [[ -f "$marker_file" ]]; then
+        if "$PY" -c "import importlib.util; exit(0 if importlib.util.find_spec('${import_name}') else 1)" 2>/dev/null; then
+            echo "[$package_name] already installed (cached), skipping..."
+            return 0
+        else
+            echo "[$package_name] cache corrupted, reinstalling..."
+            rm "$marker_file"
+        fi
+    fi
+    
+    # Install with persistent cache directory
+    echo "[$package_name] installing ${package_spec}..."
+    "$PY" -c 'import pip' >/dev/null 2>&1 || "$PY" -m ensurepip --upgrade || true
+    
+    if "$PY" -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://pypi.org/simple --cache-dir /root/.cache/pip "${package_spec}"; then
+        mkdir -p /opt/ragflow/.deps
+        touch "$marker_file"
+        echo "[$package_name] installation complete"
+        return 0
+    else
+        echo "[$package_name] installation FAILED - check pip output above"
+        return 1
+    fi
 }
+
+# Install optional dependencies
+docling_version="${DOCLING_VERSION:-2.58.0}"
+if [[ "${docling_version}" =~ ^[[:space:]]*[\<\>=!~] ]]; then
+  docling_spec="docling${docling_version}"
+else
+  docling_spec="docling==${docling_version}"
+fi
+
+ensure_pip_dependency "docling" "${docling_spec}" "USE_DOCLING"
+
+# Install Google API Python Client for Gmail/Google Drive connectors
+google_api_version="${GOOGLE_API_VERSION:-2.150.0}"
+if [[ "${google_api_version}" =~ ^[[:space:]]*[\<\>=!~] ]]; then
+  google_api_spec="google-api-python-client${google_api_version}"
+else
+  google_api_spec="google-api-python-client==${google_api_version}"
+fi
+
+ensure_pip_dependency "google-api-python-client" "${google_api_spec}" "USE_GOOGLE_API" "googleapiclient"
 
 # -----------------------------------------------------------------------------
 # Start components based on flags
 # -----------------------------------------------------------------------------
-ensure_docling
 
 if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
     echo "Starting nginx..."

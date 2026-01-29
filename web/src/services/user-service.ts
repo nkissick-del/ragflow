@@ -25,6 +25,7 @@ const {
   createSystemToken,
   getSystemConfig,
   setLangfuseConfig,
+  getTemplates,
 } = api;
 
 const methods = {
@@ -124,6 +125,10 @@ const methods = {
     url: setLangfuseConfig,
     method: 'delete',
   },
+  getTemplates: {
+    url: getTemplates,
+    method: 'get',
+  },
 } as const;
 
 const userService = registerServer<keyof typeof methods>(methods, request);
@@ -150,5 +155,20 @@ export const listTenant = () => request.get(api.listTenant);
 
 export const agreeTenant = (tenantId: string) =>
   request.put(api.agreeTenant(tenantId));
+
+export const getFactoryModels = (
+  factory: string,
+  refresh?: boolean,
+  category?: string,
+) => {
+  let url = api.factory_models(factory);
+  const params = new URLSearchParams();
+  if (refresh) params.append('refresh', 'true');
+  if (category) params.append('category', category);
+  if (params.toString()) {
+    url += `?${params.toString()}`;
+  }
+  return request.get(url);
+};
 
 export default userService;

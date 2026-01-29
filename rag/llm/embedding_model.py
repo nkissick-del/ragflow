@@ -20,7 +20,7 @@ from abc import ABC
 from urllib.parse import urljoin
 
 import dashscope
-import google.generativeai as genai
+from google import genai
 import numpy as np
 import requests
 from ollama import Client
@@ -114,7 +114,7 @@ class OpenAIEmbed(Base):
         return np.array(ress), total_tokens
 
     def encode_queries(self, text):
-        res = self.client.embeddings.create(input=[truncate(text, 8191)], model=self.model_name, encoding_format="float",extra_body={"drop_params": True})
+        res = self.client.embeddings.create(input=[truncate(text, 8191)], model=self.model_name, encoding_format="float", extra_body={"drop_params": True})
         try:
             return np.array(res.data[0].embedding), total_token_count_from_response(res)
         except Exception as _e:
@@ -359,7 +359,7 @@ class JinaMultiVecEmbed(Base):
         self.headers = {"Content-Type": "application/json", "Authorization": f"Bearer {key}"}
         self.model_name = model_name
 
-    def encode(self, texts: list[str|bytes], task="retrieval.passage"):
+    def encode(self, texts: list[str | bytes], task="retrieval.passage"):
         batch_size = 16
         ress = []
         token_count = 0
@@ -371,30 +371,30 @@ class JinaMultiVecEmbed(Base):
                 img_b64s = None
                 try:
                     base64.b64decode(text, validate=True)
-                    img_b64s = text.decode('utf8')
+                    img_b64s = text.decode("utf8")
                 except Exception:
-                    img_b64s = base64.b64encode(text).decode('utf8')
+                    img_b64s = base64.b64encode(text).decode("utf8")
                 input.append({"image": img_b64s})  # base64 encoded image
         for i in range(0, len(texts), batch_size):
             data = {"model": self.model_name, "input": input[i : i + batch_size]}
             if "v4" in self.model_name:
                 data["return_multivector"] = True
-            
+
             if "v3" in self.model_name or "v4" in self.model_name:
-                data['task'] = task
-                data['truncate'] = True
+                data["task"] = task
+                data["truncate"] = True
 
             response = requests.post(self.base_url, headers=self.headers, json=data)
             try:
                 res = response.json()
-                for d in res['data']:
-                    if data.get("return_multivector", False): # v4
-                        token_embs = np.asarray(d['embeddings'], dtype=np.float32)
+                for d in res["data"]:
+                    if data.get("return_multivector", False):  # v4
+                        token_embs = np.asarray(d["embeddings"], dtype=np.float32)
                         chunk_emb = token_embs.mean(axis=0)
-                    
+
                     else:
                         # v2/v3
-                        chunk_emb = np.asarray(d['embedding'], dtype=np.float32)
+                        chunk_emb = np.asarray(d["embedding"], dtype=np.float32)
 
                     ress.append(chunk_emb)
 
@@ -445,6 +445,7 @@ class MistralEmbed(Base):
     def encode_queries(self, text):
         import time
         import random
+
         retry_max = 5
         while retry_max > 0:
             try:
@@ -463,6 +464,7 @@ class BedrockEmbed(Base):
 
     def __init__(self, key, model_name, **kwargs):
         import boto3
+
         # `key` protocol (backend stores as JSON string in `api_key`):
         # - Must decode into a dict.
         # - Required: `auth_mode`, `bedrock_region`.
@@ -481,7 +483,7 @@ class BedrockEmbed(Base):
         self.model_name = model_name
         self.is_amazon = self.model_name.split(".")[0] == "amazon"
         self.is_cohere = self.model_name.split(".")[0] == "cohere"
-        
+
         if mode == "access_key_secret":
             self.bedrock_ak = key.get("bedrock_ak")
             self.bedrock_sk = key.get("bedrock_sk")
@@ -498,9 +500,8 @@ class BedrockEmbed(Base):
                 aws_secret_access_key=creds["SecretAccessKey"],
                 aws_session_token=creds["SessionToken"],
             )
-        else: # assume_role
+        else:  # assume_role
             self.client = boto3.client("bedrock-runtime", region_name=self.bedrock_region)
-
 
     def encode(self, texts: list):
         texts = [truncate(t, 8196) for t in texts]
@@ -543,31 +544,38 @@ class BedrockEmbed(Base):
 class GeminiEmbed(Base):
     _FACTORY_NAME = "Gemini"
 
-    def __init__(self, key, model_name="models/text-embedding-004", **kwargs):
-        self.key = key
-        self.model_name = "models/" + model_name
+    def __init__(self, key, model_name="text-embedding-004", **kwargs):
+        self.client = genai.Client(api_key=key)
+        # New SDK uses model names without 'models/' prefix
+        self.model_name = model_name.replace("models/", "") if model_name.startswith("models/") else model_name
 
     def encode(self, texts: list):
         texts = [truncate(t, 2048) for t in texts]
         token_count = sum(num_tokens_from_string(text) for text in texts)
-        genai.configure(api_key=self.key)
         batch_size = 16
         ress = []
         for i in range(0, len(texts), batch_size):
-            result = genai.embed_content(model=self.model_name, content=texts[i : i + batch_size], task_type="retrieval_document", title="Embedding of single string")
+            result = self.client.models.embed_content(
+                model=self.model_name,
+                contents=texts[i : i + batch_size],
+            )
             try:
-                ress.extend(result["embedding"])
+                # New SDK returns embeddings in result.embeddings
+                for embedding in result.embeddings:
+                    ress.append(embedding.values)
             except Exception as _e:
                 log_exception(_e, result)
                 raise Exception(f"Error: {result}")
         return np.array(ress), token_count
 
     def encode_queries(self, text):
-        genai.configure(api_key=self.key)
-        result = genai.embed_content(model=self.model_name, content=truncate(text, 2048), task_type="retrieval_document", title="Embedding of single string")
+        result = self.client.models.embed_content(
+            model=self.model_name,
+            contents=truncate(text, 2048),
+        )
         token_count = num_tokens_from_string(text)
         try:
-            return np.array(result["embedding"]), token_count
+            return np.array(result.embeddings[0].values), token_count
         except Exception as _e:
             log_exception(_e, result)
             raise Exception(f"Error: {result}")
@@ -925,6 +933,7 @@ class GiteeEmbed(SILICONFLOWEmbed):
             base_url = "https://ai.gitee.com/v1/embeddings"
         super().__init__(key, model_name, base_url)
 
+
 class DeepInfraEmbed(OpenAIEmbed):
     _FACTORY_NAME = "DeepInfra"
 
@@ -950,6 +959,7 @@ class CometAPIEmbed(OpenAIEmbed):
         if not base_url:
             base_url = "https://api.cometapi.com/v1"
         super().__init__(key, model_name, base_url)
+
 
 class DeerAPIEmbed(OpenAIEmbed):
     _FACTORY_NAME = "DeerAPI"

@@ -28,7 +28,8 @@ from api.db.services.file_service import FileService
 from common.constants import LLMType, ParserType, StatusEnum
 from api.db.db_models import DB, Dialog
 from api.db.services.common_service import CommonService
-from api.db.services.doc_metadata_service import DocMetadataService
+from api.db.services.document_service import DocumentService
+from api.db.services.document_metadata_service import DocumentMetadataService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.langfuse_service import TenantLangfuseService
 from api.db.services.llm_service import LLMBundle
@@ -37,10 +38,10 @@ from api.db.services.tenant_llm_service import TenantLLMService
 from common.time_utils import current_timestamp, datetime_format
 from graphrag.general.mind_map_extractor import MindMapExtractor
 from rag.advanced_rag import DeepResearcher
-from rag.app.tag import label_question
+from rag.templates.resume import forbidden_select_fields4resume
+from rag.templates.tag import label_question
 from rag.nlp.search import index_name
-from rag.prompts.generator import chunks_format, citation_prompt, cross_languages, full_question, kb_prompt, keyword_extraction, message_fit_in, \
-    PROMPT_JINJA_ENV, ASK_SUMMARY
+from rag.prompts.generator import chunks_format, citation_prompt, cross_languages, full_question, kb_prompt, keyword_extraction, message_fit_in, PROMPT_JINJA_ENV, ASK_SUMMARY
 from common.token_utils import num_tokens_from_string
 from rag.utils.tavily_conn import Tavily
 from common.string_utils import remove_redundant_spaces
@@ -273,7 +274,6 @@ def repair_bad_citation_formats(answer: str, kbinfos: dict, idx: set):
 
 
 async def async_chat(dialog, messages, stream=True, **kwargs):
-    logging.debug("Begin async_chat")
     assert messages[-1]["role"] == "user", "The last content of this conversation is not from user."
     if not dialog.kb_ids and not dialog.prompt_config.get("tavily_api_key"):
         async for ans in async_chat_solo(dialog, messages, stream):
@@ -315,28 +315,24 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
     retriever = settings.retriever
     questions = [m["content"] for m in messages if m["role"] == "user"][-3:]
     attachments = kwargs["doc_ids"].split(",") if "doc_ids" in kwargs else []
-    attachments_= ""
+    attachments_ = ""
     if "doc_ids" in messages[-1]:
         attachments = messages[-1]["doc_ids"]
     if "files" in messages[-1]:
         attachments_ = "\n\n".join(FileService.get_files(messages[-1]["files"]))
 
     prompt_config = dialog.prompt_config
-    field_map = KnowledgebaseService.get_field_map(dialog.kb_ids)
-    logging.debug(f"field_map retrieved: {field_map}")
+    field_map = {}
+    for k in kbs:
+        if k.parser_config and "field_map" in k.parser_config:
+            field_map.update(k.parser_config["field_map"])
     # try to use sql if field mapping is good to go
     if field_map:
         logging.debug("Use SQL to retrieval:{}".format(questions[-1]))
         ans = await use_sql(questions[-1], field_map, dialog.tenant_id, chat_mdl, prompt_config.get("quote", True), dialog.kb_ids)
-        # For aggregate queries (COUNT, SUM, etc.), chunks may be empty but answer is still valid
-        if ans and (ans.get("reference", {}).get("chunks") or ans.get("answer")):
+        if ans:
             yield ans
             return
-        else:
-            logging.debug("SQL failed or returned no results, falling back to vector search")
-
-    param_keys = [p["key"] for p in prompt_config.get("parameters", [])]
-    logging.debug(f"attachments={attachments}, param_keys={param_keys}, embd_mdl={embd_mdl}")
 
     for p in prompt_config["parameters"]:
         if p["key"] == "knowledge":
@@ -355,7 +351,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         questions = [await cross_languages(dialog.tenant_id, dialog.llm_id, questions[0], prompt_config["cross_languages"])]
 
     if dialog.meta_data_filter:
-        metas = DocMetadataService.get_flatted_meta_by_kbs(dialog.kb_ids)
+        metas = DocumentMetadataService.get_meta_by_kbs(dialog.kb_ids)
         attachments = await apply_meta_data_filter(
             dialog.meta_data_filter,
             metas,
@@ -373,11 +369,10 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
     kbinfos = {"total": 0, "chunks": [], "doc_aggs": []}
     knowledges = []
 
-    if attachments is not None and "knowledge" in param_keys:
-        logging.debug("Proceeding with retrieval")
+    if attachments is not None and "knowledge" in [p["key"] for p in prompt_config["parameters"]]:
         tenant_ids = list(set([kb.tenant_id for kb in kbs]))
         knowledges = []
-        if prompt_config.get("reasoning", False) or kwargs.get("reasoning"):
+        if prompt_config.get("reasoning", False):
             reasoner = DeepResearcher(
                 chat_mdl,
                 prompt_config,
@@ -394,7 +389,8 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                 ),
             )
             queue = asyncio.Queue()
-            async def callback(msg:str):
+
+            async def callback(msg: str):
                 nonlocal queue
                 await queue.put(msg + "<br/>")
 
@@ -440,8 +436,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                 kbinfos["chunks"].extend(tav_res["chunks"])
                 kbinfos["doc_aggs"].extend(tav_res["doc_aggs"])
             if prompt_config.get("use_kg"):
-                ck = await settings.kg_retriever.retrieval(" ".join(questions), tenant_ids, dialog.kb_ids, embd_mdl,
-                                                       LLMBundle(dialog.tenant_id, LLMType.CHAT))
+                ck = await settings.kg_retriever.retrieval(" ".join(questions), tenant_ids, dialog.kb_ids, embd_mdl, LLMBundle(dialog.tenant_id, LLMType.CHAT))
                 if ck["content_with_weight"]:
                     kbinfos["chunks"].insert(0, ck)
 
@@ -451,14 +446,13 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
     retrieval_ts = timer()
     if not knowledges and prompt_config.get("empty_response"):
         empty_res = prompt_config["empty_response"]
-        yield {"answer": empty_res, "reference": kbinfos, "prompt": "\n\n### Query:\n%s" % " ".join(questions),
-               "audio_binary": tts(tts_mdl, empty_res), "final": True}
+        yield {"answer": empty_res, "reference": kbinfos, "prompt": "\n\n### Query:\n%s" % " ".join(questions), "audio_binary": tts(tts_mdl, empty_res), "final": True}
         return
 
     kwargs["knowledge"] = "\n------\n" + "\n\n------\n\n".join(knowledges)
     gen_conf = dialog.llm_setting
 
-    msg = [{"role": "system", "content": prompt_config["system"].format(**kwargs)+attachments_}]
+    msg = [{"role": "system", "content": prompt_config["system"].format(**kwargs) + attachments_}]
     prompt4citation = ""
     if knowledges and (prompt_config.get("quote", True) and kwargs.get("quote", True)):
         prompt4citation = citation_prompt()
@@ -550,8 +544,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
 
     if langfuse_tracer:
         langfuse_generation = langfuse_tracer.start_generation(
-            trace_context=trace_context, name="chat", model=llm_model_config["llm_name"],
-            input={"prompt": prompt, "prompt4citation": prompt4citation, "messages": msg}
+            trace_context=trace_context, name="chat", model=llm_model_config["llm_name"], input={"prompt": prompt, "prompt4citation": prompt4citation, "messages": msg}
         )
 
     if stream:
@@ -583,306 +576,110 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
 
 
 async def use_sql(question, field_map, tenant_id, chat_mdl, quota=True, kb_ids=None):
-    logging.debug(f"use_sql: Question: {question}")
-
-    # Determine which document engine we're using
-    doc_engine = "infinity" if settings.DOC_ENGINE_INFINITY else "es"
-
-    # Construct the full table name
-    # For Elasticsearch: ragflow_{tenant_id} (kb_id is in WHERE clause)
-    # For Infinity: ragflow_{tenant_id}_{kb_id} (each KB has its own table)
-    base_table = index_name(tenant_id)
-    if doc_engine == "infinity" and kb_ids and len(kb_ids) == 1:
-        # Infinity: append kb_id to table name
-        table_name = f"{base_table}_{kb_ids[0]}"
-        logging.debug(f"use_sql: Using Infinity table name: {table_name}")
-    else:
-        # Elasticsearch/OpenSearch: use base index name
-        table_name = base_table
-        logging.debug(f"use_sql: Using ES/OS table name: {table_name}")
-
-    # Generate engine-specific SQL prompts
-    if doc_engine == "infinity":
-        # Build Infinity prompts with JSON extraction context
-        json_field_names = list(field_map.keys())
-        sys_prompt = """You are a Database Administrator. Write SQL for a table with JSON 'chunk_data' column.
-
-JSON Extraction: json_extract_string(chunk_data, '$.FieldName')
-Numeric Cast: CAST(json_extract_string(chunk_data, '$.FieldName') AS INTEGER/FLOAT)
-NULL Check: json_extract_isnull(chunk_data, '$.FieldName') == false
-
-RULES:
-1. Use EXACT field names (case-sensitive) from the list below
-2. For SELECT: include doc_id, docnm, and json_extract_string() for requested fields
-3. For COUNT: use COUNT(*) or COUNT(DISTINCT json_extract_string(...))
-4. Add AS alias for extracted field names
-5. DO NOT select 'content' field
-6. Only add NULL check (json_extract_isnull() == false) in WHERE clause when:
-   - Question asks to "show me" or "display" specific columns
-   - Question mentions "not null" or "excluding null"
-   - Add NULL check for count specific column
-   - DO NOT add NULL check for COUNT(*) queries (COUNT(*) counts all rows including nulls)
-7. Output ONLY the SQL, no explanations"""
-        user_prompt = """Table: {}
-Fields (EXACT case): {}
+    sys_prompt = """
+You are a Database Administrator. You need to check the fields of the following tables based on the user's list of questions and write the SQL corresponding to the last question.
+Ensure that:
+1. Field names should not start with a digit. If any field name starts with a digit, use double quotes around it.
+2. Write only the SQL, no explanations or additional text.
+"""
+    user_prompt = """
+Table name: {};
+Table of database fields are as follows:
 {}
-Question: {}
-Write SQL using json_extract_string() with exact field names. Include doc_id, docnm for data queries. Only SQL.""".format(
-            table_name,
-            ", ".join(json_field_names),
-            "\n".join([f"  - {field}" for field in json_field_names]),
-            question
-        )
-    else:
-        # Build ES/OS prompts with direct field access
-        sys_prompt = """You are a Database Administrator. Write SQL queries.
 
-RULES:
-1. Use EXACT field names from the schema below (e.g., product_tks, not product)
-2. Quote field names starting with digit: "123_field"
-3. Add IS NOT NULL in WHERE clause when:
-   - Question asks to "show me" or "display" specific columns
-4. Include doc_id/docnm in non-aggregate statement
-5. Output ONLY the SQL, no explanations"""
-        user_prompt = """Table: {}
-Available fields:
+Question are as follows:
 {}
-Question: {}
-Write SQL using exact field names above. Include doc_id, docnm_kwd for data queries. Only SQL.""".format(
-            table_name,
-            "\n".join([f"  - {k} ({v})" for k, v in field_map.items()]),
-            question
-        )
-
+Please write the SQL, only SQL, without any other explanations or text.
+""".format(index_name(tenant_id), "\n".join([f"{k}: {v}" for k, v in field_map.items()]), question)
     tried_times = 0
 
     async def get_table():
         nonlocal sys_prompt, user_prompt, question, tried_times
         sql = await chat_mdl.async_chat(sys_prompt, [{"role": "user", "content": user_prompt}], {"temperature": 0.06})
-        logging.debug(f"use_sql: Raw SQL from LLM: {repr(sql[:500])}")
-        # Remove think blocks if present (format: </think>...)
-        sql = re.sub(r"</think>\n.*?\n\s*", "", sql, flags=re.DOTALL)
-        sql = re.sub(r"思考\n.*?\n", "", sql, flags=re.DOTALL)
-        # Remove markdown code blocks (```sql ... ```)
-        sql = re.sub(r"```(?:sql)?\s*", "", sql, flags=re.IGNORECASE)
-        sql = re.sub(r"```\s*$", "", sql, flags=re.IGNORECASE)
-        # Remove trailing semicolon that ES SQL parser doesn't like
-        sql = sql.rstrip().rstrip(';').strip()
-
-        # Add kb_id filter for ES/OS only (Infinity already has it in table name)
-        if doc_engine != "infinity" and kb_ids:
-            # Build kb_filter: single KB or multiple KBs with OR
-            if len(kb_ids) == 1:
-                kb_filter = f"kb_id = '{kb_ids[0]}'"
+        sql = re.sub(r"^.*</think>", "", sql, flags=re.DOTALL)
+        logging.debug(f"{question} ==> {user_prompt} get SQL: {sql}")
+        sql = re.sub(r"[\r\n]+", " ", sql.lower())
+        sql = re.sub(r".*select ", "select ", sql.lower())
+        sql = re.sub(r" +", " ", sql)
+        sql = re.sub(r"([;；]|```).*", "", sql)
+        sql = re.sub(r"&", "and", sql)
+        if sql[: len("select ")] != "select ":
+            return None, None
+        if not re.search(r"((sum|avg|max|min)\(|group by )", sql.lower()):
+            if sql[: len("select *")] != "select *":
+                sql = "select doc_id,docnm_kwd," + sql[6:]
             else:
-                kb_filter = "(" + " OR ".join([f"kb_id = '{kb_id}'" for kb_id in kb_ids]) + ")"
+                flds = []
+                for k in field_map.keys():
+                    if k in forbidden_select_fields4resume:
+                        continue
+                    if len(flds) > 11:
+                        break
+                    flds.append(k)
+                sql = "select doc_id,docnm_kwd," + ",".join(flds) + sql[8:]
 
-            if "where " not in sql.lower():
+        if kb_ids:
+            kb_filter = "(" + " OR ".join([f"kb_id = '{kb_id}'" for kb_id in kb_ids]) + ")"
+            if "where" not in sql.lower():
                 o = sql.lower().split("order by")
                 if len(o) > 1:
                     sql = o[0] + f" WHERE {kb_filter}  order by " + o[1]
                 else:
                     sql += f" WHERE {kb_filter}"
-            elif "kb_id =" not in sql.lower() and "kb_id=" not in sql.lower():
-                sql = re.sub(r"\bwhere\b ", f"where {kb_filter} and ", sql, flags=re.IGNORECASE)
+            else:
+                sql += f" AND {kb_filter}"
 
         logging.debug(f"{question} get SQL(refined): {sql}")
         tried_times += 1
-        logging.debug(f"use_sql: Executing SQL retrieval (attempt {tried_times})")
-        tbl = settings.retriever.sql_retrieval(sql, format="json")
-        if tbl is None:
-            logging.debug("use_sql: SQL retrieval returned None")
-            return None, sql
-        logging.debug(f"use_sql: SQL retrieval completed, got {len(tbl.get('rows', []))} rows")
-        return tbl, sql
+        return settings.retriever.sql_retrieval(sql, format="json"), sql
 
     try:
         tbl, sql = await get_table()
-        logging.debug(f"use_sql: Initial SQL execution SUCCESS. SQL: {sql}")
-        logging.debug(f"use_sql: Retrieved {len(tbl.get('rows', []))} rows, columns: {[c['name'] for c in tbl.get('columns', [])]}")
     except Exception as e:
-        logging.warning(f"use_sql: Initial SQL execution FAILED with error: {e}")
-        # Build retry prompt with error information
-        if doc_engine == "infinity":
-            # Build Infinity error retry prompt
-            json_field_names = list(field_map.keys())
-            user_prompt = """
-Table name: {};
-JSON fields available in 'chunk_data' column (use these exact names in json_extract_string):
-{}
-
-Question: {}
-Please write the SQL using json_extract_string(chunk_data, '$.field_name') with the field names from the list above. Only SQL, no explanations.
-
-
-The SQL error you provided last time is as follows:
-{}
-
-Please correct the error and write SQL again using json_extract_string(chunk_data, '$.field_name') syntax with the correct field names. Only SQL, no explanations.
-""".format(table_name, "\n".join([f"  - {field}" for field in json_field_names]), question, e)
-        else:
-            # Build ES/OS error retry prompt
-            user_prompt = """
+        user_prompt = """
         Table name: {};
-        Table of database fields are as follows (use the field names directly in SQL):
+        Table of database fields are as follows:
         {}
 
         Question are as follows:
         {}
-        Please write the SQL using the exact field names above, only SQL, without any other explanations or text.
+        Please write the SQL, only SQL, without any other explanations or text.
 
 
         The SQL error you provided last time is as follows:
         {}
 
-        Please correct the error and write SQL again using the exact field names above, only SQL, without any other explanations or text.
-        """.format(table_name, "\n".join([f"{k} ({v})" for k, v in field_map.items()]), question, e)
+        Please correct the error and write SQL again, only SQL, without any other explanations or text.
+        """.format(index_name(tenant_id), "\n".join([f"{k}: {v}" for k, v in field_map.items()]), question, e)
         try:
             tbl, sql = await get_table()
-            logging.debug(f"use_sql: Retry SQL execution SUCCESS. SQL: {sql}")
-            logging.debug(f"use_sql: Retrieved {len(tbl.get('rows', []))} rows on retry")
         except Exception:
-            logging.error("use_sql: Retry SQL execution also FAILED, returning None")
             return
 
     if len(tbl["rows"]) == 0:
-        logging.warning(f"use_sql: No rows returned from SQL query, returning None. SQL: {sql}")
         return None
 
-    logging.debug(f"use_sql: Proceeding with {len(tbl['rows'])} rows to build answer")
-
-    docid_idx = set([ii for ii, c in enumerate(tbl["columns"]) if c["name"].lower() == "doc_id"])
-    doc_name_idx = set([ii for ii, c in enumerate(tbl["columns"]) if c["name"].lower() in ["docnm_kwd", "docnm"]])
-
-    logging.debug(f"use_sql: All columns: {[(i, c['name']) for i, c in enumerate(tbl['columns'])]}")
-    logging.debug(f"use_sql: docid_idx={docid_idx}, doc_name_idx={doc_name_idx}")
-
+    docid_idx = set([ii for ii, c in enumerate(tbl["columns"]) if c["name"] == "doc_id"])
+    doc_name_idx = set([ii for ii, c in enumerate(tbl["columns"]) if c["name"] == "docnm_kwd"])
     column_idx = [ii for ii in range(len(tbl["columns"])) if ii not in (docid_idx | doc_name_idx)]
-
-    logging.debug(f"use_sql: column_idx={column_idx}")
-    logging.debug(f"use_sql: field_map={field_map}")
-
-    # Helper function to map column names to display names
-    def map_column_name(col_name):
-        if col_name.lower() == "count(star)":
-            return "COUNT(*)"
-
-        # First, try to extract AS alias from any expression (aggregate functions, json_extract_string, etc.)
-        # Pattern: anything AS alias_name
-        as_match = re.search(r'\s+AS\s+([^\s,)]+)', col_name, re.IGNORECASE)
-        if as_match:
-            alias = as_match.group(1).strip('"\'')
-
-            # Use the alias for display name lookup
-            if alias in field_map:
-                display = field_map[alias]
-                return re.sub(r"(/.*|（[^（）]+）)", "", display)
-            # If alias not in field_map, try to match case-insensitively
-            for field_key, display_value in field_map.items():
-                if field_key.lower() == alias.lower():
-                    return re.sub(r"(/.*|（[^（）]+）)", "", display_value)
-            # Return alias as-is if no mapping found
-            return alias
-
-        # Try direct mapping first (for simple column names)
-        if col_name in field_map:
-            display = field_map[col_name]
-            # Clean up any suffix patterns
-            return re.sub(r"(/.*|（[^（）]+）)", "", display)
-
-        # Try case-insensitive match for simple column names
-        col_lower = col_name.lower()
-        for field_key, display_value in field_map.items():
-            if field_key.lower() == col_lower:
-                return re.sub(r"(/.*|（[^（）]+）)", "", display_value)
-
-        # For aggregate expressions or complex expressions without AS alias,
-        # try to replace field names with display names
-        result = col_name
-        for field_name, display_name in field_map.items():
-            # Replace field_name with display_name in the expression
-            result = result.replace(field_name, display_name)
-
-        # Clean up any suffix patterns
-        result = re.sub(r"(/.*|（[^（）]+）)", "", result)
-        return result
 
     # compose Markdown table
     columns = (
-            "|" + "|".join(
-        [map_column_name(tbl["columns"][i]["name"]) for i in column_idx]) + (
-                "|Source|" if docid_idx and doc_name_idx else "|")
+        "|" + "|".join([re.sub(r"(/.*|（[^（）]+）)", "", field_map.get(tbl["columns"][i]["name"], tbl["columns"][i]["name"])) for i in column_idx]) + ("|Source|" if docid_idx and docid_idx else "|")
     )
 
     line = "|" + "|".join(["------" for _ in range(len(column_idx))]) + ("|------|" if docid_idx and docid_idx else "")
 
-    # Build rows ensuring column names match values - create a dict for each row
-    # keyed by column name to handle any SQL column order
-    rows = []
-    for row_idx, r in enumerate(tbl["rows"]):
-        row_dict = {tbl["columns"][i]["name"]: r[i] for i in range(len(tbl["columns"])) if i < len(r)}
-        if row_idx == 0:
-            logging.debug(f"use_sql: First row data: {row_dict}")
-        row_values = []
-        for col_idx in column_idx:
-            col_name = tbl["columns"][col_idx]["name"]
-            value = row_dict.get(col_name, " ")
-            row_values.append(remove_redundant_spaces(str(value)).replace("None", " "))
-        # Add Source column with citation marker if Source column exists
-        if docid_idx and doc_name_idx:
-            row_values.append(f" ##{row_idx}$$")
-        row_str = "|" + "|".join(row_values) + "|"
-        if re.sub(r"[ |]+", "", row_str):
-            rows.append(row_str)
+    rows = ["|" + "|".join([remove_redundant_spaces(str(r[i])) for i in column_idx]).replace("None", " ") + "|" for r in tbl["rows"]]
+    rows = [r for r in rows if re.sub(r"[ |]+", "", r)]
     if quota:
-        rows = "\n".join(rows)
+        rows = "\n".join([r + f" ##{ii}$$ |" for ii, r in enumerate(rows)])
     else:
-        rows = "\n".join(rows)
+        rows = "\n".join([r + f" ##{ii}$$ |" for ii, r in enumerate(rows)])
     rows = re.sub(r"T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+Z)?\|", "|", rows)
 
     if not docid_idx or not doc_name_idx:
-        logging.warning(f"use_sql: SQL missing required doc_id or docnm_kwd field. docid_idx={docid_idx}, doc_name_idx={doc_name_idx}. SQL: {sql}")
-        # For aggregate queries (COUNT, SUM, AVG, MAX, MIN, DISTINCT), fetch doc_id, docnm_kwd separately
-        # to provide source chunks, but keep the original table format answer
-        if re.search(r"(count|sum|avg|max|min|distinct)\s*\(", sql.lower()):
-            # Keep original table format as answer
-            answer = "\n".join([columns, line, rows])
-
-            # Now fetch doc_id, docnm_kwd to provide source chunks
-            # Extract WHERE clause from the original SQL
-            where_match = re.search(r"\bwhere\b(.+?)(?:\bgroup by\b|\border by\b|\blimit\b|$)", sql, re.IGNORECASE)
-            if where_match:
-                where_clause = where_match.group(1).strip()
-                # Build a query to get doc_id and docnm_kwd with the same WHERE clause
-                chunks_sql = f"select doc_id, docnm_kwd from {table_name} where {where_clause}"
-                # Add LIMIT to avoid fetching too many chunks
-                if "limit" not in chunks_sql.lower():
-                    chunks_sql += " limit 20"
-                logging.debug(f"use_sql: Fetching chunks with SQL: {chunks_sql}")
-                try:
-                    chunks_tbl = settings.retriever.sql_retrieval(chunks_sql, format="json")
-                    if chunks_tbl.get("rows") and len(chunks_tbl["rows"]) > 0:
-                        # Build chunks reference - use case-insensitive matching
-                        chunks_did_idx = next((i for i, c in enumerate(chunks_tbl["columns"]) if c["name"].lower() == "doc_id"), None)
-                        chunks_dn_idx = next((i for i, c in enumerate(chunks_tbl["columns"]) if c["name"].lower() in ["docnm_kwd", "docnm"]), None)
-                        if chunks_did_idx is not None and chunks_dn_idx is not None:
-                            chunks = [{"doc_id": r[chunks_did_idx], "docnm_kwd": r[chunks_dn_idx]} for r in chunks_tbl["rows"]]
-                            # Build doc_aggs
-                            doc_aggs = {}
-                            for r in chunks_tbl["rows"]:
-                                doc_id = r[chunks_did_idx]
-                                doc_name = r[chunks_dn_idx]
-                                if doc_id not in doc_aggs:
-                                    doc_aggs[doc_id] = {"doc_name": doc_name, "count": 0}
-                                doc_aggs[doc_id]["count"] += 1
-                            doc_aggs_list = [{"doc_id": did, "doc_name": d["doc_name"], "count": d["count"]} for did, d in doc_aggs.items()]
-                            logging.debug(f"use_sql: Returning aggregate answer with {len(chunks)} chunks from {len(doc_aggs)} documents")
-                            return {"answer": answer, "reference": {"chunks": chunks, "doc_aggs": doc_aggs_list}, "prompt": sys_prompt}
-                except Exception as e:
-                    logging.warning(f"use_sql: Failed to fetch chunks: {e}")
-            # Fallback: return answer without chunks
-            return {"answer": answer, "reference": {"chunks": [], "doc_aggs": []}, "prompt": sys_prompt}
-        # Fallback to table format for other cases
+        logging.warning("SQL missing field: " + sql)
         return {"answer": "\n".join([columns, line, rows]), "reference": {"chunks": [], "doc_aggs": []}, "prompt": sys_prompt}
 
     docid_idx = list(docid_idx)[0]
@@ -892,8 +689,7 @@ Please correct the error and write SQL again using json_extract_string(chunk_dat
         if r[docid_idx] not in doc_aggs:
             doc_aggs[r[docid_idx]] = {"doc_name": r[doc_name_idx], "count": 0}
         doc_aggs[r[docid_idx]]["count"] += 1
-
-    result = {
+    return {
         "answer": "\n".join([columns, line, rows]),
         "reference": {
             "chunks": [{"doc_id": r[docid_idx], "docnm_kwd": r[doc_name_idx]} for r in tbl["rows"]],
@@ -901,8 +697,7 @@ Please correct the error and write SQL again using json_extract_string(chunk_dat
         },
         "prompt": sys_prompt,
     }
-    logging.debug(f"use_sql: Returning answer with {len(result['reference']['chunks'])} chunks from {len(doc_aggs)} documents")
-    return result
+
 
 def clean_tts_text(text: str) -> str:
     if not text:
@@ -913,15 +708,7 @@ def clean_tts_text(text: str) -> str:
     text = re.sub(r"[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]", "", text)
 
     emoji_pattern = re.compile(
-        "[\U0001F600-\U0001F64F"
-        "\U0001F300-\U0001F5FF"
-        "\U0001F680-\U0001F6FF"
-        "\U0001F1E0-\U0001F1FF"
-        "\U00002700-\U000027BF"
-        "\U0001F900-\U0001F9FF"
-        "\U0001FA70-\U0001FAFF"
-        "\U0001FAD0-\U0001FAFF]+",
-        flags=re.UNICODE
+        "[\U0001f600-\U0001f64f\U0001f300-\U0001f5ff\U0001f680-\U0001f6ff\U0001f1e0-\U0001f1ff\U00002700-\U000027bf\U0001f900-\U0001f9ff\U0001fa70-\U0001faff]+", flags=re.UNICODE
     )
     text = emoji_pattern.sub("", text)
 
@@ -929,9 +716,15 @@ def clean_tts_text(text: str) -> str:
 
     MAX_LEN = 500
     if len(text) > MAX_LEN:
-        text = text[:MAX_LEN]
+        cutoff = text.rfind(" ", 0, MAX_LEN)
+        if cutoff > 0:
+            text = text[:cutoff]
+        else:
+            text = text[:MAX_LEN]
+        text = text.strip()
 
     return text
+
 
 def tts(tts_mdl, text):
     if not tts_mdl or not text:
@@ -939,14 +732,14 @@ def tts(tts_mdl, text):
     text = clean_tts_text(text)
     if not text:
         return None
-    bin = b""
+    audio_data = b""
     try:
         for chunk in tts_mdl.tts(text):
-            bin += chunk
+            audio_data += chunk
     except Exception as e:
         logging.error(f"TTS failed: {e}, text={text!r}")
         return None
-    return binascii.hexlify(bin).decode("utf-8")
+    return binascii.hexlify(audio_data).decode("utf-8")
 
 
 class _ThinkStreamState:
@@ -965,13 +758,13 @@ def _next_think_delta(state: _ThinkStreamState) -> str:
     if full_text == state.last_full:
         return ""
     state.last_full = full_text
-    delta_ans = full_text[state.last_idx:]
+    delta_ans = full_text[state.last_idx :]
 
     if delta_ans.find("<think>") == 0:
         state.last_idx += len("<think>")
         return "<think>"
     if delta_ans.find("<think>") > 0:
-        delta_text = full_text[state.last_idx:state.last_idx + delta_ans.find("<think>")]
+        delta_text = full_text[state.last_idx : state.last_idx + delta_ans.find("<think>")]
         state.last_idx += delta_ans.find("<think>")
         return delta_text
     if delta_ans.endswith("</think>"):
@@ -992,7 +785,7 @@ async def _stream_with_think_delta(stream_iter, min_tokens: int = 16):
         if not chunk:
             continue
         if chunk.startswith(state.last_model_full):
-            new_part = chunk[len(state.last_model_full):]
+            new_part = chunk[len(state.last_model_full) :]
             state.last_model_full = chunk
         else:
             new_part = chunk
@@ -1026,7 +819,10 @@ async def _stream_with_think_delta(stream_iter, min_tokens: int = 16):
     if state.endswith_think:
         yield ("marker", "</think>", state)
 
-async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_config={}):
+
+async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_config=None):
+    if search_config is None:
+        search_config = {}
     doc_ids = search_config.get("doc_ids", [])
     rerank_mdl = None
     kb_ids = search_config.get("kb_ids", kb_ids)
@@ -1048,7 +844,7 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
     tenant_ids = list(set([kb.tenant_id for kb in kbs]))
 
     if meta_data_filter:
-        metas = DocMetadataService.get_flatted_meta_by_kbs(kb_ids)
+        metas = DocumentService.get_meta_by_kbs(kb_ids)
         doc_ids = await apply_meta_data_filter(meta_data_filter, metas, question, chat_mdl, doc_ids)
 
     kbinfos = await retriever.retrieval(
@@ -1064,7 +860,7 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
         doc_ids=doc_ids,
         aggs=True,
         rerank_mdl=rerank_mdl,
-        rank_feature=label_question(question, kbs)
+        rank_feature=label_question(question, kbs),
     )
 
     knowledges = kb_prompt(kbinfos, max_tokens)
@@ -1074,8 +870,7 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
 
     def decorate_answer(answer):
         nonlocal knowledges, kbinfos, sys_prompt
-        answer, idx = retriever.insert_citations(answer, [ck["content_ltks"] for ck in kbinfos["chunks"]], [ck["vector"] for ck in kbinfos["chunks"]],
-                                                 embd_mdl, tkweight=0.7, vtweight=0.3)
+        answer, idx = retriever.insert_citations(answer, [ck["content_ltks"] for ck in kbinfos["chunks"]], [ck["vector"] for ck in kbinfos["chunks"]], embd_mdl, tkweight=0.7, vtweight=0.3)
         idx = set([kbinfos["chunks"][int(i)]["doc_id"] for i in idx])
         recall_docs = [d for d in kbinfos["doc_aggs"] if d["doc_id"] in idx]
         if not recall_docs:
@@ -1107,7 +902,9 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
     yield final
 
 
-async def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
+async def gen_mindmap(question, kb_ids, tenant_id, search_config=None):
+    if search_config is None:
+        search_config = {}
     meta_data_filter = search_config.get("meta_data_filter", {})
     doc_ids = search_config.get("doc_ids", [])
     rerank_id = search_config.get("rerank_id", "")
@@ -1124,7 +921,7 @@ async def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
         rerank_mdl = LLMBundle(tenant_id, LLMType.RERANK, rerank_id)
 
     if meta_data_filter:
-        metas = DocMetadataService.get_flatted_meta_by_kbs(kb_ids)
+        metas = DocumentService.get_meta_by_kbs(kb_ids)
         doc_ids = await apply_meta_data_filter(meta_data_filter, metas, question, chat_mdl, doc_ids)
 
     ranks = await settings.retriever.retrieval(

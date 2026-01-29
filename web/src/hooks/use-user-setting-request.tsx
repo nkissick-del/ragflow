@@ -114,6 +114,7 @@ export const useFetchTenantInfo = (
 
 const DEFAULT_PARSERS = [
   { value: 'naive', label: 'General' },
+  { value: 'semantic', label: 'Semantic' },
   { value: 'qa', label: 'Q&A' },
   { value: 'resume', label: 'Resume' },
   { value: 'manual', label: 'Manual' },
@@ -129,25 +130,71 @@ const DEFAULT_PARSERS = [
   { value: 'tag', label: 'Tag' },
 ];
 
+/**
+ * Fetch available templates from the API.
+ * Returns auto-discovered templates from the backend.
+ */
+export const useFetchTemplates = () => {
+  const { data, isFetching: loading } = useQuery<
+    Array<{ value: string; label: string }>
+  >({
+    queryKey: ['fetchTemplates'],
+    initialData: DEFAULT_PARSERS,
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+    gcTime: 10 * 60 * 1000,
+    queryFn: async () => {
+      try {
+        const { data: res } = await userService.getTemplates();
+        if (res.code === 0 && Array.isArray(res.data) && res.data.length > 0) {
+          return res.data;
+        }
+        return DEFAULT_PARSERS;
+      } catch (error) {
+        console.warn('Failed to fetch templates, using defaults:', error);
+        return DEFAULT_PARSERS;
+      }
+    },
+  });
+
+  return { data: data ?? DEFAULT_PARSERS, loading };
+};
+
 export const useSelectParserList = (): Array<{
   value: string;
   label: string;
 }> => {
   const { data: tenantInfo } = useFetchTenantInfo(true);
+  const { data: apiTemplates } = useFetchTemplates();
 
   const parserList = useMemo(() => {
-    const parserArray: Array<string> = tenantInfo?.parser_ids?.split(',') ?? [];
-    const filteredArray = parserArray.filter((x) => x.trim() !== '');
+    // 1. Parse Tenant templates (if any)
+    const tenantParserStr = tenantInfo?.parser_ids ?? '';
+    const tenantParsers = tenantParserStr
+      .split(',')
+      .filter((x) => x.trim() !== '')
+      .map((x) => {
+        const arr = x.split(':');
+        const value = arr[0].trim();
+        const label = arr[1] ? arr[1].trim() : value;
+        return { value, label };
+      });
 
-    if (filteredArray.length === 0) {
-      return DEFAULT_PARSERS;
+    if (tenantParsers.length === 0) {
+      return apiTemplates;
     }
 
-    return filteredArray.map((x) => {
-      const arr = x.split(':');
-      return { value: arr[0], label: arr[1] };
+    // 2. Union: Start with Tenant parsers, then add missing API parsers
+    const result = [...tenantParsers];
+    const tenantValues = new Set(tenantParsers.map((p) => p.value));
+
+    apiTemplates.forEach((t) => {
+      if (!tenantValues.has(t.value)) {
+        result.push(t);
+      }
     });
-  }, [tenantInfo]);
+
+    return result;
+  }, [tenantInfo?.parser_ids, apiTemplates]);
 
   return parserList;
 };

@@ -16,7 +16,7 @@ mysql:
 minio:
   user: '${MINIO_USER:-rag_flow}'
   password: '${MINIO_PASSWORD:-infini_rag_flow}'
-  host: '${MINIO_HOST:-minio}:9000'
+  host: '${MINIO_HOST:-minio}:${MINIO_PORT:-9000}'
   bucket: '${MINIO_BUCKET:-}'
   prefix_path: '${MINIO_PREFIX_PATH:-}'
 es:
@@ -57,14 +57,14 @@ user_default_llm:
     embedding_model:
       api_key: 'xxx'
       base_url: 'http://${TEI_HOST}:80'
-# postgres:
-#   name: '${POSTGRES_DBNAME:-rag_flow}'
-#   user: '${POSTGRES_USER:-rag_flow}'
-#   password: '${POSTGRES_PASSWORD:-infini_rag_flow}'
-#   host: '${POSTGRES_HOST:-postgres}'
-#   port: 5432
-#   max_connections: 100
-#   stale_timeout: 30
+postgres:
+  name: '${POSTGRES_DBNAME:-rag_flow}'
+  user: '${POSTGRES_USER:-rag_flow}'
+  password: '${POSTGRES_PASSWORD:-infini_rag_flow}'
+  host: '${POSTGRES_HOST:-postgres}'
+  port: 5432
+  max_connections: 100
+  stale_timeout: 30
 # s3:
 #   access_key: 'access_key'
 #   secret_key: 'secret_key'
@@ -164,3 +164,5 @@ user_default_llm:
 #   secret_id: '${TENCENT_SECRET_ID}'
 #   secret_key: '${TENCENT_SECRET_KEY}'
 #   region: '${TENCENT_REGION}'
+docling:
+  base_url: '${DOCLING_BASE_URL:-http://docling:5001}'

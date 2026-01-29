@@ -17,6 +17,7 @@ import asyncio
 import json
 import logging
 import os
+import sys
 
 import networkx as nx
 
@@ -58,7 +59,7 @@ async def run_graphrag(
     start = asyncio.get_running_loop().time()
     tenant_id, kb_id, doc_id = row["tenant_id"], str(row["kb_id"]), row["doc_id"]
     chunks = []
-    for d in settings.retriever.chunk_list(doc_id, tenant_id, [kb_id], max_count=10000, fields=["content_with_weight", "doc_id"], sort_by_position=True):
+    for d in settings.retriever.chunk_list(doc_id, tenant_id, [kb_id], max_count=sys.maxsize, fields=["content_with_weight", "doc_id"], sort_by_position=True):
         chunks.append(d["content_with_weight"])
 
     timeout_sec = max(120, len(chunks) * 60 * 10) if enable_timeout_assertion else 10000000000
@@ -179,23 +180,29 @@ async def run_graphrag_for_kb(
         callback(msg=f"[GraphRAG] kb:{kb_id} has no processable doc_id.")
         return {"ok_docs": [], "failed_docs": [], "total_docs": 0, "total_chunks": 0, "seconds": 0.0}
 
-    def load_doc_chunks(doc_id: str) -> list[str]:
-        from common.token_utils import num_tokens_from_string
+    semaphore = asyncio.Semaphore(max_parallel_docs)
 
+    subgraphs: dict[str, object] = {}
+    failed_docs: list[tuple[str, str]] = []  # (doc_id, error)
+
+    async def build_one(doc_id: str):
+        if has_canceled(row["id"]):
+            callback(msg=f"Task {row['id']} cancelled, stopping execution.")
+            raise TaskCanceledException(f"Task {row['id']} was cancelled")
+
+        from common.token_utils import num_tokens_from_string
         chunks = []
         current_chunk = ""
 
-        # DEBUG: Obtener todos los chunks primero
-        raw_chunks = list(settings.retriever.chunk_list(
+        # Use sys.maxsize to process all chunks lazily
+        raw_chunks = settings.retriever.chunk_list(
             doc_id,
             tenant_id,
             [kb_id],
-            max_count=10000,  # FIX: Aumentar límite para procesar todos los chunks
+            max_count=sys.maxsize,
             fields=fields_for_chunks,
             sort_by_position=True,
-        ))
-
-        callback(msg=f"[DEBUG] chunk_list() returned {len(raw_chunks)} raw chunks for doc {doc_id}")
+        )
 
         for d in raw_chunks:
             content = d["content_with_weight"]
@@ -209,33 +216,9 @@ async def run_graphrag_for_kb(
         if current_chunk:
             chunks.append(current_chunk)
 
-        return chunks
-
-    all_doc_chunks: dict[str, list[str]] = {}
-    total_chunks = 0
-    for doc_id in doc_ids:
-        chunks = load_doc_chunks(doc_id)
-        all_doc_chunks[doc_id] = chunks
-        total_chunks += len(chunks)
-
-    if total_chunks == 0:
-        callback(msg=f"[GraphRAG] kb:{kb_id} has no available chunks in all documents, skip.")
-        return {"ok_docs": [], "failed_docs": doc_ids, "total_docs": len(doc_ids), "total_chunks": 0, "seconds": 0.0}
-
-    semaphore = asyncio.Semaphore(max_parallel_docs)
-
-    subgraphs: dict[str, object] = {}
-    failed_docs: list[tuple[str, str]] = []  # (doc_id, error)
-
-    async def build_one(doc_id: str):
-        if has_canceled(row["id"]):
-            callback(msg=f"Task {row['id']} cancelled, stopping execution.")
-            raise TaskCanceledException(f"Task {row['id']} was cancelled")
-
-        chunks = all_doc_chunks.get(doc_id, [])
         if not chunks:
             callback(msg=f"[GraphRAG] doc:{doc_id} has no available chunks, skip generation.")
-            return
+            return 0
 
         kg_extractor = LightKGExt if ("method" not in kb_parser_config.get("graphrag", {}) or kb_parser_config["graphrag"]["method"] != "general") else GeneralKGExt
 
@@ -266,7 +249,7 @@ async def run_graphrag_for_kb(
                 except asyncio.TimeoutError:
                     failed_docs.append((doc_id, "timeout"))
                     callback(msg=f"{msg} FAILED: timeout")
-                    return
+                    return 0
                 if sg:
                     subgraphs[doc_id] = sg
                     callback(msg=f"{msg} done")
@@ -278,6 +261,7 @@ async def run_graphrag_for_kb(
             except Exception as e:
                 failed_docs.append((doc_id, repr(e)))
                 callback(msg=f"[GraphRAG] build_subgraph doc:{doc_id} FAILED: {e!r}")
+        return len(chunks)
 
     if has_canceled(row["id"]):
         callback(msg=f"Task {row['id']} cancelled before processing documents.")
@@ -285,7 +269,8 @@ async def run_graphrag_for_kb(
 
     tasks = [asyncio.create_task(build_one(doc_id)) for doc_id in doc_ids]
     try:
-        await asyncio.gather(*tasks, return_exceptions=False)
+        results = await asyncio.gather(*tasks, return_exceptions=False)
+        total_chunks = sum(r for r in results if isinstance(r, int))
     except Exception as e:
         logging.error(f"Error in asyncio.gather: {e}")
         for t in tasks:

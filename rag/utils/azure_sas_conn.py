@@ -19,7 +19,6 @@ import os
 import time
 from io import BytesIO
 from common.decorator import singleton
-from azure.storage.blob import ContainerClient
 from common import settings
 
 
@@ -27,8 +26,8 @@ from common import settings
 class RAGFlowAzureSasBlob:
     def __init__(self):
         self.conn = None
-        self.container_url = os.getenv('CONTAINER_URL', settings.AZURE["container_url"])
-        self.sas_token = os.getenv('SAS_TOKEN', settings.AZURE["sas_token"])
+        self.container_url = os.getenv("CONTAINER_URL", settings.AZURE["container_url"])
+        self.sas_token = os.getenv("SAS_TOKEN", settings.AZURE["sas_token"])
         self.__open__()
 
     def __open__(self):
@@ -39,6 +38,8 @@ class RAGFlowAzureSasBlob:
             pass
 
         try:
+            from azure.storage.blob import ContainerClient
+
             self.conn = ContainerClient.from_container_url(self.container_url + "?" + self.sas_token)
         except Exception:
             logging.exception("Fail to connect %s " % self.container_url)

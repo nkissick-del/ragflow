@@ -24,10 +24,75 @@ import pandas as pd
 from common.constants import PAGERANK_FLD, TAG_FLD
 from common.doc_store.doc_store_base import MatchExpr, MatchTextExpr, MatchDenseExpr, FusionExpr, OrderByExpr
 from common.doc_store.infinity_conn_base import InfinityConnectionBase
+from common.doc_store.doc_store_models import VectorStoreQuery, VectorStoreQueryResult, VectorStoreHit, SearchMode
+from common.doc_store.post_processor import PostProcessor
+from common.doc_store.filter_translator import SQLFilterTranslator
 
 
 @singleton
 class InfinityConnection(InfinityConnectionBase):
+    def query(self, query: VectorStoreQuery, index_names: list[str], dataset_ids: list[str]) -> VectorStoreQueryResult:
+        """
+        Implementation of the standardized query interface for Infinity.
+        """
+        # Mapping VectorStoreQuery to old search() parameters
+        match_exprs = []
+
+        # We pass filters through the 'extra_options' of the match expressions
+        # because that's how the current search() method in InfinityConnection handles them.
+        sql_translator = SQLFilterTranslator()
+        filter_cond = sql_translator.translate(query.filters)
+
+        if query.mode == SearchMode.FULLTEXT or query.mode == SearchMode.HYBRID:
+            if query.query_text:
+                match_exprs.append(MatchTextExpr(fields=["content_with_weight", "title_tks"], matching_text=query.query_text, topn=query.top_k, extra_options={"filter": filter_cond}))
+
+        if query.mode == SearchMode.SEMANTIC or query.mode == SearchMode.HYBRID:
+            if query.query_vector is not None:
+                vector_clmn = f"q_{len(query.query_vector)}_vec"
+                match_exprs.append(
+                    MatchDenseExpr(
+                        vector_column_name=vector_clmn, embedding_data=query.query_vector, embedding_data_type="float", distance_type="cosine", topn=query.top_k, extra_options={"filter": filter_cond}
+                    )
+                )
+
+        if query.mode == SearchMode.HYBRID and len(match_exprs) > 1:
+            alpha = query.alpha if query.alpha is not None else 0.5
+            match_exprs.append(FusionExpr(method="weighted_sum", topn=query.top_k, fusion_params={"weights": f"{1 - alpha},{alpha}"}))
+
+        # Call the existing search
+        res_df, total_hits = self.search(
+            select_fields=["id", "content_with_weight", "docnm_kwd"],
+            highlight_fields=["content_with_weight"],
+            condition={},  # Already handled in match_expr filters
+            match_expressions=match_exprs,
+            order_by=OrderByExpr(),
+            offset=0,
+            limit=query.top_k,
+            index_names=index_names,
+            knowledgebase_ids=dataset_ids,
+        )
+
+        # 3. Convert to VectorStoreQueryResult
+        hits = []
+        fields_data = self.get_fields(res_df, ["content_with_weight", "docnm_kwd"])
+
+        for _, row in res_df.iterrows():
+            doc_id = row["id"]
+            data = fields_data.get(doc_id, {})
+
+            highlight = None
+            if query.query_text:
+                highlight = PostProcessor.highlight(data.get("content_with_weight", ""), [query.query_text])
+
+            hits.append(
+                VectorStoreHit(
+                    id=doc_id, score=row.get("_score", row.get("SCORE", 0.0)), text=data.get("content_with_weight", ""), highlight=highlight, metadata={"doc_name": data.get("docnm_kwd", "")}
+                )
+            )
+
+        return VectorStoreQueryResult(hits=hits, total=total_hits)
+
     """
     Dataframe and fields convert
     """
@@ -35,9 +100,7 @@ class InfinityConnection(InfinityConnectionBase):
     @staticmethod
     def field_keyword(field_name: str):
         # Treat "*_kwd" tag-like columns as keyword lists except knowledge_graph_kwd; source_id is also keyword-like.
-        if field_name == "source_id" or (
-                field_name.endswith("_kwd") and field_name not in ["knowledge_graph_kwd", "docnm_kwd", "important_kwd",
-                                                                   "question_kwd"]):
+        if field_name == "source_id" or (field_name.endswith("_kwd") and field_name not in ["knowledge_graph_kwd", "docnm_kwd", "important_kwd", "question_kwd"]):
             return True
         return False
 
@@ -90,18 +153,18 @@ class InfinityConnection(InfinityConnectionBase):
     """
 
     def search(
-            self,
-            select_fields: list[str],
-            highlight_fields: list[str],
-            condition: dict,
-            match_expressions: list[MatchExpr],
-            order_by: OrderByExpr,
-            offset: int,
-            limit: int,
-            index_names: str | list[str],
-            knowledgebase_ids: list[str],
-            agg_fields: list[str] | None = None,
-            rank_feature: dict | None = None,
+        self,
+        select_fields: list[str],
+        highlight_fields: list[str],
+        condition: dict,
+        match_expressions: list[MatchExpr],
+        order_by: OrderByExpr,
+        offset: int,
+        limit: int,
+        index_names: str | list[str],
+        knowledgebase_ids: list[str],
+        agg_fields: list[str] | None = None,
+        rank_feature: dict | None = None,
     ) -> tuple[pd.DataFrame, int]:
         """
         BUG: Infinity returns empty for a highlight field if the query string doesn't use that field.
@@ -163,8 +226,7 @@ class InfinityConnection(InfinityConnectionBase):
                 if table_found:
                     break
             if not table_found:
-                self.logger.error(
-                    f"No valid tables found for indexNames {index_names} and knowledgebaseIds {knowledgebase_ids}")
+                self.logger.error(f"No valid tables found for indexNames {index_names} and knowledgebaseIds {knowledgebase_ids}")
                 return pd.DataFrame(), 0
 
         for matchExpr in match_expressions:
@@ -214,8 +276,12 @@ class InfinityConnection(InfinityConnectionBase):
                 self.logger.debug(f"INFINITY search FusionExpr: {json.dumps(matchExpr.__dict__)}")
 
         order_by_expr_list = list()
-        if order_by.fields:
-            for order_field in order_by.fields:
+        if order_by and order_by.fields:
+            # Check if fields is a method (callable) or a property (list/attribute)
+            # We want to support both for transition
+            fields_val = order_by.fields() if callable(order_by.fields) else order_by.fields
+
+            for order_field in fields_val:
                 if order_field[1] == 0:
                     order_by_expr_list.append((order_field[0], SortType.Asc))
                 else:
@@ -291,8 +357,7 @@ class InfinityConnection(InfinityConnectionBase):
             try:
                 table_instance = db_instance.get_table(table_name)
             except Exception:
-                self.logger.warning(
-                    f"Table not found: {table_name}, this dataset isn't created in Infinity. Maybe it is created in other document engine.")
+                self.logger.warning(f"Table not found: {table_name}, this dataset isn't created in Infinity. Maybe it is created in other document engine.")
                 continue
             kb_res, _ = table_instance.output(["*"]).filter(f"id = '{chunk_id}'").to_df()
             self.logger.debug(f"INFINITY get table: {str(table_list)}, result: {str(kb_res)}")
@@ -300,9 +365,20 @@ class InfinityConnection(InfinityConnectionBase):
         self.connPool.release_conn(inf_conn)
         res = self.concat_dataframes(df_list, ["id"])
         fields = set(res.columns.tolist())
-        for field in ["docnm_kwd", "title_tks", "title_sm_tks", "important_kwd", "important_tks", "question_kwd",
-                      "question_tks", "content_with_weight", "content_ltks", "content_sm_ltks", "authors_tks",
-                      "authors_sm_tks"]:
+        for field in [
+            "docnm_kwd",
+            "title_tks",
+            "title_sm_tks",
+            "important_kwd",
+            "important_tks",
+            "question_kwd",
+            "question_tks",
+            "content_with_weight",
+            "content_ltks",
+            "content_sm_ltks",
+            "authors_tks",
+            "authors_sm_tks",
+        ]:
             fields.add(field)
         res_fields = self.get_fields(res, list(fields))
         return res_fields.get(chunk_id, None)
@@ -424,9 +500,20 @@ class InfinityConnection(InfinityConnectionBase):
                         d[k] = v if v else "{}"
                 else:
                     d[k] = v
-            for k in ["docnm_kwd", "title_tks", "title_sm_tks", "important_kwd", "important_tks", "content_with_weight",
-                      "content_ltks", "content_sm_ltks", "authors_tks", "authors_sm_tks", "question_kwd",
-                      "question_tks"]:
+            for k in [
+                "docnm_kwd",
+                "title_tks",
+                "title_sm_tks",
+                "important_kwd",
+                "important_tks",
+                "content_with_weight",
+                "content_ltks",
+                "content_sm_ltks",
+                "authors_tks",
+                "authors_sm_tks",
+                "question_kwd",
+                "question_tks",
+            ]:
                 if k in d:
                     del d[k]
 
@@ -534,8 +621,20 @@ class InfinityConnection(InfinityConnectionBase):
                     del new_value[k]
             else:
                 new_value[k] = v
-        for k in ["docnm_kwd", "title_tks", "title_sm_tks", "important_kwd", "important_tks", "content_with_weight",
-                  "content_ltks", "content_sm_ltks", "authors_tks", "authors_sm_tks", "question_kwd", "question_tks"]:
+        for k in [
+            "docnm_kwd",
+            "title_tks",
+            "title_sm_tks",
+            "important_kwd",
+            "important_tks",
+            "content_with_weight",
+            "content_ltks",
+            "content_sm_ltks",
+            "authors_tks",
+            "authors_sm_tks",
+            "question_kwd",
+            "question_tks",
+        ]:
             if k in new_value:
                 del new_value[k]
 
@@ -559,8 +658,7 @@ class InfinityConnection(InfinityConnectionBase):
         self.logger.debug(f"INFINITY update table {table_name}, filter {filter}, newValue {new_value}.")
         for update_kv, ids in remove_opt.items():
             k, v = json.loads(update_kv)
-            table_instance.update(filter + " AND id in ({0})".format(",".join([f"'{id}'" for id in ids])),
-                                  {k: "###".join(v)})
+            table_instance.update(filter + " AND id in ({0})".format(",".join([f"'{id}'" for id in ids])), {k: "###".join(v)})
 
         table_instance.update(filter, new_value)
         self.connPool.release_conn(inf_conn)
@@ -587,10 +685,7 @@ class InfinityConnection(InfinityConnectionBase):
                 if "important_kwd_empty_count" in res.columns:
                     base = res["important_keywords"].apply(lambda raw: raw.split(",") if raw else [])
                     counts = res["important_kwd_empty_count"].fillna(0).astype(int)
-                    res["important_kwd"] = [
-                        tokens + [""] * empty_count
-                        for tokens, empty_count in zip(base.tolist(), counts.tolist())
-                    ]
+                    res["important_kwd"] = [tokens + [""] * empty_count for tokens, empty_count in zip(base.tolist(), counts.tolist())]
                 else:
                     res["important_kwd"] = res["important_keywords"].apply(lambda v: v.split(",") if v else [])
             if "important_tks" in fields_all:
@@ -627,10 +722,11 @@ class InfinityConnection(InfinityConnectionBase):
                 # Parse JSON data back to dict for table parser fields
                 res2[column] = res2[column].apply(lambda v: json.loads(v) if v and isinstance(v, str) else v)
             elif k == "position_int":
+
                 def to_position_int(v):
                     if v:
                         arr = [int(hex_val, 16) for hex_val in v.split("_")]
-                        v = [arr[i: i + 5] for i in range(0, len(arr), 5)]
+                        v = [arr[i : i + 5] for i in range(0, len(arr), 5)]
                     else:
                         v = []
                     return v

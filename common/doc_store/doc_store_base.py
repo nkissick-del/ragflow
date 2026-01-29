@@ -15,11 +15,13 @@
 #
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from typing import Union, List, TYPE_CHECKING
 import numpy as np
 
 DEFAULT_MATCH_VECTOR_TOPN = 10
 DEFAULT_MATCH_SPARSE_TOPN = 10
 VEC = list | np.ndarray
+
 
 @dataclass
 class SparseVector:
@@ -52,6 +54,7 @@ class SparseVector:
 
     def __repr__(self):
         return str(self)
+
 
 class MatchTextExpr:
     def __init__(
@@ -127,17 +130,51 @@ class FusionExpr:
 MatchExpr = MatchTextExpr | MatchDenseExpr | MatchSparseExpr | MatchTensorExpr | FusionExpr
 
 
+class FieldsAccessor:
+    """Read-only access to self._fields; preserves iteration and truthiness for callers."""
+
+    def __init__(self, fields):
+        self._fields = fields
+
+    def __iter__(self):
+        return iter(self._fields)
+
+    def __bool__(self):
+        return bool(self._fields)
+
+    def __call__(self):
+        return tuple(self._fields)
+
+    def __len__(self):
+        return len(self._fields)
+
+    def __getitem__(self, item):
+        return self._fields[item]
+
+
 class OrderByExpr:
     def __init__(self):
-        self.fields = list()
+        self._fields = list()
+
     def asc(self, field: str):
-        self.fields.append((field, 0))
+        self._fields.append((field, 0))
         return self
+
     def desc(self, field: str):
-        self.fields.append((field, 1))
+        self._fields.append((field, 1))
         return self
+
     def fields(self):
-        return self.fields
+        return tuple(self._fields)
+
+    @property
+    def fields_prop(self):
+        """Read-only access to self._fields; preserves iteration and truthiness for callers."""
+        return FieldsAccessor(self._fields)
+
+
+if TYPE_CHECKING:
+    from common.doc_store.doc_store_models import VectorStoreQuery, VectorStoreQueryResult
 
 
 class DocStoreConnection(ABC):
@@ -189,19 +226,27 @@ class DocStoreConnection(ABC):
     """
 
     @abstractmethod
+    def query(self, query: "VectorStoreQuery", index_names: Union[str, List[str]], dataset_ids: List[str]) -> "VectorStoreQueryResult":
+        """
+        New standardized query interface using VectorStoreQuery and returning VectorStoreQueryResult.
+        """
+        raise NotImplementedError("Not implemented")
+
+    @abstractmethod
     def search(
-        self, select_fields: list[str],
-            highlight_fields: list[str],
-            condition: dict,
-            match_expressions: list[MatchExpr],
-            order_by: OrderByExpr,
-            offset: int,
-            limit: int,
-            index_names: str|list[str],
-            dataset_ids: list[str],
-            agg_fields: list[str] | None = None,
-            rank_feature: dict | None = None
-    ):
+        self,
+        select_fields: list[str],
+        highlight_fields: list[str],
+        condition: dict,
+        match_expressions: list[MatchExpr],
+        order_by: OrderByExpr,
+        offset: int,
+        limit: int,
+        index_names: str | list[str],
+        dataset_ids: list[str],
+        agg_fields: list[str] | None = None,
+        rank_feature: dict | None = None,
+    ) -> "VectorStoreQueryResult":
         """
         Search with given conjunctive equivalent filtering condition and return all fields of matched documents
         """
@@ -262,6 +307,7 @@ class DocStoreConnection(ABC):
     """
     SQL
     """
+
     @abstractmethod
     def sql(self, sql: str, fetch_size: int, format: str):
         """

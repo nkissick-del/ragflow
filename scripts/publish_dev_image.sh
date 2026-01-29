@@ -8,12 +8,19 @@ TARGET_PLATFORM="linux/amd64"
 DEFAULT_TAG="dev"
 DEFAULT_IMAGE="ragflow-local"
 DEFAULT_CONTEXT="unraid"
+DEFAULT_EXTRAS="all"
+
+# Full-lite extras (from pyproject.toml lines 241-246)
+# Includes: all LLMs, all integrations, search, graphrag, agent tools, observability
+# Excludes: deepdoc (uses Docling sidecar), uses pgvector for single-DB simplicity
+FULL_LITE_EXTRAS="db-postgres,storage-s3,vectorstore-postgres,llm-all,integrations-all,search-all,graphrag,agent-tools,agent-sql,agent-translation,observability"
 
 # Parse arguments
 POSITIONAL_ARGS=()
 PUSH_FLAG="--load"     # Default to load (local)
 LOCAL_MODE=true        # Default to local
 CONTEXT="$DEFAULT_CONTEXT"
+RAGFLOW_EXTRAS="$DEFAULT_EXTRAS"
 
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -29,6 +36,9 @@ while [[ $# -gt 0 ]]; do
       echo "  --push       Push to registry (disables --local)"
       echo "  --platform   Target platform (default: $TARGET_PLATFORM)"
       echo "  --context    Docker context to use (default: $DEFAULT_CONTEXT)"
+      echo "  --extras     Comma-separated list of extras to install (default: $DEFAULT_EXTRAS)"
+      echo "  --full-lite  Use full-lite mode: all features except deepdoc, uses pgvector"
+      echo "               Equivalent to: --extras $FULL_LITE_EXTRAS"
       echo ""
       exit 0
       ;;
@@ -58,6 +68,18 @@ while [[ $# -gt 0 ]]; do
       CONTEXT="$2"
       shift 2
       ;;
+    --extras)
+      if [[ -z "$2" || "$2" == -* ]]; then
+        echo "Error: Argument for --extras is missing or invalid."
+        exit 1
+      fi
+      RAGFLOW_EXTRAS="$2"
+      shift 2
+      ;;
+    --full-lite)
+      RAGFLOW_EXTRAS="$FULL_LITE_EXTRAS"
+      shift
+      ;;
     *)
       POSITIONAL_ARGS+=("$1")
       shift
@@ -80,6 +102,7 @@ echo "RAGFlow Docker Publisher"
 echo "=============================================="
 echo "Image:    $FULL_IMAGE"
 echo "Platform: $TARGET_PLATFORM"
+echo "Extras:   $RAGFLOW_EXTRAS"
 echo "Mode:     $([ "$LOCAL_MODE" = true ] && echo "Local (Load)" || echo "Registry (Push)")"
 echo "Root:     $PROJECT_ROOT"
 echo "Context:  ${CONTEXT:-$(docker context show)}"
@@ -150,6 +173,7 @@ echo "🚀 Building..."
 cd "$PROJECT_ROOT"
 $BUILD_CMD \
     --build-arg NEED_MIRROR=0 \
+    --build-arg RAGFLOW_EXTRAS="$RAGFLOW_EXTRAS" \
     -t "$FULL_IMAGE" \
     -f Dockerfile \
     .

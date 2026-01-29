@@ -211,7 +211,8 @@ COPY web web
 COPY admin admin
 COPY api api
 COPY conf conf
-COPY deepdoc deepdoc
+# Copy deepdoc if it exists (not needed for full-lite mode which uses Docling sidecar)
+COPY deepdo[c] deepdoc/
 COPY rag rag
 COPY agent agent
 COPY graphrag graphrag

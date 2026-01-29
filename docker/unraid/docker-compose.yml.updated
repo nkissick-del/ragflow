@@ -1,0 +1,116 @@
+networks:
+  ragflow:
+    name: ragflow
+    driver: bridge
+  postgresql:
+    external: true
+    name: postgresql
+
+services:
+  ragflow:
+    image: ragflow-local:dev
+    container_name: ragflow-server
+    sysctls:
+      - net.ipv4.tcp_keepalive_time=30
+      - net.ipv4.tcp_keepalive_intvl=10
+      - net.ipv4.tcp_keepalive_probes=3
+    env_file: .env
+    command: ["--enable-adminserver"]
+    mem_limit: ${RAGFLOW_MEM_LIMIT}
+    ports:
+      - ${SVR_WEB_HTTP_PORT}:80
+      - ${SVR_HTTP_PORT}:9380
+    environment:
+      # Database
+      - DB_TYPE=${DB_TYPE}
+      - POSTGRES_HOST=${POSTGRES_HOST}
+      - POSTGRES_PORT=${POSTGRES_PORT}
+      - POSTGRES_DBNAME=${POSTGRES_DBNAME}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      # Vector Store (pgvector)
+      - DOC_ENGINE=${DOC_ENGINE}
+      - PGVECTOR_HOST=${PGVECTOR_HOST}
+      - PGVECTOR_PORT=${PGVECTOR_PORT}
+      - PGVECTOR_DBNAME=${PGVECTOR_DBNAME}
+      - PGVECTOR_USER=${PGVECTOR_USER}
+      - PGVECTOR_PASSWORD=${PGVECTOR_PASSWORD}
+      # Redis/Valkey
+      - REDIS_HOST=${REDIS_HOST}
+      - REDIS_PORT=${REDIS_PORT}
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      # Object Storage (S3/Garage)
+      - STORAGE_IMPL=${STORAGE_IMPL}
+      - S3_ENDPOINT_URL=${S3_ENDPOINT_URL}
+      - S3_ACCESS_KEY=${S3_ACCESS_KEY}
+      - S3_SECRET_KEY=${S3_SECRET_KEY}
+      - S3_REGION=${S3_REGION}
+      - S3_BUCKET=${S3_BUCKET}
+      # RAGFlow
+      - SVR_HTTP_PORT=${SVR_HTTP_PORT}
+      - TZ=${TZ}
+      - DOCLING_BASE_URL=${DOCLING_BASE_URL}:${DOCLING_PORT}
+      - DEVICE=${DEVICE}
+    networks:
+      - ragflow
+      - postgresql
+    volumes:
+      - /mnt/user/appdata/ragflow/deps:/opt/ragflow/.deps:rw
+      - /mnt/user/appdata/ragflow/pip-cache:/root/.cache/pip:rw
+      - /mnt/user/appdata/ragflow/logs:/ragflow/logs:rw
+    labels:
+      net.unraid.docker.icon: "http://localhost/appdata/icons/ragflow_icon.png"
+      net.unraid.docker.webui: "http://[IP]:${SVR_WEB_HTTP_PORT}"
+      net.unraid.docker.shell: "/bin/sh"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9380/v1/system/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 180s
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  docling:
+    image: ${DOCLING_IMAGE}
+    container_name: ragflow-docling
+    runtime: nvidia
+    ports:
+      - ${DOCLING_PORT}:5001
+    environment:
+      - PORT=${DOCLING_PORT}
+      - DOCLING_SERVE_ENABLE_UI=${DOCLING_SERVE_ENABLE_UI}
+      - DOCLING_SERVE_ALLOW_DOWNLOADS=${DOCLING_SERVE_ALLOW_DOWNLOADS}
+      - DOCLING_SERVE_IMAGE_TO_TEXT_MODEL=${DOCLING_SERVE_IMAGE_TO_TEXT_MODEL}
+      - DOCLING_SERVE_PICTURE_CLASSIFICATION_MODEL=${DOCLING_SERVE_PICTURE_CLASSIFICATION_MODEL}
+      - NVIDIA_VISIBLE_DEVICES=all
+      - PUID=${PUID:-99}
+      - PGID=${PGID:-100}
+      - XDG_CACHE_HOME=/app/models/docling
+      - EASYOCR_MODULE_PATH=/app/models/easyocr
+      - HF_HOME=/app/models/huggingface
+      - XDG_DATA_HOME=/app/models/.local/share
+    volumes:
+      - /mnt/user/appdata/ragflow/docling/models:/app/models
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    mem_limit: ${DOCLING_MEM_LIMIT}
+    labels:    
+      net.unraid.docker.icon: "https://raw.githubusercontent.com/DS4SD/docling/main/docs/assets/logo.png"
+      net.unraid.docker.webui: "http://[IP]:${DOCLING_PORT}"
+      net.unraid.docker.shell: "/bin/sh"
+    profiles:
+      - docling
+    networks:
+      - ragflow
+    restart: unless-stopped

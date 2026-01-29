@@ -28,6 +28,7 @@ import rag.utils
 import rag.utils.es_conn
 import rag.utils.infinity_conn
 import rag.utils.ob_conn
+import rag.utils.pgvector_conn
 import rag.utils.opensearch_conn
 from rag.utils.azure_sas_conn import RAGFlowAzureSasBlob
 from rag.utils.azure_spn_conn import RAGFlowAzureSpnBlob
@@ -253,11 +254,7 @@ def init_settings():
         ES = get_base_config("es", {})
         docStoreConn = rag.utils.es_conn.ESConnection()
     elif lower_case_doc_engine == "infinity":
-        INFINITY = get_base_config("infinity", {
-            "uri": "infinity:23817",
-            "postgres_port": 5432,
-            "db_name": "default_db"
-        })
+        INFINITY = get_base_config("infinity", {"uri": "infinity:23817", "postgres_port": 5432, "db_name": "default_db"})
         docStoreConn = rag.utils.infinity_conn.InfinityConnection()
     elif lower_case_doc_engine == "opensearch":
         OS = get_base_config("os", {})
@@ -268,6 +265,9 @@ def init_settings():
     elif lower_case_doc_engine == "seekdb":
         OB = get_base_config("seekdb", {})
         docStoreConn = rag.utils.ob_conn.OBConnection()
+    elif lower_case_doc_engine == "pgvector":
+        # pgvector uses the same connection pool logic but different wrapper
+        docStoreConn = rag.utils.pgvector_conn.PGVectorConnection()
     else:
         raise Exception(f"Not supported doc engine: {DOC_ENGINE}")
 
@@ -277,12 +277,12 @@ def init_settings():
         ES = get_base_config("es", {})
         msgStoreConn = memory_es_conn.ESConnection()
     elif DOC_ENGINE == "infinity":
-        INFINITY = get_base_config("infinity", {
-            "uri": "infinity:23817",
-            "postgres_port": 5432,
-            "db_name": "default_db"
-        })
+        INFINITY = get_base_config("infinity", {"uri": "infinity:23817", "postgres_port": 5432, "db_name": "default_db"})
         msgStoreConn = memory_infinity_conn.InfinityConnection()
+    elif DOC_ENGINE == "pgvector":
+        # For now, we'll use the same PGVectorConnection for message store
+        # although it might need its own memory-optimized wrapper later.
+        msgStoreConn = rag.utils.pgvector_conn.PGVectorConnection()
 
     global AZURE, S3, MINIO, OSS, GCS
     if STORAGE_IMPL_TYPE in ["AZURE_SPN", "AZURE_SAS"]:

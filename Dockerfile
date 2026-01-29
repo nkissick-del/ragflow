@@ -169,6 +169,11 @@ RUN --mount=type=cache,id=ragflow_uv,target=/root/.cache/uv,sharing=locked \
     EXTRA_FLAGS=""; \
     IFS=',' read -ra EXTRAS <<< "$RAGFLOW_EXTRAS"; \
     for extra in "${EXTRAS[@]}"; do \
+    # Trim leading/trailing whitespace \
+    extra="${extra#"${extra%%[![:space:]]*}"}"; \
+    extra="${extra%"${extra##*[![:space:]]}"}"; \
+    # Skip empty elements \
+    [ -z "$extra" ] && continue; \
     EXTRA_FLAGS="$EXTRA_FLAGS --extra $extra"; \
     done; \
     uv sync --python 3.12 --frozen $EXTRA_FLAGS; \

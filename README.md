@@ -352,13 +352,21 @@ docker build --build-arg RAGFLOW_EXTRAS="minimal,llm-anthropic,observability" -t
 
 ### Using Docling Instead of Deepdoc
 
-1. Skip `deepdoc` in RAGFLOW_EXTRAS when building
-2. Run Docling as a sidecar container. Choose one networking approach:
+1. Skip `deepdoc` in RAGFLOW_EXTRAS when building.
+
+2. **Ensure RAGFlow and Docling share a Docker network** for container-name resolution.
+   The network name depends on your Docker Compose setup (e.g., `ragflow_default`, `docker_default`).
+   Discover the correct network name by running:
+   ```bash
+   docker network ls
+   ```
+
+3. Run Docling as a sidecar container. Choose one networking approach:
    
    **Option A: Shared Docker network (recommended for Docker Compose)**
    ```bash
-   # Create a shared network or use the existing ragflow network
-   docker run --name docling --network ragflow_default -p 5001:5001 ds4sd/docling-serve
+   # Replace <network> with the network name found above (e.g., ragflow_default)
+   docker run --name docling --network <network> -p 5001:5001 ds4sd/docling-serve
    ```
    Then set: `DOCLING_BASE_URL=http://docling:5001` in `.env`
    
@@ -366,11 +374,11 @@ docker build --build-arg RAGFLOW_EXTRAS="minimal,llm-anthropic,observability" -t
    ```bash
    docker run -p 5001:5001 ds4sd/docling-serve
    ```
-   Then set: `DOCLING_BASE_URL=http://host.docker.internal:5001` in `.env` (Mac/Windows)
-   or `DOCLING_BASE_URL=http://172.17.0.1:5001` (Linux)
+   Then set `DOCLING_BASE_URL` in `.env` based on your platform:
+   - **Mac/Windows**: `DOCLING_BASE_URL=http://host.docker.internal:5001`
+   - **Linux**: Check your `docker0` bridge IP via `ip addr show docker0` (commonly `172.17.0.1`), then set `DOCLING_BASE_URL=http://<docker0-ip>:5001`
 
-3. Ensure RAGFlow and Docling share the same Docker network for container-name resolution
-4. Set parser: `layout_recognizer: "Docling"` in service_conf.yaml
+4. Set parser: `layout_recognizer: "Docling"` in service_conf.yaml.
 
 ## 🔨 Launch service from source for development
 

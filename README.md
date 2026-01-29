@@ -321,9 +321,9 @@ RAGFlow supports flexible dependency configurations for faster builds and smalle
 | Use Case | RAGFLOW_EXTRAS Value |
 |----------|---------------------|
 | Full (default) | `all` |
-| Full-lite (no deepdoc, pgvector, all features) | `full-lite` |
+| Full-lite (excludes deepdoc; includes LLMs, integrations, search, graphrag, observability with pgvector) | `full-lite` |
 | Docling sidecar (minimal) | `db-postgres,storage-s3,vectorstore-elasticsearch` |
-| With Garage storage + deepdoc | `db-postgres,storage-s3,vectorstore-elasticsearch,deepdoc` |
+| With S3-compatible storage (e.g., Garage, AWS) + deepdoc | `db-postgres,storage-s3,vectorstore-elasticsearch,deepdoc` |
 | Custom selection | `minimal,llm-anthropic,observability` |
 
 ### Dependency Groups
@@ -353,8 +353,23 @@ docker build --build-arg RAGFLOW_EXTRAS="minimal,llm-anthropic,observability" -t
 ### Using Docling Instead of Deepdoc
 
 1. Skip `deepdoc` in RAGFLOW_EXTRAS when building
-2. Run Docling as sidecar: `docker run -p 5001:5001 ds4sd/docling-serve`
-3. Configure: `DOCLING_BASE_URL=http://docling:5001` in `.env`
+2. Run Docling as a sidecar container. Choose one networking approach:
+   
+   **Option A: Shared Docker network (recommended for Docker Compose)**
+   ```bash
+   # Create a shared network or use the existing ragflow network
+   docker run --name docling --network ragflow_default -p 5001:5001 ds4sd/docling-serve
+   ```
+   Then set: `DOCLING_BASE_URL=http://docling:5001` in `.env`
+   
+   **Option B: Host networking (simpler for development)**
+   ```bash
+   docker run -p 5001:5001 ds4sd/docling-serve
+   ```
+   Then set: `DOCLING_BASE_URL=http://host.docker.internal:5001` in `.env` (Mac/Windows)
+   or `DOCLING_BASE_URL=http://172.17.0.1:5001` (Linux)
+
+3. Ensure RAGFlow and Docling share the same Docker network for container-name resolution
 4. Set parser: `layout_recognizer: "Docling"` in service_conf.yaml
 
 ## 🔨 Launch service from source for development

@@ -107,26 +107,26 @@ db-mysql = ["pymysql>=1.1.1"]
 vectorstore-elasticsearch = ["elasticsearch-dsl==8.12.0"]
 vectorstore-opensearch = ["opensearch-py==2.7.1"]
 vectorstore-postgres = ["psycopg2-binary>=2.9.11", "pyobvector==0.2.22"]  # pgvector extension
-vectorstore-all = ["vectorstore-elasticsearch", "vectorstore-opensearch", "vectorstore-postgres"]
+vectorstore-all = ["ragflow[vectorstore-elasticsearch]", "ragflow[vectorstore-opensearch]", "ragflow[vectorstore-postgres]"]
 
 # LLM providers
 llm-openai = ["openai>=1.45.0"]
 llm-anthropic = ["anthropic==0.34.1"]
 llm-cohere = ["cohere==5.6.2"]
 llm-google = ["google-genai>=1.41.0", "vertexai==1.70.0"]
-llm-all = ["llm-openai", "llm-anthropic", "llm-cohere", "llm-google"]
+llm-all = ["ragflow[llm-openai]", "ragflow[llm-anthropic]", "ragflow[llm-cohere]", "ragflow[llm-google]"]
 
 # Cloud storage (OPTIONAL - alternatives to MinIO for object storage)
 storage-s3 = ["mypy-boto3-s3==1.40.26"]
 storage-azure = ["azure-identity==1.17.1", "azure-storage-file-datalake==12.16.0"]
 storage-gcs = ["google-api-python-client>=2.150.0", "google-auth-oauthlib>=1.2.0"]
-storage-all = ["storage-s3", "storage-azure", "storage-gcs"]
+storage-all = ["ragflow[storage-s3]", "ragflow[storage-azure]", "ragflow[storage-gcs]"]
 
 # Document formats
 docs-pdf = ["pdfplumber==0.10.4", "pypdf>=6.6.2", "pypdf2>=3.0.1"]
 docs-office = ["python-docx>=1.1.2", "python-pptx>=1.0.2", "aspose-slides==24.7.0"]
 docs-email = ["extract-msg>=0.39.0"]
-docs-all = ["docs-pdf", "docs-office", "docs-email"]
+docs-all = ["ragflow[docs-pdf]", "ragflow[docs-office]", "ragflow[docs-email]"]
 
 # Understanding RAGflow's Database Architecture
 # ============================================
@@ -173,17 +173,17 @@ search-all = ["search-web", "search-crawl"]
 # ML and embeddings
 ml-embeddings = ["infinity-sdk==0.7.0-dev2", "infinity-emb>=0.0.66"]
 ml-onnx = ["onnxruntime==1.23.2", "onnxruntime-gpu==1.23.2"]
-ml-all = ["ml-embeddings", "ml-onnx"]
+ml-all = ["ragflow[ml-embeddings]", "ragflow[ml-onnx]"]
 
 # Convenience groups
 all = [
-    "vectorstore-all",
-    "llm-all",
-    "cloud-all",
-    "docs-all",
-    "integrations-all",
-    "search-all",
-    "ml-all",
+    "ragflow[vectorstore-all]",
+    "ragflow[llm-all]",
+    "ragflow[storage-all]",
+    "ragflow[docs-all]",
+    "ragflow[integrations-all]",
+    "ragflow[search-all]",
+    "ragflow[ml-all]",
 ]
 
 [dependency-groups]

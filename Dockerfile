@@ -163,9 +163,15 @@ RUN --mount=type=cache,id=ragflow_uv,target=/root/.cache/uv,sharing=locked \
     sed -i 's|pypi.tuna.tsinghua.edu.cn|pypi.org|g' uv.lock; \
     fi; \
     if [ "$RAGFLOW_EXTRAS" = "all" ] || [ -z "$RAGFLOW_EXTRAS" ]; then \
-        uv sync --python 3.12 --frozen --all-extras; \
+    uv sync --python 3.12 --frozen --all-extras; \
     else \
-        uv sync --python 3.12 --frozen --extra ${RAGFLOW_EXTRAS}; \
+    # Build --extra flags for each comma-separated extra \
+    EXTRA_FLAGS=""; \
+    IFS=',' read -ra EXTRAS <<< "$RAGFLOW_EXTRAS"; \
+    for extra in "${EXTRAS[@]}"; do \
+    EXTRA_FLAGS="$EXTRA_FLAGS --extra $extra"; \
+    done; \
+    uv sync --python 3.12 --frozen $EXTRA_FLAGS; \
     fi && \
     # Install pip for runtime use by entrypoint.sh ensure_pip_dependency() function
     # which installs optional dependencies (e.g., docling) at container startup

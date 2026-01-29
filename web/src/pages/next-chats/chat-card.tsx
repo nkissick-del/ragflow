@@ -2,6 +2,7 @@ import { HomeCard } from '@/components/home-card';
 import { MoreButton } from '@/components/more-button';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { IDialog } from '@/interfaces/database/chat';
+import { memo } from 'react';
 import { ChatDropdown } from './chat-dropdown';
 import { useRenameChat } from './hooks/use-rename-chat';
 
@@ -9,7 +10,8 @@ export type IProps = {
   data: IDialog;
 } & Pick<ReturnType<typeof useRenameChat>, 'showChatRenameModal'>;
 
-export function ChatCard({ data, showChatRenameModal }: IProps) {
+// Memoized to prevent unnecessary re-renders when the parent list updates
+export const ChatCard = memo(({ data, showChatRenameModal }: IProps) => {
   const { navigateToChat } = useNavigatePage();
 
   return (
@@ -28,4 +30,6 @@ export function ChatCard({ data, showChatRenameModal }: IProps) {
       onClick={navigateToChat(data?.id)}
     />
   );
-}
+});
+
+ChatCard.displayName = 'ChatCard';

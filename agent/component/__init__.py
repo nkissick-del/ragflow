@@ -50,12 +50,13 @@ __all__ = list(__all_classes.keys()) + ["__all_classes"]
 
 del _package_path, _import_submodules, _extract_classes_from_module
 
+from typing import Any, Dict, Optional, Type
 
-def component_class(class_name):
+
+def component_class(class_name: str) -> Optional[Type[Any]]:
     for module_name in ["agent.component", "agent.tools", "rag.flow"]:
         try:
             return getattr(importlib.import_module(module_name), class_name)
-        except Exception:
-            # logging.warning(f"Can't import module: {module_name}, error: {e}")
+        except (ImportError, AttributeError):
             pass
-    assert False, f"Can't import {class_name}"
+    return None

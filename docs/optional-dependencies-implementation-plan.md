@@ -92,7 +92,7 @@ dependencies = [
     "flask>=3.0.0",
     "quart==0.20.0",
     "peewee==3.17.1",  # ORM (works with SQLite, PostgreSQL, MySQL)
-    "minio==7.2.4",  # Object storage (REQUIRED - not optional)
+    "minio==7.2.4",  # Object storage (REQUIRED - Core)
     "valkey==6.0.2",  # Redis client (REQUIRED for caching)
     # ... other core deps
 ]
@@ -106,8 +106,9 @@ db-mysql = ["pymysql>=1.1.1"]
 # Vector Stores (choose ONE - required for RAG functionality)
 vectorstore-elasticsearch = ["elasticsearch-dsl==8.12.0"]
 vectorstore-opensearch = ["opensearch-py==2.7.1"]
-vectorstore-postgres = ["psycopg2-binary>=2.9.11", "pyobvector==0.2.22"]  # pgvector extension
-vectorstore-all = ["ragflow[vectorstore-elasticsearch]", "ragflow[vectorstore-opensearch]", "ragflow[vectorstore-postgres]"]
+vectorstore-postgres = ["psycopg2-binary>=2.9.11"]  # pgvector extension
+vectorstore-oceanbase = ["pyobvector==0.2.22"]
+vectorstore-all = ["ragflow[vectorstore-elasticsearch]", "ragflow[vectorstore-opensearch]", "ragflow[vectorstore-postgres]", "ragflow[vectorstore-oceanbase]"]
 
 # LLM providers
 llm-openai = ["openai>=1.45.0"]
@@ -218,11 +219,21 @@ RUN --mount=type=cache,id=ragflow_uv,target=/root/.cache/uv,sharing=locked \
     else \
         sed -i 's|pypi.tuna.tsinghua.edu.cn|pypi.org|g' uv.lock; \
     fi; \
-    # Install based on RAGFLOW_EXTRAS
-    if [ -z "$RAGFLOW_EXTRAS" ]; then \
-        uv sync --python 3.12 --frozen --no-group test; \
+    if [ "$RAGFLOW_EXTRAS" = "all" ] || [ -z "$RAGFLOW_EXTRAS" ]; then \
+        uv sync --python 3.12 --frozen --all-extras; \
     else \
-        uv sync --python 3.12 --frozen --no-group test --extra "$RAGFLOW_EXTRAS"; \
+        # Build --extra flags for each comma-separated extra \
+        EXTRA_FLAGS=""; \
+        IFS=',' read -ra EXTRAS <<< "$RAGFLOW_EXTRAS"; \
+        for extra in "${EXTRAS[@]}"; do \
+            # Trim leading/trailing whitespace \
+            extra="${extra#"${extra%%[![:space:]]*}"}"; \
+            extra="${extra%"${extra##*[![:space:]]}"}"; \
+            # Skip empty elements \
+            [ -z "$extra" ] && continue; \
+            EXTRA_FLAGS="$EXTRA_FLAGS --extra $extra"; \
+        done; \
+        uv sync --python 3.12 --frozen $EXTRA_FLAGS; \
     fi; \
     uv pip install pip==24.3.1
 ```
@@ -298,7 +309,8 @@ postgres:
   # ... existing config
 ```
 
-**Total effort:** ~20 lines of code, 30 minutes
+~~**Total effort:** ~20 lines of code, 30 minutes~~
+> **Deferred - see detailed analysis below** (Original estimate: ~30 minutes vs Actual finding: 20-30 days)
 
 5. **Update documentation** (README.md):
 
@@ -331,7 +343,7 @@ pip install -e ".[vectorstore-all,llm-all]"
 docker build -t ragflow:full .
 
 # Minimal image (SQLite + Elasticsearch)
-docker build --build-arg RAGFLOW_EXTRAS="vectorstore-elasticsearch" -t ragflow:minimal .
+docker build --build-arg RAGFLOW_EXTRAS="vectorstore-elasticsearch" -t ragflow:docling-sidecar .
 
 # Custom image
 docker build --build-arg RAGFLOW_EXTRAS="db-postgres,vectorstore-postgres,llm-openai" -t ragflow:custom .

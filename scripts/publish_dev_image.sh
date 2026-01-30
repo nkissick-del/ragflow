@@ -39,6 +39,7 @@ while [[ $# -gt 0 ]]; do
       echo "  --extras     Comma-separated list of extras to install (default: $DEFAULT_EXTRAS)"
       echo "  --full-lite  Use full-lite mode: all features except deepdoc, uses pgvector"
       echo "               Equivalent to: --extras $FULL_LITE_EXTRAS"
+      echo "               Note: --extras and --full-lite override each other; the last one wins."
       echo ""
       exit 0
       ;;
@@ -73,10 +74,16 @@ while [[ $# -gt 0 ]]; do
         echo "Error: Argument for --extras is missing or invalid."
         exit 1
       fi
+      if [ "$RAGFLOW_EXTRAS" != "$DEFAULT_EXTRAS" ] && [ "$RAGFLOW_EXTRAS" != "$2" ]; then
+        echo "⚠️  Warning: --extras provided after another --extras or --full-lite. Overriding RAGFLOW_EXTRAS with '$2'."
+      fi
       RAGFLOW_EXTRAS="$2"
       shift 2
       ;;
     --full-lite)
+      if [ "$RAGFLOW_EXTRAS" != "$DEFAULT_EXTRAS" ] && [ "$RAGFLOW_EXTRAS" != "$FULL_LITE_EXTRAS" ]; then
+        echo "⚠️  Warning: --full-lite overrides previously set --extras ($RAGFLOW_EXTRAS) with FULL_LITE_EXTRAS."
+      fi
       RAGFLOW_EXTRAS="$FULL_LITE_EXTRAS"
       shift
       ;;
@@ -92,6 +99,12 @@ set -- "${POSITIONAL_ARGS[@]}" # restore positional parameters
 IMAGE_NAME="${1:-$DEFAULT_IMAGE}"
 TAG="${2:-$DEFAULT_TAG}"
 FULL_IMAGE="$IMAGE_NAME:$TAG"
+
+# Validate RAGFLOW_EXTRAS (comma-separated list of alphanumeric/underscore/dash identifiers)
+if [[ ! "$RAGFLOW_EXTRAS" =~ ^[a-zA-Z0-9_\,-]*$ ]]; then
+  echo "Error: RAGFLOW_EXTRAS contains invalid characters. Only alphanumeric, underscores, dashes, and commas are allowed."
+  exit 1
+fi
 
 # Get project root (one level up from scripts/)
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"

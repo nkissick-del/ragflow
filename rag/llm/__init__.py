@@ -18,6 +18,7 @@
 
 import importlib
 import inspect
+import logging
 
 from strenum import StrEnum
 
@@ -151,11 +152,14 @@ for module_name, mapping_dict in MODULE_MAPPING.items():
     full_module_name = f"{package_name}.{module_name}"
     try:
         module = importlib.import_module(full_module_name)
-    except ImportError as e:
-        import logging
-
-        logging.warning(f"Failed to import model module {full_module_name}: {e}. This model factory will be empty.")
+    except ModuleNotFoundError:
+        logging.warning(f"Failed to import model module {full_module_name}: module not found. This model factory will be empty.")
         continue
+    except ImportError as e:
+        if hasattr(e, 'name') and e.name == full_module_name:
+            logging.warning(f"Failed to import model module {full_module_name}: {e}. This model factory will be empty.")
+            continue
+        raise
 
     base_class = None
     lite_llm_base_class = None

@@ -711,14 +711,13 @@ class BOX(SyncBase):
 
     async def _generate(self, task: dict):
         from common.data_source.box_connector import BoxConnector
+        from box_sdk_gen import BoxOAuth, OAuthConfig, AccessToken
 
         self.connector = BoxConnector(
             folder_id=self.conf.get("folder_id", "0"),
         )
 
         credential = json.loads(self.conf["credentials"]["box_tokens"])
-
-        from box_sdk_gen import BoxOAuth, OAuthConfig, AccessToken
 
         auth = BoxOAuth(
             OAuthConfig(

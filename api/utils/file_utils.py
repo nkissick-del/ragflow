@@ -26,9 +26,6 @@ import tempfile
 import threading
 from io import BytesIO
 
-
-# Local imports
-
 # Local imports
 from api.constants import IMG_BASE64_PREFIX
 from api.db import FileType

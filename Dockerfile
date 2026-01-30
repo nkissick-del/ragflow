@@ -53,6 +53,7 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     apt install -y ghostscript && \
     apt install -y pandoc && \
     apt install -y texlive && \
+    apt install -y gettext-base && \
     apt install -y fonts-freefont-ttf fonts-noto-cjk
 
 # Install uv
@@ -150,7 +151,7 @@ COPY pyproject.toml uv.lock ./
 # Default: "all" installs everything for backward compatibility
 # Examples:
 #   - "all" - Full installation (default, backward compatible)
-#   - "minimal" - Core + S3 + Elasticsearch (for Docling sidecar users)
+#   - "docling-sidecar" - Core + S3 + Elasticsearch (for Docling sidecar users)
 #   - "db-postgres,storage-s3,vectorstore-elasticsearch,deepdoc" - Custom selection
 ARG RAGFLOW_EXTRAS="all"
 
@@ -163,10 +164,14 @@ RUN --mount=type=cache,id=ragflow_uv,target=/root/.cache/uv,sharing=locked \
     sed -i 's|pypi.tuna.tsinghua.edu.cn|pypi.org|g' uv.lock; \
     fi; \
     if [ "$RAGFLOW_EXTRAS" = "all" ] || [ -z "$RAGFLOW_EXTRAS" ]; then \
+    echo "Using extras: all-extras"; \
     uv sync --python 3.12 --frozen --all-extras; \
     else \
+    # Define allowed extras (matches pyproject.toml optional-dependencies keys) \
+    ALLOWED_EXTRAS="db-postgres db-mysql storage-minio storage-s3 storage-azure storage-opendal storage-webdav vectorstore-elasticsearch vectorstore-opensearch vectorstore-infinity vectorstore-postgres vectorstore-oceanbase deepdoc llm-anthropic llm-google llm-cohere llm-mistllm-baidu llm-alibaba llm-volcengine llm-zhipu llm-groq llm-replicate llm-voyage llm-ollama llm-hunyuan llm-all grpc integrations-jira integrations-slack integrations-discord integrations-github integrations-gitlab integrations-google integrations-box integrations-dropbox integrations-asana integrations-airtable integrations-office365 integrations-moodle integrations-all search-tavily search-duckduckgo search-scholar search-crawl search-wikipedia search-all graphrag agent-tools agent-sql agent-translation embeddings finance-china finance-global observability docling-sidecar full-lite test dev"; \
     # Build --extra flags for each comma-separated extra \
     EXTRA_FLAGS=""; \
+    INVALID_EXTRAS=""; \
     IFS=',' read -ra EXTRAS <<< "$RAGFLOW_EXTRAS"; \
     for extra in "${EXTRAS[@]}"; do \
     # Trim leading/trailing whitespace \
@@ -174,8 +179,23 @@ RUN --mount=type=cache,id=ragflow_uv,target=/root/.cache/uv,sharing=locked \
     extra="${extra%"${extra##*[![:space:]]}"}"; \
     # Skip empty elements \
     [ -z "$extra" ] && continue; \
-    EXTRA_FLAGS="$EXTRA_FLAGS --extra $extra"; \
+    # Check if the extra is allowed \
+    is_allowed=0; \
+    for allowed in $ALLOWED_EXTRAS; do \
+    if [ "$extra" = "$allowed" ]; then is_allowed=1; break; fi; \
     done; \
+    if [ "$is_allowed" = "0" ]; then \
+    INVALID_EXTRAS="$INVALID_EXTRAS $extra"; \
+    else \
+    EXTRA_FLAGS="$EXTRA_FLAGS --extra $extra"; \
+    fi; \
+    done; \
+    if [ -n "$INVALID_EXTRAS" ]; then \
+    echo "ERROR: Unknown RAGFLOW_EXTRAS provided:$INVALID_EXTRAS"; \
+    echo "Allowed extras are: $ALLOWED_EXTRAS"; \
+    exit 1; \
+    fi; \
+    echo "Using extras: $EXTRA_FLAGS"; \
     uv sync --python 3.12 --frozen $EXTRA_FLAGS; \
     fi && \
     # Install pip for runtime use by entrypoint.sh ensure_pip_dependency() function
@@ -211,10 +231,13 @@ COPY web web
 COPY admin admin
 COPY api api
 COPY conf conf
-# Copy deepdoc if it exists (not needed for full-lite mode which uses Docling sidecar)
+# Copy deepdoc if it exists.
+# We use the glob pattern deepdo[c] to make this COPY a no-op if the directory is missing
+# (e.g., in full-lite builds or when using Docling sidecar).
 COPY deepdo[c] deepdoc/
 COPY rag rag
-# Ensure deepdoc is available as a top-level package via symlink if it was copied as part of rag
+# Ensure deepdoc is available as a top-level package via symlink if it was not copied
+# directly but exists within rag/parsers/deepdoc (the standard location in lite/all builds).
 RUN if [ -d "rag/parsers/deepdoc" ] && [ ! -d "deepdoc" ]; then ln -s rag/parsers/deepdoc deepdoc; fi
 COPY agent agent
 COPY graphrag graphrag

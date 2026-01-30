@@ -53,6 +53,13 @@ class InvokeParam(ComponentParamBase):
 class Invoke(ComponentBase, ABC):
     component_name = "Invoke"
 
+    def _handle_response(self, response, parser_cls):
+        if self._param.clean_html:
+            sections = parser_cls()(None, response.content)
+            self.set_output("result", "\n".join(sections))
+        else:
+            self.set_output("result", response.text)
+
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 3)))
     def _invoke(self, **kwargs):
         from deepdoc.parser import HtmlParser
@@ -99,32 +106,21 @@ class Invoke(ComponentBase, ABC):
             try:
                 if method == "get":
                     response = requests.get(url=url, params=args, headers=headers, proxies=proxies, timeout=self._param.timeout)
-                    if self._param.clean_html:
-                        sections = HtmlParser()(None, response.content)
-                        self.set_output("result", "\n".join(sections))
-                    else:
-                        self.set_output("result", response.text)
+                    self._handle_response(response, HtmlParser)
 
                 if method == "put":
                     if self._param.datatype.lower() == "json":
                         response = requests.put(url=url, json=args, headers=headers, proxies=proxies, timeout=self._param.timeout)
                     else:
                         response = requests.put(url=url, data=args, headers=headers, proxies=proxies, timeout=self._param.timeout)
-                    if self._param.clean_html:
-                        sections = HtmlParser()(None, response.content)
-                        self.set_output("result", "\n".join(sections))
-                    else:
-                        self.set_output("result", response.text)
+                    self._handle_response(response, HtmlParser)
 
                 if method == "post":
                     if self._param.datatype.lower() == "json":
                         response = requests.post(url=url, json=args, headers=headers, proxies=proxies, timeout=self._param.timeout)
                     else:
                         response = requests.post(url=url, data=args, headers=headers, proxies=proxies, timeout=self._param.timeout)
-                    if self._param.clean_html:
-                        self.set_output("result", "\n".join(sections))
-                    else:
-                        self.set_output("result", response.text)
+                    self._handle_response(response, HtmlParser)
 
                 return self.output("result")
             except Exception as e:

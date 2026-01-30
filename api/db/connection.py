@@ -2,23 +2,16 @@
 # Database connection initialization and utilities
 #
 from __future__ import annotations
-import sys
-
-print("DEBUG: Importing api.db.connection...", file=sys.stderr, flush=True)
-
 import logging
 
-print("DEBUG: Importing common.settings...", file=sys.stderr, flush=True)
 from common import settings
 
-print("DEBUG: Importing common.decorator...", file=sys.stderr, flush=True)
 from common.decorator import singleton
 
 # Import all pooling, locking, and diagnostic components
 # These are handled lazily within functions to avoid import-time side effects or failures
-print("DEBUG: api.db.connection basic imports complete.", file=sys.stderr, flush=True)
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol, Any
 
 # Type hints only - actual imports happen at module end for proper exports
 if TYPE_CHECKING:
@@ -266,7 +259,7 @@ def log_connection_stats():
 
         if DB:
             PoolDiagnostics.log_pool_health(DB)
-    except (ImportError, Exception) as e:
+    except Exception as e:
         logging.error(f"Failed to log connection stats: {e}")
 
 
@@ -324,17 +317,29 @@ def get_locks():
     return MysqlDatabaseLock, PostgresDatabaseLock
 
 
-# Also export playhouse pooled database classes for tests
-# We wrap this in a try-except because playhouse might be missing in some builds
-try:
-    from playhouse.pool import PooledMySQLDatabase, PooledPostgresqlDatabase
-except ImportError:
-    # Minimal stubs for type checking if missing
-    class PooledMySQLDatabase:
-        pass
+# Export playhouse pooled database classes for tests and type checking
+if TYPE_CHECKING:
 
-    class PooledPostgresqlDatabase:
-        pass
+    class PooledDatabaseProtocol(Protocol):
+        def atomic(self) -> Any: ...
+        def execute_sql(self, sql: str, params: Any = None, require_cursor: bool = True) -> Any: ...
+        def close_stale(self, age: int = 600) -> None: ...
+
+        lock: Any
+
+    PooledMySQLDatabase = PooledDatabaseProtocol
+    PooledPostgresqlDatabase = PooledDatabaseProtocol
+else:
+    try:
+        from playhouse.pool import PooledMySQLDatabase, PooledPostgresqlDatabase
+    except ImportError:
+
+        class PooledDatabaseStub:
+            def __init__(self, *args, **kwargs):
+                raise ImportError("playhouse.pool.PooledMySQLDatabase / PooledPostgresqlDatabase is required but could not be imported. Ensure 'playhouse' (peewee) is installed with pool support.")
+
+        PooledMySQLDatabase = PooledDatabaseStub  # type: ignore
+        PooledPostgresqlDatabase = PooledDatabaseStub  # type: ignore
 
 
 # Backward compatibility: re-export pool classes from pool module

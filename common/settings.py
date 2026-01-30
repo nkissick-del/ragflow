@@ -88,18 +88,6 @@ DATABASE = decrypt_database_config(name=DATABASE_TYPE)
 AUTHENTICATION_CONF = None
 
 # client
-# CLIENT_AUTHENTICATION = None # Moved to global variable block
-# HTTP_APP_KEY = None # Moved to global variable block
-# GITHUB_OAUTH = None # Moved to global variable block
-# FEISHU_OAUTH = None # Moved to global variable block
-# OAUTH_CONFIG = None # Moved to global variable block
-# DOC_ENGINE = os.getenv("DOC_ENGINE", "elasticsearch") # Moved to global variable block
-# DOC_ENGINE_INFINITY = DOC_ENGINE.lower() == "infinity" # Moved to global variable block
-
-
-# docStoreConn = None # Moved to global variable block
-# msgStoreConn = None # Moved to global variable block
-
 retriever = None
 kg_retriever = None
 
@@ -318,22 +306,39 @@ def init_settings():
 
     global msgStoreConn
     # use the same engine for message store
-    if DOC_ENGINE == "elasticsearch":
+    if lower_case_doc_engine == "elasticsearch":
         import memory.utils.es_conn as memory_es_conn
 
         ES = get_base_config("es", {})
         msgStoreConn = memory_es_conn.ESConnection()
-    elif DOC_ENGINE == "infinity":
+    elif lower_case_doc_engine == "infinity":
         import memory.utils.infinity_conn as memory_infinity_conn
 
         INFINITY = get_base_config("infinity", {"uri": "infinity:23817", "postgres_port": 5432, "db_name": "default_db"})
         msgStoreConn = memory_infinity_conn.InfinityConnection()
-    elif DOC_ENGINE == "pgvector":
+    elif lower_case_doc_engine == "opensearch":
+        import memory.utils.opensearch_conn as memory_opensearch_conn
+
+        OS = get_base_config("os", {})
+        msgStoreConn = memory_opensearch_conn.OSConnection()
+    elif lower_case_doc_engine == "oceanbase":
+        import memory.utils.ob_conn as memory_ob_conn
+
+        OB = get_base_config("oceanbase", {})
+        msgStoreConn = memory_ob_conn.OBConnection()
+    elif lower_case_doc_engine == "seekdb":
+        import memory.utils.ob_conn as memory_ob_conn
+
+        OB = get_base_config("seekdb", {})
+        msgStoreConn = memory_ob_conn.OBConnection()
+    elif lower_case_doc_engine == "pgvector":
         import rag.utils.pgvector_conn
 
         # For now, we'll use the same PGVectorConnection for message store
         # although it might need its own memory-optimized wrapper later.
         msgStoreConn = rag.utils.pgvector_conn.PGVectorConnection()
+    else:
+        raise Exception(f"Not supported message store engine: {DOC_ENGINE}")
 
     global AZURE, S3, MINIO, OSS, GCS
     if STORAGE_IMPL_TYPE in ["AZURE_SPN", "AZURE_SAS"]:
@@ -391,8 +396,11 @@ def init_settings():
     MAIL_USERNAME = SMTP_CONF.get("mail_username", "")
     MAIL_PASSWORD = SMTP_CONF.get("mail_password", "")
     mail_default_sender = SMTP_CONF.get("mail_default_sender", [])
-    if mail_default_sender and len(mail_default_sender) >= 2:
-        MAIL_DEFAULT_SENDER = (mail_default_sender[0], mail_default_sender[1])
+    if mail_default_sender:
+        if len(mail_default_sender) >= 2:
+            MAIL_DEFAULT_SENDER = (mail_default_sender[0], mail_default_sender[1])
+        else:
+            logging.getLogger(__name__).warning(f"Malformed truthy SMTP_CONF.get('mail_default_sender'): {mail_default_sender}. Expected [name, address]. Skipping assignment to MAIL_DEFAULT_SENDER.")
     MAIL_FRONTEND_URL = SMTP_CONF.get("mail_frontend_url", "")
 
     global DOC_MAXIMUM_SIZE, DOC_BULK_SIZE, EMBEDDING_BATCH_SIZE

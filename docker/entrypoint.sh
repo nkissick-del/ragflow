@@ -174,13 +174,13 @@ while IFS= read -r line || [[ -n "$line" ]]; do
         default="${BASH_REMATCH[2]}"
 
         if [ -n "${!varname}" ]; then
-            # Use a safer eval approach to handle quotes in lines
-            eval "echo \"${line//\"/\\\"}\"" >> "${CONF_FILE}"
+            # Use envsubst to safely expand variables without evaluating command substitutions or interpreting backslashes.
+            echo "$line" | envsubst >> "${CONF_FILE}"
         else
-            echo "$line" | sed -E "s/\\\$\{[^:]+:-([^}]+)\}/\1/g" >> "${CONF_FILE}"
+            echo "$line" | sed -E "s/\\\$\{[^:]+:-([^}]+)\}/\1/g" | envsubst >> "${CONF_FILE}"
         fi
     else
-        eval "echo \"${line//\"/\\\"}\"" >> "${CONF_FILE}"
+        echo "$line" | envsubst >> "${CONF_FILE}"
     fi
 done < "${TEMPLATE_FILE}"
 

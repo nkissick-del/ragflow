@@ -380,6 +380,13 @@ class RAGFlowPdfParser:
         if all("col_id" in b for b in boxes):
             return boxes
 
+        if KMeans is None or silhouette_score is None:
+            logging.warning("scikit-learn is not installed, skipping column detection in _assign_column. Install it with: pip install scikit-learn")
+            # Fallback: assign all boxes to column 0
+            for b in boxes:
+                b["col_id"] = 0
+            return boxes
+
         by_page = defaultdict(list)
         for b in boxes:
             by_page[b["page_number"]].append(b)
@@ -666,7 +673,12 @@ class RAGFlowPdfParser:
                         continue
 
                     fea = self._updown_concat_features(up, down)
-                    if self.updown_cnt_mdl.predict(xgb.DMatrix([fea]))[0] <= 0.5:
+                    if self.updown_cnt_mdl is not None and xgb is not None:
+                        if self.updown_cnt_mdl.predict(xgb.DMatrix([fea]))[0] <= 0.5:
+                            i += 1
+                            continue
+                    else:
+                        # Fallback: skip XGBoost-based merging if xgboost is not available
                         i += 1
                         continue
                     dfs(down, i + 1)
@@ -1073,6 +1085,10 @@ class RAGFlowPdfParser:
         self.page_layout = []
         self.page_from = page_from
         start = timer()
+
+        if pdfplumber is None:
+            raise ImportError("pdfplumber is required for RAGFlowPdfParser.__images__. Install it with: pip install pdfplumber")
+
         try:
             with _pdfplumber_lock:
                 with pdfplumber.open(fnm) if isinstance(fnm, str) else pdfplumber.open(BytesIO(fnm)) as pdf:
@@ -1093,23 +1109,26 @@ class RAGFlowPdfParser:
         logging.info(f"__images__ dedupe_chars cost {timer() - start}s")
 
         self.outlines = []
-        try:
-            with pdf2_read(fnm if isinstance(fnm, str) else BytesIO(fnm)) as pdf:
-                self.pdf = pdf
+        if pdf2_read is not None:
+            try:
+                with pdf2_read(fnm if isinstance(fnm, str) else BytesIO(fnm)) as pdf:
+                    self.pdf = pdf
 
-                outlines = self.pdf.outline
+                    outlines = self.pdf.outline
 
-                def dfs(arr, depth):
-                    for a in arr:
-                        if isinstance(a, dict):
-                            self.outlines.append((a["/Title"], depth))
-                            continue
-                        dfs(a, depth + 1)
+                    def dfs(arr, depth):
+                        for a in arr:
+                            if isinstance(a, dict):
+                                self.outlines.append((a["/Title"], depth))
+                                continue
+                            dfs(a, depth + 1)
 
-                dfs(outlines, 0)
+                    dfs(outlines, 0)
 
-        except Exception as e:
-            logging.warning(f"Outlines exception: {e}")
+            except Exception as e:
+                logging.warning(f"Outlines exception: {e}")
+        else:
+            logging.warning("pypdf is not installed, skipping outline extraction in __images__")
 
         if not self.outlines:
             logging.warning("Miss outlines")
@@ -1474,6 +1493,10 @@ class PlainParser:
     def __call__(self, filename, from_page=0, to_page=100000, **kwargs):
         self.outlines = []
         lines = []
+
+        if pdf2_read is None:
+            raise ImportError("pypdf is required for PlainParser. Install it with: pip install pypdf")
+
         try:
             with pdf2_read(filename if isinstance(filename, str) else BytesIO(filename)) as pdf:
                 for page in pdf.pages[from_page:to_page]:
@@ -1511,6 +1534,12 @@ class VisionParser(RAGFlowPdfParser):
         self.outlines = []
 
     def __images__(self, fnm, zoomin=3, page_from=0, page_to=299, callback=None):
+        if pdfplumber is None:
+            logging.error("pdfplumber is required for VisionParser.__images__. Install it with: pip install pdfplumber")
+            self.page_images = None
+            self.total_page = 0
+            return
+
         try:
             with _pdfplumber_lock:
                 with pdfplumber.open(fnm if isinstance(fnm, str) else BytesIO(fnm)) as pdf:

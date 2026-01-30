@@ -321,16 +321,18 @@ RAGFlow supports flexible dependency configurations for faster builds and smalle
 | Use Case | RAGFLOW_EXTRAS Value |
 |----------|---------------------|
 | Full (default) | `all` |
-| Full-lite (excludes deepdoc; includes LLMs, integrations, search, graphrag; uses Elasticsearch/OpenSearch for document vectors; PostgreSQL pgvector for observability/telemetry) | `full-lite` |
-| Docling sidecar (minimal) | `db-postgres,storage-s3,vectorstore-elasticsearch` |
+| Full-lite (excludes deepdoc; uses Elasticsearch/OpenSearch) | `full-lite` |
+| Docling sidecar (`docling-sidecar`) | `db-postgres,storage-s3,vectorstore-elasticsearch` |
 | With S3-compatible storage (e.g., Garage, AWS) + deepdoc | `db-postgres,storage-s3,vectorstore-elasticsearch,deepdoc` |
-| Custom selection | `minimal,llm-anthropic,observability` |
+| Custom selection | `docling-sidecar,llm-anthropic,observability` |
+
+The `full-lite` option is a recommended balance of features and image size. It includes all LLM providers, integrations, web search tools, GraphRAG, and agent capabilities, but excludes the heavy `deepdoc` parsing suite (intended for use with Docling sidecar). It defaults to Elasticsearch/OpenSearch for document vectors, and uses PostgreSQL pgvector for observability and telemetry metadata.
 
 ### Dependency Groups
 
 | Group | Description |
 |-------|-------------|
-| `minimal` | Core dependencies required for all configurations |
+| `docling-sidecar` | Core dependencies for Docling sidecar users (no deepdoc) |
 | `db-postgres` / `db-mysql` | Application database driver |
 | `storage-minio` / `storage-s3` / `storage-azure` | Object storage backend |
 | `vectorstore-elasticsearch` / `vectorstore-opensearch` | Vector database |
@@ -352,7 +354,7 @@ docker build -t ragflow:full .
 docker build --build-arg RAGFLOW_EXTRAS="db-postgres,storage-s3,vectorstore-elasticsearch" -t ragflow:docling .
 
 # Custom selection
-docker build --build-arg RAGFLOW_EXTRAS="minimal,llm-anthropic,observability" -t ragflow:custom .
+docker build --build-arg RAGFLOW_EXTRAS="docling-sidecar,llm-anthropic,observability" -t ragflow:custom .
 ```
 
 ### Using Docling Instead of Deepdoc
@@ -374,7 +376,7 @@ docker build --build-arg RAGFLOW_EXTRAS="minimal,llm-anthropic,observability" -t
    docker run --name docling --network <network> ds4sd/docling-serve
    ```
    > [!TIP]
-   > You can optionally add `-p 5001:5001` if you also need to access Docling from the host machine.
+   > RAGFlow talks to Docling directly via the shared network. Port mapping (`-p 5001:5001`) is only necessary if you want to access Docling from your host machine (e.g., for manual testing) and does not affect RAGFlow's ability to reach the container.
 
    Then set `DOCLING_BASE_URL` in `.env`. It MUST be the full base URL including protocol and port:
    - `DOCLING_BASE_URL=http://docling:5001` (Recommended for clarity and reliable container-to-container resolution)
@@ -387,10 +389,15 @@ docker build --build-arg RAGFLOW_EXTRAS="minimal,llm-anthropic,observability" -t
    - **Mac/Windows**: `DOCLING_BASE_URL=http://host.docker.internal:5001`
    - **Linux**: Check your `docker0` bridge IP via `ip addr show docker0` (commonly `172.17.0.1`), then set `DOCLING_BASE_URL=http://<docker0-ip>:5001`
    
+   > [!NOTE]
+   > On Linux, Option A (shared network) is highly recommended over Option B to avoid the need for platform-specific `docker0` IP discovery.
+
    > [!IMPORTANT]
    > `DOCLING_BASE_URL` is used directly by the RAGFlow service and must include the port (e.g., `:5001`) even if Docling is running on the default port, to avoid ambiguity in container networking.
 
-4. Set parser: `layout_recognizer: "Docling"` in [service_conf.yaml](./docker/service_conf.yaml.template). 
+4. Configure the system to use Docling by editing the configuration template before building or starting your containers:
+
+   Set parser: `layout_recognizer: "Docling"` in [service_conf.yaml.template](./docker/service_conf.yaml.template). 
 
    Add it under the `ragflow` section or a dedicated `recognizer` block for clarity:
 
@@ -400,7 +407,8 @@ docker build --build-arg RAGFLOW_EXTRAS="minimal,llm-anthropic,observability" -t
      layout_recognizer: "Docling"
    ```
    
-   Refer to [service_conf.yaml.template](./docker/service_conf.yaml.template) for a full example of where to place configuration values.
+   > [!NOTE]
+   > Always edit the `.template` file in the `docker/` directory; it is rendered into the final `service_conf.yaml` used at runtime when the containers start.
 
 ## 🔨 Launch service from source for development
 

@@ -77,8 +77,8 @@ class PGVectorConnPool:
         user = get_config_val("user", "PGVECTOR_USER", "POSTGRES_USER", "ragflow")
         password = get_config_val("password", "PGVECTOR_PASSWORD", "POSTGRES_PASSWORD", "")
 
-        min_conn = int(pgvector_config.get("min_connections", 2))
-        max_conn = int(pgvector_config.get("max_connections", 20))
+        min_conn = int(get_config_val("min_connections", "PGVECTOR_MIN_CONNECTIONS", "POSTGRES_MIN_CONNECTIONS", "2"))
+        max_conn = int(get_config_val("max_connections", "PGVECTOR_MAX_CONNECTIONS", "POSTGRES_MAX_CONNECTIONS", "20"))
 
         try:
             PGVectorConnPool._pool = pool.ThreadedConnectionPool(
@@ -89,6 +89,10 @@ class PGVectorConnPool:
                 dbname=dbname,
                 user=user,
                 password=password,
+                keepalives=1,
+                keepalives_idle=30,
+                keepalives_interval=10,
+                keepalives_count=5,
             )
             logger.info(f"PGVector connection pool initialized: {host}:{port}/{dbname}")
         except Exception as e:
@@ -101,7 +105,35 @@ class PGVectorConnPool:
             with PGVectorConnPool._lock:
                 if PGVectorConnPool._pool is None:
                     self._init_pool()
-        return PGVectorConnPool._pool.getconn()
+
+        # Get connection and validate it
+        max_retries = 3
+        for attempt in range(max_retries):
+            conn = PGVectorConnPool._pool.getconn()
+            try:
+                # Check if connection is closed or executing
+                if conn.closed:
+                    logger.warning("Got closed connection from pool, discarding")
+                    conn.close()
+                    continue
+
+                # Perform lightweight health check
+                with conn.cursor() as cur:
+                    cur.execute("SELECT 1")
+                    cur.fetchone()
+
+                return conn
+            except Exception as e:
+                logger.warning(f"Connection validation failed (attempt {attempt + 1}/{max_retries}): {e}")
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+
+                if attempt == max_retries - 1:
+                    raise
+
+        raise RuntimeError("Failed to get valid connection from pool after retries")
 
     def put_conn(self, conn):
         """Return a connection to the pool."""
@@ -126,17 +158,21 @@ class PGVectorConnPool:
                 yield cur
                 if commit:
                     conn.commit()
-            except Exception:
-                conn.rollback()
-                raise
+            except Exception as original_error:
+                try:
+                    conn.rollback()
+                except Exception as rollback_error:
+                    logger.warning(f"Rollback failed: {rollback_error}")
+                raise original_error
             finally:
                 cur.close()
 
     def close_all(self):
         """Close all connections in the pool."""
-        if PGVectorConnPool._pool is not None:
-            PGVectorConnPool._pool.closeall()
-            PGVectorConnPool._pool = None
+        with PGVectorConnPool._lock:
+            if PGVectorConnPool._pool is not None:
+                PGVectorConnPool._pool.closeall()
+                PGVectorConnPool._pool = None
 
 
 def get_pgvector_conn():

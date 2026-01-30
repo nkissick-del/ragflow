@@ -14,7 +14,7 @@ from common.data_source.utils import (
     get_file_ext,
 )
 from common.data_source.config import DocumentSource, INDEX_BATCH_SIZE, BLOB_STORAGE_SIZE_THRESHOLD
-from common.data_source.exceptions import ConnectorMissingCredentialError, ConnectorValidationError, CredentialExpiredError, InsufficientPermissionsError
+from common.data_source.exceptions import ConnectorMissingCredentialError, ConnectorValidationError, CredentialExpiredError, InsufficientPermissionsError, DirectoryListingError
 from common.data_source.interfaces import LoadConnector, PollConnector
 from common.data_source.models import Document, SecondsSinceUnixEpoch, GenerateDocumentsOutput
 
@@ -73,9 +73,10 @@ class WebDAVConnector(LoadConnector, PollConnector):
         if not username or not password:
             raise ConnectorMissingCredentialError("WebDAV requires 'username' and 'password' credentials")
 
+        if WebDAVClient is None:
+            raise ImportError("The 'webdav4' package is not installed. Please install it to use the WebDAV connector.")
+
         try:
-            if WebDAVClient is None:
-                raise ImportError("The 'webdav4' package is not installed. Please install it to use the WebDAV connector.")
             # Initialize WebDAV client
             self.client = WebDAVClient(base_url=self.base_url, auth=(username, password))
         except Exception as e:
@@ -83,6 +84,37 @@ class WebDAVConnector(LoadConnector, PollConnector):
             raise ConnectorMissingCredentialError(f"Failed to authenticate with WebDAV server: {e}")
 
         return None
+
+    def _parse_modified_time(self, modified_time: Any, item_path: str) -> datetime:
+        """Parse modified time from WebDAV item
+
+        Args:
+            modified_time: The modified time value to parse
+            item_path: Path of the item for logging
+
+        Returns:
+            Parsed datetime object in UTC
+        """
+        if modified_time:
+            if isinstance(modified_time, datetime):
+                modified = modified_time
+                if modified.tzinfo is None:
+                    modified = modified.replace(tzinfo=timezone.utc)
+            elif isinstance(modified_time, str):
+                try:
+                    modified = datetime.strptime(modified_time, "%a, %d %b %Y %H:%M:%S %Z")
+                    modified = modified.replace(tzinfo=timezone.utc)
+                except (ValueError, TypeError):
+                    try:
+                        modified = datetime.fromisoformat(modified_time.replace("Z", "+00:00"))
+                    except (ValueError, TypeError):
+                        logging.warning(f"Could not parse modified time for {item_path}: {modified_time}")
+                        modified = datetime.now(timezone.utc)
+            else:
+                modified = datetime.now(timezone.utc)
+        else:
+            modified = datetime.now(timezone.utc)
+        return modified
 
     def _list_files_recursive(
         self,
@@ -123,27 +155,7 @@ class WebDAVConnector(LoadConnector, PollConnector):
                         continue
                 else:
                     try:
-                        modified_time = item.get("modified")
-                        if modified_time:
-                            if isinstance(modified_time, datetime):
-                                modified = modified_time
-                                if modified.tzinfo is None:
-                                    modified = modified.replace(tzinfo=timezone.utc)
-                            elif isinstance(modified_time, str):
-                                try:
-                                    modified = datetime.strptime(modified_time, "%a, %d %b %Y %H:%M:%S %Z")
-                                    modified = modified.replace(tzinfo=timezone.utc)
-                                except (ValueError, TypeError):
-                                    try:
-                                        modified = datetime.fromisoformat(modified_time.replace("Z", "+00:00"))
-                                    except (ValueError, TypeError):
-                                        logging.warning(f"Could not parse modified time for {item_path}: {modified_time}")
-                                        modified = datetime.now(timezone.utc)
-                            else:
-                                modified = datetime.now(timezone.utc)
-                        else:
-                            modified = datetime.now(timezone.utc)
-
+                        modified = self._parse_modified_time(item.get("modified"), item_path)
                         logging.debug(f"File {item_path}: modified={modified}, start={start}, end={end}, include={start < modified <= end}")
                         if start < modified <= end:
                             files.append((item_path, item))
@@ -155,6 +167,7 @@ class WebDAVConnector(LoadConnector, PollConnector):
 
         except Exception as e:
             logging.error(f"Error listing directory {path}: {e}")
+            raise DirectoryListingError(path, str(e)) from e
 
         return files
 
@@ -205,26 +218,7 @@ class WebDAVConnector(LoadConnector, PollConnector):
                     logging.warning(f"Downloaded content is empty for {file_path}")
                     continue
 
-                modified_time = file_info.get("modified")
-                if modified_time:
-                    if isinstance(modified_time, datetime):
-                        modified = modified_time
-                        if modified.tzinfo is None:
-                            modified = modified.replace(tzinfo=timezone.utc)
-                    elif isinstance(modified_time, str):
-                        try:
-                            modified = datetime.strptime(modified_time, "%a, %d %b %Y %H:%M:%S %Z")
-                            modified = modified.replace(tzinfo=timezone.utc)
-                        except (ValueError, TypeError):
-                            try:
-                                modified = datetime.fromisoformat(modified_time.replace("Z", "+00:00"))
-                            except (ValueError, TypeError):
-                                logging.warning(f"Could not parse modified time for {file_path}: {modified_time}")
-                                modified = datetime.now(timezone.utc)
-                    else:
-                        modified = datetime.now(timezone.utc)
-                else:
-                    modified = datetime.now(timezone.utc)
+                modified = self._parse_modified_time(file_info.get("modified"), file_path)
 
                 if filename_counts.get(file_name, 0) > 1:
                     relative_path = file_path

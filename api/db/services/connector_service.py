@@ -207,7 +207,7 @@ class SyncLogsService(CommonService):
                 return self.blob
 
         errs = []
-        files = [FileObj(id=d["id"], filename=d["semantic_identifier"] + (f"{d['extension']}" if d["semantic_identifier"][::-1].find(d["extension"][::-1]) < 0 else ""), blob=d["blob"]) for d in docs]
+        files = [FileObj(id=d["id"], filename=d["semantic_identifier"] + (f"{d['extension']}" if not d["semantic_identifier"].endswith(d["extension"]) else ""), blob=d["blob"]) for d in docs]
         doc_ids = []
         err, doc_blob_pairs = FileService.upload_document(kb, files, tenant_id, src)
         errs.extend(err)
@@ -216,7 +216,7 @@ class SyncLogsService(CommonService):
         metadata_map = {}
         for d in docs:
             if d.get("metadata"):
-                filename = d["semantic_identifier"] + (f"{d['extension']}" if d["semantic_identifier"][::-1].find(d["extension"][::-1]) < 0 else "")
+                filename = d["semantic_identifier"] + (f"{d['extension']}" if not d["semantic_identifier"].endswith(d["extension"]) else "")
                 metadata_map[filename] = d["metadata"]
 
         kb_table_num_map = {}
@@ -263,13 +263,9 @@ class Connector2KbService(CommonService):
             e, conn = ConnectorService.get_by_id(conn_id)
             if not e:
                 continue
-            # SyncLogsService.filter_delete([SyncLogs.connector_id==conn_id, SyncLogs.kb_id==kb_id])
-            # Do not delete docs while unlinking.
+            # Documents and sync logs are retained on unlink to ensure historical data remains
+            # accessible and to prevent accidental data loss if the connector is re-linked.
             SyncLogsService.filter_update([SyncLogs.connector_id == conn_id, SyncLogs.kb_id == kb_id, SyncLogs.status.in_([TaskStatus.SCHEDULE, TaskStatus.RUNNING])], {"status": TaskStatus.CANCEL})
-            # docs = DocumentService.query(source_type=f"{conn.source}/{conn.id}")
-            # err = FileService.delete_docs([d.id for d in docs], tenant_id)
-            # if err:
-            #    errs.append(err)
         return "\n".join(errs)
 
     @classmethod

@@ -144,10 +144,26 @@ class PGVectorConnPool:
     def connection(self):
         """Context manager for getting and returning connections."""
         conn = self.get_conn()
+        success = False
         try:
             yield conn
+            success = True
+        except Exception:
+            try:
+                if not conn.closed:
+                    conn.rollback()
+            except Exception as rollback_err:
+                logger.warning(f"Rollback failed during connection cleanup: {rollback_err}")
+            raise
         finally:
-            self.put_conn(conn)
+            # Only put back if connection is open and block succeeded
+            if success and not conn.closed:
+                self.put_conn(conn)
+            else:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
 
     @contextmanager
     def cursor(self, commit=True):

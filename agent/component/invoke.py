@@ -120,7 +120,8 @@ class Invoke(ComponentBase, ABC):
                     raise ValueError(f"Unsupported HTTP method: {method}")
 
                 if not response.ok:
-                    raise Exception(f"HTTP {response.status_code}: {response.text}")
+                    truncated_text = (response.text[:1000] + "...") if len(response.text) > 1000 else response.text
+                    raise Exception(f"HTTP {response.status_code}: {truncated_text}")
 
                 self._handle_response(response)
                 return self.output("result")

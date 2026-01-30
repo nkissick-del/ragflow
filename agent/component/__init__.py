@@ -18,7 +18,7 @@ import importlib
 import inspect
 import logging
 from types import ModuleType
-from typing import Dict, Type
+from typing import Any, Dict, Optional, Type
 
 _package_path = os.path.dirname(__file__)
 __all_classes: Dict[str, Type] = {}
@@ -49,8 +49,6 @@ _import_submodules()
 __all__ = list(__all_classes.keys()) + ["__all_classes"]
 
 del _package_path, _import_submodules, _extract_classes_from_module
-
-from typing import Any, Optional
 
 
 def component_class(class_name: str) -> Optional[Type[Any]]:

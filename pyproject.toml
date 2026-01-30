@@ -96,7 +96,7 @@ storage-webdav = ["webdav4>=0.10.0"]
 # =============================================================================
 vectorstore-elasticsearch = ["elasticsearch-dsl==8.12.0"]
 vectorstore-opensearch = ["opensearch-py==2.7.1"]
-vectorstore-infinity = ["infinity-sdk==0.7.0-dev2"]  # 0.7.0-dev2 is required for latest gRPC features; revisit once stable release is available
+vectorstore-infinity = ["infinity-sdk==0.7.0-dev2"]  # 0.7.0-dev2 required for latest gRPC; revisit once 0.7.0 stable is available (as of Jan 2026, 0.6.15 is latest stable)
 vectorstore-postgres = ["psycopg2-binary>=2.9.11"]
 vectorstore-oceanbase = ["pyobvector==0.2.22"]
 

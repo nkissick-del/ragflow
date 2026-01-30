@@ -94,17 +94,19 @@ class WebDAVConnector(LoadConnector, PollConnector):
                 if modified.tzinfo is None:
                     modified = modified.replace(tzinfo=timezone.utc)
             elif isinstance(modified_time, str):
-                # Try RFC 2822
-                modified = email.utils.parsedate_to_datetime(modified_time)
-                if modified:
+                try:
+                    # Try RFC 2822
+                    modified = email.utils.parsedate_to_datetime(modified_time)
                     if modified.tzinfo:
                         modified = modified.astimezone(timezone.utc)
                     else:
                         modified = modified.replace(tzinfo=timezone.utc)
-                else:
+                except (ValueError, TypeError):
                     # Try ISO 8601
                     try:
                         modified = datetime.fromisoformat(modified_time.replace("Z", "+00:00"))
+                        if modified.tzinfo is None:
+                            modified = modified.replace(tzinfo=timezone.utc)
                     except (ValueError, TypeError):
                         logging.warning(f"Could not parse modified time for {item_path}: {modified_time}")
                         modified = datetime.now(timezone.utc)

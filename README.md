@@ -326,7 +326,8 @@ RAGFlow supports flexible dependency configurations for faster builds and smalle
 | With S3-compatible storage (e.g., Garage, AWS) + deepdoc | `db-postgres,storage-s3,vectorstore-elasticsearch,deepdoc` |
 | Custom selection | `docling-sidecar,llm-anthropic,observability` |
 
-The `full-lite` option is a recommended balance of features and image size. It includes all LLM providers, integrations, web search tools, GraphRAG, and agent capabilities, but excludes the heavy `deepdoc` parsing suite (intended for use with Docling sidecar). It defaults to Elasticsearch/OpenSearch for document vectors, and uses PostgreSQL with pgvector to store vector embeddings for observability and telemetry features.
+
+The `full-lite` option is a recommended balance of features and image size. It includes all LLM providers, integrations, web search tools, GraphRAG, and agent capabilities, but excludes the heavy `deepdoc` parsing suite (intended for use with Docling sidecar). It defaults to Elasticsearch/OpenSearch for document vectors. Note that `full-lite` DOES NOT include the `observability` group by default; if you need pgvector-backed telemetry features, you must add it explicitly (e.g., `full-lite,observability`).
 
 ### Dependency Groups
 
@@ -351,7 +352,7 @@ The `full-lite` option is a recommended balance of features and image size. It i
 docker build -t ragflow:full .
 
 # Docling user (no deepdoc, smaller image)
-docker build --build-arg RAGFLOW_EXTRAS="db-postgres,storage-s3,vectorstore-elasticsearch" -t ragflow:docling .
+docker build --build-arg RAGFLOW_EXTRAS="docling-sidecar" -t ragflow:docling .
 
 # Custom selection
 docker build --build-arg RAGFLOW_EXTRAS="docling-sidecar,llm-anthropic,observability" -t ragflow:custom .

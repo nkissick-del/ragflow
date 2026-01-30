@@ -102,7 +102,9 @@ FULL_IMAGE="$IMAGE_NAME:$TAG"
 
 # Validate RAGFLOW_EXTRAS (comma-separated list of alphanumeric/underscore/dash identifiers)
 if [[ ! "$RAGFLOW_EXTRAS" =~ ^$|^([A-Za-z0-9_-]+)(,[A-Za-z0-9_-]+)*$ ]]; then
-  echo "Error: RAGFLOW_EXTRAS contains invalid characters. Only alphanumeric, underscores, dashes, and commas are allowed."
+  echo "Error: RAGFLOW_EXTRAS has an invalid structure or characters."
+  echo "Allowed: Comma-separated alphanumeric tokens (with '-' or '_')."
+  echo "Structure: No leading/trailing commas, no consecutive commas (e.g., 'llm-openai,observability')."
   exit 1
 fi
 

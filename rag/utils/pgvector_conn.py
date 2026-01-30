@@ -615,6 +615,7 @@ class PGVectorConnection(PGVectorConnectionBase):
                             except Exception as single_e:
                                 errors.append(f"{doc['id']}: {str(single_e)}")
                                 cur.execute("ROLLBACK TO SAVEPOINT sp_single")
+                        cur.execute("RELEASE SAVEPOINT sp_batch")
 
         except Exception as e:
             errors.append(str(e))

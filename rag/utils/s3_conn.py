@@ -166,16 +166,19 @@ class RAGFlowS3:
     @use_prefix_path
     @use_default_bucket
     def get(self, bucket, fnm, *args, **kwargs):
-        for _ in range(1):
+        max_retries = 10
+        for i in range(max_retries):
             try:
                 r = self.conn[0].get_object(Bucket=bucket, Key=fnm)
                 object_data = r["Body"].read()
                 return object_data
             except Exception:
-                logging.exception(f"fail get {bucket}/{fnm}")
-                self.__open__()
-                time.sleep(1)
-        return None
+                logging.exception(f"fail get {bucket}/{fnm} (attempt {i + 1}/{max_retries})")
+                if i < max_retries - 1:
+                    time.sleep(min(2**i, 30))
+                    self.__open__()
+                else:
+                    raise
 
     @use_prefix_path
     @use_default_bucket
@@ -192,16 +195,19 @@ class RAGFlowS3:
     @use_prefix_path
     @use_default_bucket
     def get_presigned_url(self, bucket, fnm, expires, *args, **kwargs):
-        for _ in range(10):
+        max_retries = 10
+        for i in range(max_retries):
             try:
                 r = self.conn[0].generate_presigned_url("get_object", Params={"Bucket": bucket, "Key": fnm}, ExpiresIn=expires)
 
                 return r
             except Exception:
-                logging.exception(f"fail get url {bucket}/{fnm}")
-                self.__open__()
-                time.sleep(1)
-        return None
+                logging.exception(f"fail get url {bucket}/{fnm} (attempt {i + 1}/{max_retries})")
+                if i < max_retries - 1:
+                    time.sleep(min(2**i, 30))
+                    self.__open__()
+                else:
+                    raise
 
     @use_default_bucket
     def rm_bucket(self, bucket, *args, **kwargs):

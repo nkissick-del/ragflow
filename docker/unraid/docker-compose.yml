@@ -28,13 +28,14 @@ services:
         hard: -1
     volumes:
       - /mnt/user/appdata/ragflow/elasticsearch:/usr/share/elasticsearch/data:rw
+      - ./.es_netrc:/tmp/.es_netrc:ro
     ports:
       - ${ES_PORT}:9200
     networks:
       - ragflow
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "curl -fs -u elastic:$$ELASTIC_PASSWORD http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s || exit 1"]
+      test: [ "CMD-SHELL", "curl -fs --netrc-file /tmp/.es_netrc http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s || exit 1" ]
       interval: 10s
       timeout: 10s
       retries: 5
@@ -45,8 +46,8 @@ services:
       net.unraid.docker.shell: "/bin/bash"
 
   minio:
-    image: minio/minio:latest
-    command: ["server", "--console-address", ":9001", "/data"]
+    image: minio/minio:RELEASE.2024-11-07T00-52-20Z
+    command: [ "server", "--console-address", ":9001", "/data" ]
     container_name: ragflow-minio
     environment:
       MINIO_ROOT_USER: ${MINIO_USER}
@@ -60,10 +61,10 @@ services:
       - /mnt/user/appdata/ragflow/minio:/data:rw
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
       interval: 10s
       timeout: 10s
-      retries: 120
+      retries: 15
     labels:
       net.unraid.docker.icon: "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/minio.png"
       net.unraid.docker.webui: "http://[IP]:${MINIO_PORT}"
@@ -72,16 +73,17 @@ services:
   redis:
     image: valkey/valkey:8
     container_name: ragflow-redis
-    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}", "--maxmemory", "512mb", "--maxmemory-policy", "allkeys-lru"]
+    command: [ "redis-server", "/usr/local/etc/redis/redis.conf" ]
     ports:
       - ${REDIS_PORT}:6379
     networks:
       - ragflow
     volumes:
       - /mnt/user/appdata/ragflow/redis:/data:rw
+      - ./redis.conf:/usr/local/etc/redis/redis.conf:ro
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli -a ${REDIS_PASSWORD} ping"]
+      test: [ "CMD-SHELL", "redis-cli -a ${REDIS_PASSWORD} ping" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -98,7 +100,7 @@ services:
       - net.ipv4.tcp_keepalive_probes=3
     env_file: .env
     container_name: ragflow-server
-    command: ["--enable-adminserver"]
+    command: [ "--enable-adminserver" ]
     mem_limit: ${RAGFLOW_MEM_LIMIT}
     depends_on:
       minio:
@@ -135,7 +137,7 @@ services:
       - DOC_ENGINE=${DOC_ENGINE}
       - SVR_HTTP_PORT=${SVR_HTTP_PORT}
       - TZ=${TZ}
-      - DOCLING_BASE_URL=${DOCLING_BASE_URL}:${DOCLING_PORT}
+      - DOCLING_BASE_URL=${DOCLING_BASE_URL}
       - DEVICE=${DEVICE}
     networks:
       - ragflow
@@ -154,7 +156,7 @@ services:
       net.unraid.docker.shell: "/bin/sh"
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9380/v1/system/healthz"]
+      test: [ "CMD", "curl", "-f", "http://localhost:9380/v1/system/healthz" ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -165,39 +167,41 @@ services:
           devices:
             - driver: nvidia
               count: all
-              capabilities: [gpu]
+              capabilities: [ gpu ]
 
   docling:
     image: ${DOCLING_IMAGE}
     container_name: ragflow-docling
+    runtime: nvidia
     ports:
       - ${DOCLING_PORT}:5001
     environment:
-      - PORT=${DOCLING_PORT}
+      - PORT=5001
       - DOCLING_SERVE_ENABLE_UI=${DOCLING_SERVE_ENABLE_UI}
       - DOCLING_SERVE_ALLOW_DOWNLOADS=${DOCLING_SERVE_ALLOW_DOWNLOADS}
       - DOCLING_SERVE_IMAGE_TO_TEXT_MODEL=${DOCLING_SERVE_IMAGE_TO_TEXT_MODEL}
       - DOCLING_SERVE_PICTURE_CLASSIFICATION_MODEL=${DOCLING_SERVE_PICTURE_CLASSIFICATION_MODEL}
+      - NVIDIA_VISIBLE_DEVICES=all
       - PUID=${PUID:-99}
       - PGID=${PGID:-100}
       - XDG_CACHE_HOME=/app/models/docling
       - EASYOCR_MODULE_PATH=/app/models/easyocr
       - HF_HOME=/app/models/huggingface
-    #  - TESSDATA_PREFIX=/app/models/tesseract/
+      #  - TESSDATA_PREFIX=/app/models/tesseract/
       - XDG_DATA_HOME=/app/models/.local/share
     volumes:
       - /mnt/user/appdata/ragflow/docling/models:/app/models
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      test: [ "CMD", "curl", "-f", "http://localhost:5001/health" ]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 60s
     mem_limit: ${DOCLING_MEM_LIMIT}
-    labels:    
-      - net.unraid.docker.icon= "https://raw.githubusercontent.com/DS4SD/docling/main/docs/assets/logo.png"
-      - net.unraid.docker.webui= "http://[IP]:${DOCLING_PORT}"
-      - net.unraid.docker.shell= "/bin/sh"
+    labels:
+      net.unraid.docker.icon: "https://raw.githubusercontent.com/DS4SD/docling/main/docs/assets/logo.png"
+      net.unraid.docker.webui: "http://[IP]:${DOCLING_PORT}"
+      net.unraid.docker.shell: "/bin/sh"
     profiles:
       - docling
     networks:

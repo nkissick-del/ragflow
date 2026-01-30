@@ -321,7 +321,7 @@ RAGFlow supports flexible dependency configurations for faster builds and smalle
 | Use Case | RAGFLOW_EXTRAS Value |
 |----------|---------------------|
 | Full (default) | `all` |
-| Full-lite (excludes deepdoc; includes LLMs, integrations, search, graphrag, observability with pgvector) | `full-lite` |
+| Full-lite (excludes deepdoc; includes LLMs, integrations, search, graphrag, observability with PostgreSQL pgvector support for vector embeddings) | `full-lite` |
 | Docling sidecar (minimal) | `db-postgres,storage-s3,vectorstore-elasticsearch` |
 | With S3-compatible storage (e.g., Garage, AWS) + deepdoc | `db-postgres,storage-s3,vectorstore-elasticsearch,deepdoc` |
 | Custom selection | `minimal,llm-anthropic,observability` |
@@ -330,12 +330,17 @@ RAGFlow supports flexible dependency configurations for faster builds and smalle
 
 | Group | Description |
 |-------|-------------|
+| `minimal` | Core dependencies required for all configurations |
 | `db-postgres` / `db-mysql` | Application database driver |
 | `storage-minio` / `storage-s3` / `storage-azure` | Object storage backend |
 | `vectorstore-elasticsearch` / `vectorstore-opensearch` | Vector database |
 | `deepdoc` | Built-in document processing (skip if using Docling) |
-| `llm-*` | LLM provider integrations |
-| `integrations-*` | Data source connectors |
+| `llm-*` | LLM provider integrations (e.g., `llm-openai`, `llm-azure`) |
+| `integrations-*` | Data source connectors (e.g., `integrations-postgres`, `integrations-s3`) |
+| `observability` | Monitoring and tracing integrations (includes pgvector support) |
+
+> [!NOTE]
+> `*` is a wildcard for provider or connector names (e.g., `llm-openai`, `integrations-postgres`) so you can include only the ones you need.
 
 ### Building with Custom Dependencies
 
@@ -366,9 +371,14 @@ docker build --build-arg RAGFLOW_EXTRAS="minimal,llm-anthropic,observability" -t
    **Option A: Shared Docker network (recommended for Docker Compose)**
    ```bash
    # Replace <network> with the network name found above (e.g., ragflow_default)
-   docker run --name docling --network <network> -p 5001:5001 ds4sd/docling-serve
+   docker run --name docling --network <network> ds4sd/docling-serve
    ```
-   Then set: `DOCLING_BASE_URL=http://docling:5001` in `.env`
+   > [!TIP]
+   > You can optionally add `-p 5001:5001` if you also need to access Docling from the host machine.
+
+   Then set `DOCLING_BASE_URL` in `.env`. You have two options:
+   - **Option 1 (Host only)**: `DOCLING_BASE_URL=http://docling` (The port `5001` must be mapped or accessible)
+   - **Option 2 (Host and Port)**: `DOCLING_BASE_URL=http://docling:5001` (Recommended for clarity and container-to-container resolution)
    
    **Option B: Host networking (simpler for development)**
    ```bash
@@ -377,8 +387,20 @@ docker build --build-arg RAGFLOW_EXTRAS="minimal,llm-anthropic,observability" -t
    Then set `DOCLING_BASE_URL` in `.env` based on your platform:
    - **Mac/Windows**: `DOCLING_BASE_URL=http://host.docker.internal:5001`
    - **Linux**: Check your `docker0` bridge IP via `ip addr show docker0` (commonly `172.17.0.1`), then set `DOCLING_BASE_URL=http://<docker0-ip>:5001`
+   
+   If you prefer to separate the port, you can use `DOCLING_BASE_URL=http://<ip>` and ensure the `DOCLING_PORT` variable (if supported by your docker-compose version) is set to `5001`.
 
-4. Set parser: `layout_recognizer: "Docling"` in service_conf.yaml.
+4. Set parser: `layout_recognizer: "Docling"` in [service_conf.yaml](./docker/service_conf.yaml.template). 
+
+   Add it under the `ragflow` section or a dedicated `recognizer` block for clarity:
+
+   ```yaml
+   ragflow:
+     # ... existing config ...
+     layout_recognizer: "Docling"
+   ```
+   
+   Refer to [service_conf.yaml.template](./docker/service_conf.yaml.template) for a full example of where to place configuration values.
 
 ## 🔨 Launch service from source for development
 

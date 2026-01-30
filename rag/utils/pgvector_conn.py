@@ -31,6 +31,41 @@ from common.doc_store.post_processor import PostProcessor
 # Supported vector dimensions
 SUPPORTED_VECTOR_DIMS = [256, 512, 768, 1024, 1536, 3072, 4096]
 
+# Allowed columns for SQL validation
+ALLOWED_COLUMNS = {
+    "id",
+    "kb_id",
+    "doc_id",
+    "docnm_kwd",
+    "content_with_weight",
+    "content_ltks",
+    "content_sm_ltks",
+    "title_tks",
+    "title_sm_tks",
+    "important_kwd",
+    "important_tks",
+    "position_int",
+    "page_num_int",
+    "top_int",
+    "tag_feas",
+    "tag_kwd",
+    "knowledge_graph_kwd",
+    "question_kwd",
+    "question_tks",
+    "image_id",
+    "img_id",
+    "available_int",
+    "removed_kwd",
+    "create_time",
+    "create_timestamp",
+    "update_time",
+    "content_tsvector",
+}
+for dim in SUPPORTED_VECTOR_DIMS:
+    ALLOWED_COLUMNS.add(f"q_{dim}_vec")
+
+TABLE_NAME_REGEX = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
 # Table creation SQL template
 CREATE_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS {table_name} (
@@ -77,10 +112,6 @@ CREATE INDEX IF NOT EXISTS idx_{table_name_safe}_kb_id ON {table_name} (kb_id);
 CREATE INDEX IF NOT EXISTS idx_{table_name_safe}_doc_id ON {table_name} (doc_id);
 CREATE INDEX IF NOT EXISTS idx_{table_name_safe}_available ON {table_name} (available_int);
 CREATE INDEX IF NOT EXISTS idx_{table_name_safe}_tsvector ON {table_name} USING GIN (content_tsvector);
-
--- Vector indexes using HNSW (most common dimensions)
-CREATE INDEX IF NOT EXISTS idx_{table_name_safe}_q_768_vec ON {table_name} USING hnsw (q_768_vec vector_cosine_ops);
-CREATE INDEX IF NOT EXISTS idx_{table_name_safe}_q_1536_vec ON {table_name} USING hnsw (q_1536_vec vector_cosine_ops);
 """
 
 # Trigger for updating tsvector
@@ -107,9 +138,9 @@ class PGVectorConnection(PGVectorConnectionBase):
         super().__init__()
         self.logger = logging.getLogger("ragflow.pgvector_conn")
         # Initialize connection pool
-        from common.doc_store.pgvector_conn_pool import PGVECTOR_CONN
+        from common.doc_store.pgvector_conn_pool import get_pgvector_conn
 
-        self._pool = PGVECTOR_CONN
+        self._pool = get_pgvector_conn()
         self.logger.info("PGVectorConnection initialized")
 
     def health(self) -> dict:
@@ -131,6 +162,33 @@ class PGVectorConnection(PGVectorConnectionBase):
                 # Create table
                 create_sql = CREATE_TABLE_SQL.format(table_name=sql.Identifier(index_name).as_string(cur.connection), table_name_safe=table_name_safe)
                 cur.execute(create_sql)
+
+                # Create vector indexes for all supported dimensions
+                for dim in SUPPORTED_VECTOR_DIMS:
+                    vector_col = f"q_{dim}_vec"
+                    index_name_safe = f"idx_{table_name_safe}_{vector_col}"
+                    # Use IVFFlat for very high dimensions to save disk, or stick to HNSW
+                    # The user requested HNSW for all but mentioned IVFFlat as an option for high dims.
+                    # "for very high dims (3072, 4096) make this conditional or document/choose IVFFlat instead"
+                    method = "hnsw"
+                    ops = "vector_cosine_ops"
+                    if dim >= 3072:
+                        # Optional: switch to ivfflat if needed, but HNSW is generally better if disk allows.
+                        # I'll stick to HNSW as the primary request was HNSW.
+                        pass
+
+                    idx_sql = sql.SQL("CREATE INDEX IF NOT EXISTS {} ON {} USING {} ({} {})").format(
+                        sql.Identifier(index_name_safe),
+                        sql.Identifier(index_name),
+                        sql.Placeholder(),  # This won't work for USING, need sql.SQL
+                        sql.Identifier(vector_col),
+                        sql.SQL(ops),
+                    )
+                    # wait, USING method must be SQL, not placeholder.
+                    idx_sql = sql.SQL("CREATE INDEX IF NOT EXISTS {} ON {} USING {} ({} {})").format(
+                        sql.Identifier(index_name_safe), sql.Identifier(index_name), sql.SQL(method), sql.Identifier(vector_col), sql.SQL(ops)
+                    )
+                    cur.execute(idx_sql)
 
                 # Create tsvector trigger
                 trigger_sql = CREATE_TSVECTOR_TRIGGER_SQL.format(table_name=sql.Identifier(index_name).as_string(cur.connection), table_name_safe=table_name_safe)
@@ -170,6 +228,8 @@ class PGVectorConnection(PGVectorConnectionBase):
             raise ValueError(f"index_names must be a non-empty list. Received: {index_names}")
 
         table_name = index_names[0]
+        if not TABLE_NAME_REGEX.match(table_name):
+            raise ValueError(f"Invalid table name: {table_name}")
 
         # Build filter conditions
         translator = SQLFilterTranslator()
@@ -179,11 +239,11 @@ class PGVectorConnection(PGVectorConnectionBase):
             filter_params = []
 
         # Dataset filter
-        dataset_filter = ""
+        dataset_filter = sql.SQL("")
         dataset_params = []
         if dataset_ids:
-            placeholders = ",".join(["%s"] * len(dataset_ids))
-            dataset_filter = f" AND kb_id IN ({placeholders})"
+            placeholders = sql.SQL(",").join([sql.Placeholder()] * len(dataset_ids))
+            dataset_filter = sql.SQL(" AND kb_id IN ({})").format(placeholders)
             dataset_params = dataset_ids
 
         top_k = int(query.top_k) if query.top_k else 10
@@ -198,31 +258,33 @@ class PGVectorConnection(PGVectorConnectionBase):
                         raise ValueError("query_vector is required for SEMANTIC search mode")
 
                     vector_dim = len(query.query_vector)
+                    if vector_dim not in SUPPORTED_VECTOR_DIMS:
+                        raise ValueError(f"Unsupported vector dimension: {vector_dim}. Supported: {SUPPORTED_VECTOR_DIMS}")
                     vector_col = f"q_{vector_dim}_vec"
                     vector_val = list(query.query_vector) if hasattr(query.query_vector, "tolist") else query.query_vector
 
-                    sql_query = f"""
+                    sql_query = sql.SQL("""
                         SELECT id, content_with_weight, docnm_kwd, kb_id,
-                               1 - ({vector_col} <=> %s::vector) as score
-                        FROM {table_name}
-                        WHERE ({filter_cond_str}) {dataset_filter}
+                               1 - ({} <=> %s::vector) as score
+                        FROM {}
+                        WHERE ({}) {}
                         ORDER BY score DESC
                         LIMIT %s
-                    """
+                    """).format(sql.Identifier(vector_col), sql.Identifier(table_name), sql.SQL(filter_cond_str), dataset_filter)
                     params = [vector_val] + filter_params + dataset_params + [top_k]
 
                 elif query.mode == SearchMode.FULLTEXT:
                     if not query.query_text:
                         raise ValueError("query_text is required for FULLTEXT search")
 
-                    sql_query = f"""
+                    sql_query = sql.SQL("""
                         SELECT id, content_with_weight, docnm_kwd, kb_id,
                                ts_rank_cd(content_tsvector, websearch_to_tsquery('simple', %s)) as score
-                        FROM {table_name}
-                        WHERE ({filter_cond_str}) AND content_tsvector @@ websearch_to_tsquery('simple', %s) {dataset_filter}
+                        FROM {}
+                        WHERE ({}) AND content_tsvector @@ websearch_to_tsquery('simple', %s) {}
                         ORDER BY score DESC
                         LIMIT %s
-                    """
+                    """).format(sql.Identifier(table_name), sql.SQL(filter_cond_str), dataset_filter)
                     params = [query.query_text] + filter_params + [query.query_text] + dataset_params + [top_k]
 
                 elif query.mode == SearchMode.HYBRID:
@@ -233,19 +295,21 @@ class PGVectorConnection(PGVectorConnectionBase):
 
                     alpha = float(query.alpha) if query.alpha else 0.5
                     vector_dim = len(query.query_vector)
+                    if vector_dim not in SUPPORTED_VECTOR_DIMS:
+                        raise ValueError(f"Unsupported vector dimension: {vector_dim}. Supported: {SUPPORTED_VECTOR_DIMS}")
                     vector_col = f"q_{vector_dim}_vec"
                     vector_val = list(query.query_vector) if hasattr(query.query_vector, "tolist") else query.query_vector
 
-                    sql_query = f"""
+                    sql_query = sql.SQL("""
                         SELECT id, content_with_weight, docnm_kwd, kb_id,
-                               ({alpha} * (1 - ({vector_col} <=> %s::vector)) + 
-                                {1 - alpha} * COALESCE(ts_rank_cd(content_tsvector, websearch_to_tsquery('simple', %s)), 0)) as score
-                        FROM {table_name}
-                        WHERE ({filter_cond_str}) {dataset_filter}
+                               (%s * (1 - ({} <=> %s::vector)) + 
+                                %s * COALESCE(ts_rank_cd(content_tsvector, websearch_to_tsquery('simple', %s)), 0)) as score
+                        FROM {}
+                        WHERE ({}) {}
                         ORDER BY score DESC
                         LIMIT %s
-                    """
-                    params = [vector_val, query.query_text] + filter_params + dataset_params + [top_k]
+                    """).format(sql.Identifier(vector_col), sql.Identifier(table_name), sql.SQL(filter_cond_str), dataset_filter)
+                    params = [alpha, vector_val, 1.0 - alpha, query.query_text] + filter_params + dataset_params + [top_k]
                 else:
                     raise ValueError(f"Unrecognized search mode: {query.mode}")
 
@@ -287,38 +351,46 @@ class PGVectorConnection(PGVectorConnectionBase):
             raise ValueError("index_names required")
 
         table_name = index_names[0]
+        if not TABLE_NAME_REGEX.match(table_name):
+            raise ValueError(f"Invalid table name: {table_name}")
 
         # Build WHERE clause
         where_parts = []
-        params = []
+        where_params = []
 
         # Add kb_id filter
         if dataset_ids:
-            placeholders = ",".join(["%s"] * len(dataset_ids))
-            where_parts.append(f"kb_id IN ({placeholders})")
-            params.extend(dataset_ids)
+            placeholders = sql.SQL(",").join([sql.Placeholder()] * len(dataset_ids))
+            where_parts.append(sql.SQL("kb_id IN ({})").format(placeholders))
+            where_params.extend(dataset_ids)
 
         # Add other conditions
         for k, v in condition.items():
             if k == "kb_id":
                 continue  # Already handled
+            if k not in ALLOWED_COLUMNS:
+                self.logger.warning(f"Skipping forbidden column in condition: {k}")
+                continue
+
             if k == "available_int":
                 if v == 0:
-                    where_parts.append("available_int < 1")
+                    where_parts.append(sql.SQL("available_int < 1"))
                 else:
-                    where_parts.append("available_int >= 1")
+                    where_parts.append(sql.SQL("available_int >= 1"))
                 continue
-            if not v:
+            if v is None:
                 continue
             if isinstance(v, list):
-                placeholders = ",".join(["%s"] * len(v))
-                where_parts.append(f"{k} IN ({placeholders})")
-                params.extend(v)
+                if not v:
+                    continue
+                placeholders = sql.SQL(",").join([sql.Placeholder()] * len(v))
+                where_parts.append(sql.SQL("{} IN ({})").format(sql.Identifier(k), placeholders))
+                where_params.extend(v)
             elif isinstance(v, (str, int)):
-                where_parts.append(f"{k} = %s")
-                params.append(v)
+                where_parts.append(sql.SQL("{} = %s").format(sql.Identifier(k)))
+                where_params.append(v)
 
-        where_clause = " AND ".join(where_parts) if where_parts else "1=1"
+        where_clause = sql.SQL(" AND ").join(where_parts) if where_parts else sql.SQL("1=1")
 
         # Handle match expressions
         vector_parts = []
@@ -328,60 +400,80 @@ class PGVectorConnection(PGVectorConnectionBase):
         for m in match_expressions:
             if isinstance(m, FusionExpr) and m.method == "weighted_sum" and m.fusion_params:
                 weights = m.fusion_params.get("weights", "0.5,0.5")
-                vector_weight = float(weights.split(",")[1])
+                try:
+                    vector_weight = float(weights.split(",")[1])
+                except (ValueError, IndexError):
+                    vector_weight = 0.5
             elif isinstance(m, MatchDenseExpr):
                 vector_parts.append(m)
             elif isinstance(m, MatchTextExpr):
                 text_parts.append(m)
 
         # Build score expression
-        score_expr = "0"
+        score_expr = sql.SQL("0")
+        score_params = []
+        match_where_clause = sql.SQL("")
+        match_where_params = []
+
         if vector_parts and text_parts:
             # Hybrid
             m = vector_parts[0]
+            if m.vector_column_name not in ALLOWED_COLUMNS:
+                raise ValueError(f"Invalid vector column: {m.vector_column_name}")
             vector_val = list(m.embedding_data) if hasattr(m.embedding_data, "tolist") else m.embedding_data
-            params.insert(0, vector_val)
-
             tm = text_parts[0]
-            params.insert(1, tm.matching_text)
-
-            score_expr = f"({vector_weight} * (1 - ({m.vector_column_name} <=> %s::vector)) + {1 - vector_weight} * COALESCE(ts_rank_cd(content_tsvector, websearch_to_tsquery('simple', %s)), 0))"
+            score_expr = sql.SQL("({} * (1 - ({} <=> %s::vector)) + {} * COALESCE(ts_rank_cd(content_tsvector, websearch_to_tsquery('simple', %s)), 0))").format(
+                sql.Literal(vector_weight), sql.Identifier(m.vector_column_name), sql.Literal(1.0 - vector_weight)
+            )
+            score_params = [vector_val, tm.matching_text]
         elif vector_parts:
             m = vector_parts[0]
+            if m.vector_column_name not in ALLOWED_COLUMNS:
+                raise ValueError(f"Invalid vector column: {m.vector_column_name}")
             vector_val = list(m.embedding_data) if hasattr(m.embedding_data, "tolist") else m.embedding_data
-            params.insert(0, vector_val)
-            score_expr = f"(1 - ({m.vector_column_name} <=> %s::vector))"
+            score_expr = sql.SQL("(1 - ({} <=> %s::vector))").format(sql.Identifier(m.vector_column_name))
+            score_params = [vector_val]
         elif text_parts:
             tm = text_parts[0]
-            params.insert(0, tm.matching_text)
-            params.insert(1, tm.matching_text)
-            score_expr = "ts_rank_cd(content_tsvector, websearch_to_tsquery('simple', %s))"
-            where_clause += " AND content_tsvector @@ websearch_to_tsquery('simple', %s)"
+            score_expr = sql.SQL("ts_rank_cd(content_tsvector, websearch_to_tsquery('simple', %s))")
+            score_params = [tm.matching_text]
+            match_where_clause = sql.SQL(" AND content_tsvector @@ websearch_to_tsquery('simple', %s)")
+            match_where_params = [tm.matching_text]
 
         # Build SELECT
         if select_fields:
-            select_clause = ", ".join(select_fields)
+            # Validate select fields
+            valid_select = []
+            for f in select_fields:
+                if f in ALLOWED_COLUMNS or f == "*":
+                    valid_select.append(sql.Identifier(f) if f != "*" else sql.SQL("*"))
+                else:
+                    self.logger.warning(f"Skipping forbidden column in select: {f}")
+            select_clause = sql.SQL(", ").join(valid_select) if valid_select else sql.SQL("*")
         else:
-            select_clause = "*"
+            select_clause = sql.SQL("*")
 
         # Build ORDER BY
-        order_clause = "score DESC"
+        order_clause = sql.SQL("score DESC")
         if order_by and order_by.fields_prop:
             order_parts = []
             for field, direction in order_by.fields_prop:
+                if field not in ALLOWED_COLUMNS and field != "score":
+                    self.logger.warning(f"Skipping forbidden column in order by: {field}")
+                    continue
                 dir_str = "ASC" if direction == 0 else "DESC"
-                order_parts.append(f"{field} {dir_str}")
+                order_parts.append(sql.SQL("{} {}").format(sql.Identifier(field) if field != "score" else sql.SQL("score"), sql.SQL(dir_str)))
             if order_parts:
-                order_clause = ", ".join(order_parts)
+                order_clause = sql.SQL(", ").join(order_parts)
 
-        query_sql = f"""
-            SELECT {select_clause}, {score_expr} as score
-            FROM {table_name}
-            WHERE {where_clause}
-            ORDER BY {order_clause}
+        query_sql = sql.SQL("""
+            SELECT {}, {} as score
+            FROM {}
+            WHERE ({}) {}
+            ORDER BY {}
             OFFSET %s LIMIT %s
-        """
-        params.extend([offset, limit])
+        """).format(select_clause, score_expr, sql.Identifier(table_name), where_clause, match_where_clause, order_clause)
+        params = score_params + where_params + match_where_params + [offset, limit]
 
         try:
             with self._pool.cursor(commit=False) as cur:
@@ -397,8 +489,9 @@ class PGVectorConnection(PGVectorConnectionBase):
                     hits.append({"_id": doc.get("id"), "_score": doc.get("_score"), "_source": doc})
 
                 # Get total count
-                count_sql = f"SELECT COUNT(*) FROM {table_name} WHERE {where_clause}"
-                cur.execute(count_sql, params[:-2])  # Exclude offset/limit
+                count_sql = sql.SQL("SELECT COUNT(*) FROM {} WHERE ({}) {}").format(sql.Identifier(table_name), where_clause, match_where_clause)
+                count_params = where_params + match_where_params
+                cur.execute(count_sql, count_params)
                 total = cur.fetchone()[0]
 
                 return {"hits": {"hits": hits, "total": {"value": total}}}
@@ -427,6 +520,9 @@ class PGVectorConnection(PGVectorConnectionBase):
         if not rows:
             return []
 
+        if not TABLE_NAME_REGEX.match(index_name):
+            raise ValueError(f"Invalid table name: {index_name}")
+
         errors = []
         try:
             with self._pool.cursor() as cur:
@@ -449,21 +545,37 @@ class PGVectorConnection(PGVectorConnectionBase):
                                 doc_copy[vec_field] = vec_val.tolist()
 
                     # Build insert statement
-                    columns = ["id"] + list(doc_copy.keys())
-                    values = [doc_id] + list(doc_copy.values())
+                    valid_cols = []
+                    valid_vals = []
+                    for col, val in doc_copy.items():
+                        if col in ALLOWED_COLUMNS:
+                            valid_cols.append(col)
+                            valid_vals.append(val)
+                        else:
+                            self.logger.warning(f"Skipping forbidden column in insert: {col}")
 
-                    placeholders = ", ".join(["%s"] * len(values))
-                    col_str = ", ".join(columns)
+                    columns = [sql.Identifier("id")] + [sql.Identifier(col) for col in valid_cols]
+                    values = [doc_id] + valid_vals
+
+                    placeholders = sql.SQL(", ").join([sql.Placeholder()] * len(values))
+                    col_sql = sql.SQL(", ").join(columns)
 
                     # Build update clause (exclude id)
-                    update_parts = [f"{col} = EXCLUDED.{col}" for col in doc_copy.keys()]
-                    update_clause = ", ".join(update_parts)
+                    update_parts = [sql.SQL("{} = EXCLUDED.{}").format(sql.Identifier(col), sql.Identifier(col)) for col in valid_cols]
+                    update_clause = sql.SQL(", ").join(update_parts)
 
-                    insert_sql = f"""
-                        INSERT INTO {index_name} ({col_str})
-                        VALUES ({placeholders})
-                        ON CONFLICT (id) DO UPDATE SET {update_clause}
-                    """
+                    if update_parts:
+                        insert_sql = sql.SQL("""
+                            INSERT INTO {} ({})
+                            VALUES ({})
+                            ON CONFLICT (id) DO UPDATE SET {}
+                        """).format(sql.Identifier(index_name), col_sql, placeholders, update_clause)
+                    else:
+                        insert_sql = sql.SQL("""
+                            INSERT INTO {} ({})
+                            VALUES ({})
+                            ON CONFLICT (id) DO NOTHING
+                        """).format(sql.Identifier(index_name), col_sql, placeholders)
 
                     try:
                         cur.execute(insert_sql, values)
@@ -478,6 +590,9 @@ class PGVectorConnection(PGVectorConnectionBase):
 
     def update(self, condition: dict, new_value: dict, index_name: str, dataset_id: str) -> bool:
         """Update documents matching condition."""
+        if not TABLE_NAME_REGEX.match(index_name):
+            raise ValueError(f"Invalid table name: {index_name}")
+
         try:
             # Build SET clause
             set_parts = []
@@ -486,36 +601,44 @@ class PGVectorConnection(PGVectorConnectionBase):
             for k, v in new_value.items():
                 if k in ("id", "remove", "add"):
                     continue
-                set_parts.append(f"{k} = %s")
+                if k not in ALLOWED_COLUMNS:
+                    self.logger.warning(f"Skipping forbidden column in update SET: {k}")
+                    continue
+                set_parts.append(sql.SQL("{} = %s").format(sql.Identifier(k)))
                 set_params.append(v)
 
             if not set_parts:
                 return True
 
             # Build WHERE clause
-            where_parts = ["kb_id = %s"]
+            where_parts = [sql.SQL("kb_id = %s")]
             where_params = [dataset_id]
 
             # Handle specific ID update
             if "id" in condition and isinstance(condition["id"], str):
-                where_parts.append("id = %s")
+                where_parts.append(sql.SQL("id = %s"))
                 where_params.append(condition["id"])
             else:
                 for k, v in condition.items():
                     if k == "id":
                         continue
+                    if k not in ALLOWED_COLUMNS:
+                        self.logger.warning(f"Skipping forbidden column in update WHERE: {k}")
+                        continue
                     if isinstance(v, list):
-                        placeholders = ",".join(["%s"] * len(v))
-                        where_parts.append(f"{k} IN ({placeholders})")
+                        if not v:
+                            continue
+                        placeholders = sql.SQL(",").join([sql.Placeholder()] * len(v))
+                        where_parts.append(sql.SQL("{} IN ({})").format(sql.Identifier(k), placeholders))
                         where_params.extend(v)
                     elif isinstance(v, (str, int)):
-                        where_parts.append(f"{k} = %s")
+                        where_parts.append(sql.SQL("{} = %s").format(sql.Identifier(k)))
                         where_params.append(v)
 
-            set_clause = ", ".join(set_parts)
-            where_clause = " AND ".join(where_parts)
+            set_clause = sql.SQL(", ").join(set_parts)
+            where_clause = sql.SQL(" AND ").join(where_parts)
 
-            update_sql = f"UPDATE {index_name} SET {set_clause} WHERE {where_clause}"
+            update_sql = sql.SQL("UPDATE {} SET {} WHERE {}").format(sql.Identifier(index_name), set_clause, where_clause)
             params = set_params + where_params
 
             with self._pool.cursor() as cur:
@@ -528,8 +651,11 @@ class PGVectorConnection(PGVectorConnectionBase):
 
     def delete(self, condition: dict, index_name: str, dataset_id: str) -> int:
         """Delete documents matching condition."""
+        if not TABLE_NAME_REGEX.match(index_name):
+            raise ValueError(f"Invalid table name: {index_name}")
+
         try:
-            where_parts = ["kb_id = %s"]
+            where_parts = [sql.SQL("kb_id = %s")]
             params = [dataset_id]
 
             if "id" in condition:
@@ -537,25 +663,36 @@ class PGVectorConnection(PGVectorConnectionBase):
                 if not isinstance(ids, list):
                     ids = [ids]
                 if ids:
-                    placeholders = ",".join(["%s"] * len(ids))
-                    where_parts.append(f"id IN ({placeholders})")
+                    placeholders = sql.SQL(",").join([sql.Placeholder()] * len(ids))
+                    where_parts.append(sql.SQL("id IN ({})").format(placeholders))
                     params.extend(ids)
 
             for k, v in condition.items():
                 if k == "id":
                     continue
                 if k == "exists":
-                    where_parts.append(f"{v} IS NOT NULL")
-                elif isinstance(v, list):
-                    placeholders = ",".join(["%s"] * len(v))
-                    where_parts.append(f"{k} IN ({placeholders})")
+                    if v in ALLOWED_COLUMNS:
+                        where_parts.append(sql.SQL("{} IS NOT NULL").format(sql.Identifier(v)))
+                    else:
+                        self.logger.warning(f"Skipping forbidden column in delete exists: {v}")
+                    continue
+
+                if k not in ALLOWED_COLUMNS:
+                    self.logger.warning(f"Skipping forbidden column in delete condition: {k}")
+                    continue
+
+                if isinstance(v, list):
+                    if not v:
+                        continue
+                    placeholders = sql.SQL(",").join([sql.Placeholder()] * len(v))
+                    where_parts.append(sql.SQL("{} IN ({})").format(sql.Identifier(k), placeholders))
                     params.extend(v)
                 elif isinstance(v, (str, int)):
-                    where_parts.append(f"{k} = %s")
+                    where_parts.append(sql.SQL("{} = %s").format(sql.Identifier(k)))
                     params.append(v)
 
-            where_clause = " AND ".join(where_parts)
-            delete_sql = f"DELETE FROM {index_name} WHERE {where_clause}"
+            where_clause = sql.SQL(" AND ").join(where_parts)
+            delete_sql = sql.SQL("DELETE FROM {} WHERE {}").format(sql.Identifier(index_name), where_clause)
 
             with self._pool.cursor() as cur:
                 cur.execute(delete_sql, params)

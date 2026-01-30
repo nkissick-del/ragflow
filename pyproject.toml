@@ -189,6 +189,8 @@ search-all = [
 # GRAPH RAG
 # =============================================================================
 graphrag = [
+    # Pinned fork used for build system modernization (uv/PEP 621) matching RAGFlow's architecture.
+    # TODO: Revisit once upstream graspologic adopts modern build standards.
     "graspologic @ git+https://github.com/yuzhichang/graspologic.git@38e680cab72bc9fb68a7992c3bcc2d53b24e42fd",
     "ranx==0.3.20",
     "markdown-to-json==2.1.1",

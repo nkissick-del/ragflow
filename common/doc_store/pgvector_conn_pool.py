@@ -16,6 +16,7 @@
 
 import logging
 import os
+import threading
 from contextlib import contextmanager
 from psycopg2 import pool
 
@@ -31,16 +32,21 @@ class PGVectorConnPool:
 
     _instance = None
     _pool = None
+    _lock = threading.Lock()
 
     def __new__(cls):
         if cls._instance is None:
-            cls._instance = super().__new__(cls)
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
         return cls._instance
 
     def __init__(self):
         if PGVectorConnPool._pool is not None:
             return
-        self._init_pool()
+        with PGVectorConnPool._lock:
+            if PGVectorConnPool._pool is None:
+                self._init_pool()
 
     def _init_pool(self):
         """Initialize the connection pool from settings."""
@@ -78,7 +84,9 @@ class PGVectorConnPool:
     def get_conn(self):
         """Get a connection from the pool."""
         if PGVectorConnPool._pool is None:
-            self._init_pool()
+            with PGVectorConnPool._lock:
+                if PGVectorConnPool._pool is None:
+                    self._init_pool()
         return PGVectorConnPool._pool.getconn()
 
     def put_conn(self, conn):
@@ -117,5 +125,6 @@ class PGVectorConnPool:
             PGVectorConnPool._pool = None
 
 
-# Singleton instance
-PGVECTOR_CONN = PGVectorConnPool()
+def get_pgvector_conn():
+    """Factory function for PGVectorConnPool singleton."""
+    return PGVectorConnPool()

@@ -73,11 +73,14 @@ pgvector:
   port: ${PGVECTOR_PORT:-5432}
   max_connections: 100
   stale_timeout: 30
+# S3 configuration. If access_key, secret_key, or endpoint_url are empty, 
+# the S3 client will attempt to use other authentication methods (like IAM roles) 
+# or certain features might be disabled depending on the storage implementation.
 s3:
-  access_key: '${S3_ACCESS_KEY}'
-  secret_key: '${S3_SECRET_KEY}'
+  access_key: '${S3_ACCESS_KEY:-}'
+  secret_key: '${S3_SECRET_KEY:-}'
   region: '${S3_REGION:-default}'
-  endpoint_url: '${S3_ENDPOINT_URL}'
+  endpoint_url: '${S3_ENDPOINT_URL:-}'
   bucket: '${S3_BUCKET:-ragflow}'
   prefix_path: '${S3_PREFIX_PATH:-}'
   signature_version: '${S3_SIGNATURE_VERSION:-v4}'

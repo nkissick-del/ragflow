@@ -163,13 +163,12 @@ integrations-jira = ["jira==3.10.5"]
 integrations-slack = ["slack-sdk==3.37.0"]
 integrations-github = ["pygithub>=2.8.1"]
 integrations-confluence = ["atlassian-python-api==4.0.7"]
-integrations-all = ["integrations-jira", "integrations-slack", "integrations-github", "integrations-confluence"]
+integrations-all = ["ragflow[integrations-jira]", "ragflow[integrations-slack]", "ragflow[integrations-github]", "ragflow[integrations-confluence]"]
 
 # Search and crawl
 search-web = ["duckduckgo-search>=7.2.0", "tavily-python==0.5.1"]
 search-crawl = ["Crawl4AI>=0.4.0", "selenium-wire==5.1.0", "webdriver-manager==4.0.1"]
-search-all = ["search-web", "search-crawl"]
-
+search-all = ["ragflow[search-web]", "ragflow[search-crawl]"]
 # ML and embeddings
 ml-embeddings = ["infinity-sdk==0.7.0-dev2", "infinity-emb>=0.0.66"]
 ml-onnx = ["onnxruntime==1.23.2", "onnxruntime-gpu==1.23.2"]

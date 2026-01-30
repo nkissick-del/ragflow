@@ -16,6 +16,7 @@
 
 import importlib
 import inspect
+import logging
 import pkgutil
 from pathlib import Path
 from types import ModuleType
@@ -41,7 +42,7 @@ def _import_submodules() -> None:
             module = importlib.import_module(mod_name)
             _extract_classes_from_module(module)  # noqa: F821
         except ImportError as e:
-            print(f"Warning: Failed to import module {mod_name}: {e}")
+            logging.debug(f"Skipping module {mod_name} due to missing dependencies: {e}")
 
 
 def _extract_classes_from_module(module: ModuleType) -> None:

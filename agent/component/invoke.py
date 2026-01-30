@@ -24,7 +24,6 @@ import requests
 
 from agent.component.base import ComponentBase, ComponentParamBase
 from common.connection_utils import timeout
-from deepdoc.parser import HtmlParser
 
 
 class InvokeParam(ComponentParamBase):
@@ -56,6 +55,8 @@ class Invoke(ComponentBase, ABC):
 
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 3)))
     def _invoke(self, **kwargs):
+        from deepdoc.parser import HtmlParser
+
         if self.check_if_canceled("Invoke processing"):
             return
 

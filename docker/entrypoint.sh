@@ -159,40 +159,45 @@ CONF_DIR="/ragflow/conf"
 TEMPLATE_FILE="${CONF_DIR}/service_conf.yaml.template"
 CONF_FILE="${CONF_DIR}/service_conf.yaml"
 
+if [ ! -f "${TEMPLATE_FILE}" ]; then
+    echo "ERROR: Template file ${TEMPLATE_FILE} not found!" >&2
+    exit 1
+fi
+
+echo "Generating ${CONF_FILE} from template..."
 rm -f "${CONF_FILE}"
 DEF_ENV_VALUE_PATTERN="\$\{([^:]+):-([^}]+)\}"
+
 while IFS= read -r line || [[ -n "$line" ]]; do
     if [[ "$line" =~ $DEF_ENV_VALUE_PATTERN ]]; then
         varname="${BASH_REMATCH[1]}"
         default="${BASH_REMATCH[2]}"
 
         if [ -n "${!varname}" ]; then
-            set +x
-            eval "echo \"$line"\" >> "${CONF_FILE}"
-            if [[ "${DEBUG_ENTRYPOINT}" == "true" ]]; then set -x; fi
+            # Use a safer eval approach to handle quotes in lines
+            eval "echo \"${line//\"/\\\"}\"" >> "${CONF_FILE}"
         else
             echo "$line" | sed -E "s/\\\$\{[^:]+:-([^}]+)\}/\1/g" >> "${CONF_FILE}"
         fi
     else
-        set +x
-        eval "echo \"$line\"" >> "${CONF_FILE}"
-        if [[ "${DEBUG_ENTRYPOINT}" == "true" ]]; then set -x; fi
+        eval "echo \"${line//\"/\\\"}\"" >> "${CONF_FILE}"
     fi
 done < "${TEMPLATE_FILE}"
+
+if [ ! -f "${CONF_FILE}" ]; then
+    echo "ERROR: Failed to generate ${CONF_FILE}!" >&2
+    exit 1
+fi
+echo "Configuration generated successfully."
 
 export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu/"
 PY=python3
 
 # Ensure database exists before any service accesses it
 echo "Ensuring database exists..."
-db_init_output=$("$PY" -c "from api.db.connection import ensure_database_exists; ensure_database_exists()" 2>&1)
-db_init_status=$?
-if [ $db_init_status -ne 0 ]; then
-  echo "Database initialization failed running: $PY -c 'from api.db.connection import ensure_database_exists; ensure_database_exists()' (exit $db_init_status)" >&2
-  if [ -n "$db_init_output" ]; then
-    echo "$db_init_output" >&2
-  fi
-  exit $db_init_status
+if ! "$PY" -u -c "from api.db.connection import ensure_database_exists; ensure_database_exists()"; then
+  echo "Database initialization failed. Check connection settings and credentials." >&2
+  exit 1
 fi
 
 # ------------------------------------------------------------------------------

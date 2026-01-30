@@ -214,6 +214,8 @@ COPY conf conf
 # Copy deepdoc if it exists (not needed for full-lite mode which uses Docling sidecar)
 COPY deepdo[c] deepdoc/
 COPY rag rag
+# Ensure deepdoc is available as a top-level package via symlink if it was copied as part of rag
+RUN if [ -d "rag/parsers/deepdoc" ] && [ ! -d "deepdoc" ]; then ln -s rag/parsers/deepdoc deepdoc; fi
 COPY agent agent
 COPY graphrag graphrag
 COPY pyproject.toml uv.lock ./

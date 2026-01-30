@@ -35,6 +35,13 @@ dependencies = [
     "captcha>=0.7.1",
     "editdistance==0.8.1",
     "aiosmtplib>=5.0.0",
+    "chardet>=5.2.0",
+    "numpy>=1.26.0",
+    "Pillow>=10.4.0",
+
+    # Database ORM
+    "peewee>=3.17.1",
+    "infinity-sdk==0.7.0-dev2",
 
     # Required services (valkey is the Python client library that talks to Redis sidecar)
     # Used for: caching, rate limiting, task coordination, health checks
@@ -92,7 +99,7 @@ storage-webdav = ["webdav4>=0.10.0"]
 # =============================================================================
 vectorstore-elasticsearch = ["elasticsearch-dsl==8.12.0"]
 vectorstore-opensearch = ["opensearch-py==2.7.1"]
-vectorstore-infinity = ["infinity-sdk==0.7.0-dev2"]
+vectorstore-infinity = []
 vectorstore-postgres = ["psycopg2-binary>=2.9.11"]
 vectorstore-oceanbase = ["pyobvector==0.2.22"]
 

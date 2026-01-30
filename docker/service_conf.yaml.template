@@ -50,7 +50,7 @@ seekdb:
 redis:
   db: 1
   username: '${REDIS_USERNAME:-}'
-  password: '${REDIS_PASSWORD:-infini_rag_flow}'
+  password: '${REDIS_PASSWORD:-}'
   host: '${REDIS_HOST:-redis}:6379'
 user_default_llm:
   default_models:

@@ -683,6 +683,16 @@ plugins/
     └── tavily.py
 ```
 
+##### Pilot Project: Paperless-ngx Connector (Priority)
+To test the Phase 3 architecture, we will implement the **Paperless-ngx** integration as the first official "Data Source Plugin". This serves as a real-world test for the discovery and registration mechanisms.
+
+**Key Requirements:**
+- **Plugin Type:** `DataSourcePlugin`
+- **Capability:** Incremental sync from Paperless-ngx API
+- **Dependencies:** None (uses standard `requests`)
+- **Metadata:** Full mapping of Paperless tags/correspondents to RAGFlow `meta_fields`
+- **Parsing:** Defaults to **Semantic Parser** (Docling) to preserve document structure extracted by Paperless.
+
 ##### Example Plugin Implementation
 
 ```python
@@ -755,6 +765,7 @@ def init_plugins():
 6. **Add plugin configuration** system
 7. **Create plugin documentation** for contributors
 8. **Add plugin testing framework**
+9. **Pilot: Implement Paperless-ngx as a Data Source Plugin**
 
 #### Deliverables
 - ✅ Plugin registry and discovery system

@@ -17,6 +17,7 @@
 
 # Standard library imports
 import base64
+import logging
 import re
 import shutil
 import subprocess
@@ -25,8 +26,8 @@ import tempfile
 import threading
 from io import BytesIO
 
-import pdfplumber
-from PIL import Image
+
+# Local imports
 
 # Local imports
 from api.constants import IMG_BASE64_PREFIX
@@ -48,7 +49,9 @@ def filename_type(filename):
     if re.match(r".*\.(wav|flac|ape|alac|wavpack|wv|mp3|aac|ogg|vorbis|opus)$", filename):
         return FileType.AURAL.value
 
-    if re.match(r".*\.(jpg|jpeg|png|tif|gif|pcx|tga|exif|fpx|svg|psd|cdr|pcd|dxf|ufo|eps|ai|raw|WMF|webp|avif|apng|icon|ico|mpg|mpeg|avi|rm|rmvb|mov|wmv|asf|dat|asx|wvx|mpe|mpa|mp4|avi|mkv)$", filename):
+    if re.match(
+        r".*\.(jpg|jpeg|png|tif|gif|pcx|tga|exif|fpx|svg|psd|cdr|pcd|dxf|ufo|eps|ai|raw|WMF|webp|avif|apng|icon|ico|mpg|mpeg|avi|rm|rmvb|mov|wmv|asf|dat|asx|wvx|mpe|mpa|mp4|avi|mkv)$", filename
+    ):
         return FileType.VISUAL.value
 
     return FileType.OTHER.value
@@ -60,6 +63,12 @@ def thumbnail_img(filename, blob):
     """
     filename = filename.lower()
     if re.match(r".*\.pdf$", filename):
+        try:
+            import pdfplumber
+        except ImportError:
+            logging.error("pdfplumber is not installed. PDF thumbnails will not be generated.")
+            return None
+
         with sys.modules[LOCK_KEY_pdfplumber]:
             pdf = pdfplumber.open(BytesIO(blob))
 
@@ -79,6 +88,11 @@ def thumbnail_img(filename, blob):
         return img
 
     elif re.match(r".*\.(jpg|jpeg|png|tif|gif|icon|ico|webp)$", filename):
+        try:
+            from PIL import Image
+        except ImportError:
+            logging.error("PIL (Pillow) is not installed. Image thumbnails will not be generated.")
+            return None
         image = Image.open(BytesIO(blob))
         image.thumbnail((30, 30))
         buffered = BytesIO()
@@ -148,6 +162,11 @@ def repair_pdf_with_ghostscript(input_bytes):
 
 def read_potential_broken_pdf(blob):
     def try_open(blob):
+        try:
+            import pdfplumber
+        except ImportError:
+            return False
+
         try:
             with pdfplumber.open(BytesIO(blob)) as pdf:
                 if pdf.pages:

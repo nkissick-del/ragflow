@@ -14,6 +14,9 @@
 #  limitations under the License.
 #
 import os
+import sys
+
+print("DEBUG: Importing common.settings deps...", file=sys.stderr, flush=True)
 import json
 import secrets
 from datetime import date
@@ -24,47 +27,59 @@ from common.config_utils import get_base_config, decrypt_database_config
 from common.misc_utils import pip_install_torch
 from common.constants import SVR_QUEUE_NAME, Storage
 
-import rag.utils
-import rag.utils.es_conn
-import rag.utils.infinity_conn
-import rag.utils.ob_conn
-import rag.utils.pgvector_conn
-import rag.utils.opensearch_conn
-from rag.utils.azure_sas_conn import RAGFlowAzureSasBlob
-from rag.utils.azure_spn_conn import RAGFlowAzureSpnBlob
-from rag.utils.gcs_conn import RAGFlowGCS
-from rag.utils.minio_conn import RAGFlowMinio
-from rag.utils.opendal_conn import OpenDALStorage
-from rag.utils.s3_conn import RAGFlowS3
-from rag.utils.oss_conn import RAGFlowOSS
+print("DEBUG: common.settings static deps complete.", file=sys.stderr, flush=True)
 
-from rag.nlp import search
-
-import memory.utils.es_conn as memory_es_conn
-import memory.utils.infinity_conn as memory_infinity_conn
-
+# Connection instances and settings initialized in init_settings()
 LLM = None
 LLM_FACTORY = None
 LLM_BASE_URL = None
-CHAT_MDL = ""
-EMBEDDING_MDL = ""
-RERANK_MDL = ""
-ASR_MDL = ""
-IMAGE2TEXT_MDL = ""
-
-
-CHAT_CFG = ""
-EMBEDDING_CFG = ""
-RERANK_CFG = ""
-ASR_CFG = ""
-IMAGE2TEXT_CFG = ""
+ALLOWED_LLM_FACTORIES = None
+FACTORY_LLM_INFOS = []
+CHAT_MDL = "deepseek-chat"
+EMBEDDING_MDL = "BAAI/bge-large-zh-v1.5"
+RERANK_MDL = "BAAI/bge-reranker-v2-m3"
+ASR_MDL = "SenseVoiceSmall"
+IMAGE2TEXT_MDL = "qwen-vl-max"
+CHAT_CFG = {}
+EMBEDDING_CFG = {}
+RERANK_CFG = {}
+ASR_CFG = {}
+IMAGE2TEXT_CFG = {}
+PARSERS = ""
 API_KEY = None
-PARSERS = None
 HOST_IP = None
 HOST_PORT = None
 SECRET_KEY = None
-FACTORY_LLM_INFOS = None
-ALLOWED_LLM_FACTORIES = None
+REGISTER_ENABLED = True
+CLIENT_AUTHENTICATION = False
+HTTP_APP_KEY = None
+GITHUB_OAUTH = None
+FEISHU_OAUTH = None
+OAUTH_CONFIG = {}
+DOC_ENGINE = None
+DOC_ENGINE_INFINITY = False
+docStoreConn = None
+msgStoreConn = None
+ES = None
+OB = None
+OS = None
+INFINITY = None
+AZURE = None
+S3 = None
+MINIO = None
+OSS = None
+GCS = None
+PARALLEL_DEVICES = 0
+DOC_MAXIMUM_SIZE = 128 * 1024 * 1024
+DOC_BULK_SIZE = 4
+EMBEDDING_BATCH_SIZE = 16
+MAIL_FRONTEND_URL = ""
+MAIL_SERVER = ""
+MAIL_PORT = 465
+MAIL_USE_SSL = True
+MAIL_USERNAME = ""
+MAIL_PASSWORD = ""
+MAIL_DEFAULT_SENDER = ("", "")
 
 DATABASE_TYPE = os.getenv("DB_TYPE", "mysql")
 DATABASE = decrypt_database_config(name=DATABASE_TYPE)
@@ -73,17 +88,17 @@ DATABASE = decrypt_database_config(name=DATABASE_TYPE)
 AUTHENTICATION_CONF = None
 
 # client
-CLIENT_AUTHENTICATION = None
-HTTP_APP_KEY = None
-GITHUB_OAUTH = None
-FEISHU_OAUTH = None
-OAUTH_CONFIG = None
-DOC_ENGINE = os.getenv("DOC_ENGINE", "elasticsearch")
-DOC_ENGINE_INFINITY = DOC_ENGINE.lower() == "infinity"
+# CLIENT_AUTHENTICATION = None # Moved to global variable block
+# HTTP_APP_KEY = None # Moved to global variable block
+# GITHUB_OAUTH = None # Moved to global variable block
+# FEISHU_OAUTH = None # Moved to global variable block
+# OAUTH_CONFIG = None # Moved to global variable block
+# DOC_ENGINE = os.getenv("DOC_ENGINE", "elasticsearch") # Moved to global variable block
+# DOC_ENGINE_INFINITY = DOC_ENGINE.lower() == "infinity" # Moved to global variable block
 
 
-docStoreConn = None
-msgStoreConn = None
+# docStoreConn = None # Moved to global variable block
+# msgStoreConn = None # Moved to global variable block
 
 retriever = None
 kg_retriever = None
@@ -156,19 +171,37 @@ def _get_or_create_secret_key():
 
 
 class StorageFactory:
-    storage_mapping = {
-        Storage.MINIO: RAGFlowMinio,
-        Storage.AZURE_SPN: RAGFlowAzureSpnBlob,
-        Storage.AZURE_SAS: RAGFlowAzureSasBlob,
-        Storage.AWS_S3: RAGFlowS3,
-        Storage.OSS: RAGFlowOSS,
-        Storage.OPENDAL: OpenDALStorage,
-        Storage.GCS: RAGFlowGCS,
-    }
-
     @classmethod
     def create(cls, storage: Storage):
-        return cls.storage_mapping[storage]()
+        if storage == Storage.MINIO:
+            from rag.utils.minio_conn import RAGFlowMinio
+
+            return RAGFlowMinio()
+        if storage == Storage.AZURE_SPN:
+            from rag.utils.azure_spn_conn import RAGFlowAzureSpnBlob
+
+            return RAGFlowAzureSpnBlob()
+        if storage == Storage.AZURE_SAS:
+            from rag.utils.azure_sas_conn import RAGFlowAzureSasBlob
+
+            return RAGFlowAzureSasBlob()
+        if storage == Storage.AWS_S3:
+            from rag.utils.s3_conn import RAGFlowS3
+
+            return RAGFlowS3()
+        if storage == Storage.OSS:
+            from rag.utils.oss_conn import RAGFlowOSS
+
+            return RAGFlowOSS()
+        if storage == Storage.OPENDAL:
+            from rag.utils.opendal_conn import OpenDALStorage
+
+            return OpenDALStorage()
+        if storage == Storage.GCS:
+            from rag.utils.gcs_conn import RAGFlowGCS
+
+            return RAGFlowGCS()
+        raise ValueError(f"Unsupported storage type: {storage}")
 
 
 def init_settings():
@@ -251,21 +284,33 @@ def init_settings():
     DOC_ENGINE_INFINITY = DOC_ENGINE.lower() == "infinity"
     lower_case_doc_engine = DOC_ENGINE.lower()
     if lower_case_doc_engine == "elasticsearch":
+        import rag.utils.es_conn
+
         ES = get_base_config("es", {})
         docStoreConn = rag.utils.es_conn.ESConnection()
     elif lower_case_doc_engine == "infinity":
+        import rag.utils.infinity_conn
+
         INFINITY = get_base_config("infinity", {"uri": "infinity:23817", "postgres_port": 5432, "db_name": "default_db"})
         docStoreConn = rag.utils.infinity_conn.InfinityConnection()
     elif lower_case_doc_engine == "opensearch":
+        import rag.utils.opensearch_conn
+
         OS = get_base_config("os", {})
         docStoreConn = rag.utils.opensearch_conn.OSConnection()
     elif lower_case_doc_engine == "oceanbase":
+        import rag.utils.ob_conn
+
         OB = get_base_config("oceanbase", {})
         docStoreConn = rag.utils.ob_conn.OBConnection()
     elif lower_case_doc_engine == "seekdb":
+        import rag.utils.ob_conn
+
         OB = get_base_config("seekdb", {})
         docStoreConn = rag.utils.ob_conn.OBConnection()
     elif lower_case_doc_engine == "pgvector":
+        import rag.utils.pgvector_conn
+
         # pgvector uses the same connection pool logic but different wrapper
         docStoreConn = rag.utils.pgvector_conn.PGVectorConnection()
     else:
@@ -274,12 +319,18 @@ def init_settings():
     global msgStoreConn
     # use the same engine for message store
     if DOC_ENGINE == "elasticsearch":
+        import memory.utils.es_conn as memory_es_conn
+
         ES = get_base_config("es", {})
         msgStoreConn = memory_es_conn.ESConnection()
     elif DOC_ENGINE == "infinity":
+        import memory.utils.infinity_conn as memory_infinity_conn
+
         INFINITY = get_base_config("infinity", {"uri": "infinity:23817", "postgres_port": 5432, "db_name": "default_db"})
         msgStoreConn = memory_infinity_conn.InfinityConnection()
     elif DOC_ENGINE == "pgvector":
+        import rag.utils.pgvector_conn
+
         # For now, we'll use the same PGVectorConnection for message store
         # although it might need its own memory-optimized wrapper later.
         msgStoreConn = rag.utils.pgvector_conn.PGVectorConnection()
@@ -318,7 +369,9 @@ def init_settings():
         STORAGE_IMPL = storage_impl
 
     global retriever, kg_retriever
-    retriever = search.Dealer(docStoreConn)
+    from rag.nlp import search as nlp_search
+
+    retriever = nlp_search.Dealer(docStoreConn)
     from graphrag import search as kg_search
 
     kg_retriever = kg_search.KGSearch(docStoreConn)

@@ -28,13 +28,30 @@ from functools import cmp_to_key
 from timeit import default_timer as timer
 
 import numpy as np
-import pdfplumber
-import xgboost as xgb
+
+try:
+    import pdfplumber
+except ImportError:
+    pdfplumber = None
+
+try:
+    import xgboost as xgb
+except ImportError:
+    xgb = None
 from huggingface_hub import snapshot_download
 from PIL import Image
-from pypdf import PdfReader as pdf2_read
-from sklearn.cluster import KMeans
-from sklearn.metrics import silhouette_score
+
+try:
+    from pypdf import PdfReader as pdf2_read
+except ImportError:
+    pdf2_read = None
+
+try:
+    from sklearn.cluster import KMeans
+    from sklearn.metrics import silhouette_score
+except ImportError:
+    KMeans = None
+    silhouette_score = None
 
 from deepdoc.vision import OCR, AscendLayoutRecognizer, LayoutRecognizer, Recognizer, TableStructureRecognizer
 from rag.nlp import rag_tokenizer
@@ -84,21 +101,25 @@ class RAGFlowPdfParser:
             self.layouter = LayoutRecognizer(recognizer_domain)
         self.tbl_det = TableStructureRecognizer()
 
-        self.updown_cnt_mdl = xgb.Booster()
-        try:
-            pip_install_torch()
-            import torch.cuda
+        if xgb is not None:
+            self.updown_cnt_mdl = xgb.Booster()
+            try:
+                pip_install_torch()
+                import torch.cuda
 
-            if torch.cuda.is_available():
-                self.updown_cnt_mdl.set_param({"device": "cuda"})
-        except Exception:
-            logging.info("No torch found.")
-        try:
-            model_dir = os.path.join(get_project_base_directory(), "rag/res/deepdoc")
-            self.updown_cnt_mdl.load_model(os.path.join(model_dir, "updown_concat_xgb.model"))
-        except Exception:
-            model_dir = snapshot_download(repo_id="InfiniFlow/text_concat_xgb_v1.0", local_dir=os.path.join(get_project_base_directory(), "rag/res/deepdoc"), local_dir_use_symlinks=False)
-            self.updown_cnt_mdl.load_model(os.path.join(model_dir, "updown_concat_xgb.model"))
+                if torch.cuda.is_available():
+                    self.updown_cnt_mdl.set_param({"device": "cuda"})
+            except Exception:
+                logging.info("No torch found.")
+            try:
+                model_dir = os.path.join(get_project_base_directory(), "rag/res/deepdoc")
+                self.updown_cnt_mdl.load_model(os.path.join(model_dir, "updown_concat_xgb.model"))
+            except Exception:
+                model_dir = snapshot_download(repo_id="InfiniFlow/text_concat_xgb_v1.0", local_dir=os.path.join(get_project_base_directory(), "rag/res/deepdoc"), local_dir_use_symlinks=False)
+                self.updown_cnt_mdl.load_model(os.path.join(model_dir, "updown_concat_xgb.model"))
+        else:
+            self.updown_cnt_mdl = None
+            logging.warning("xgboost is not installed. DeepDOC vertical merging will be less accurate.")
 
         self.page_from = 0
         self.column_num = 1
@@ -1031,6 +1052,9 @@ class RAGFlowPdfParser:
     @staticmethod
     def total_page_number(fnm, binary=None):
         try:
+            if pdfplumber is None:
+                logging.error("pdfplumber is not installed. Cannot get total page number.")
+                return None
             with _pdfplumber_lock:
                 with pdfplumber.open(fnm if not binary else BytesIO(binary)) as pdf:
                     return len(pdf.pages)

@@ -149,7 +149,13 @@ package_name = __name__
 
 for module_name, mapping_dict in MODULE_MAPPING.items():
     full_module_name = f"{package_name}.{module_name}"
-    module = importlib.import_module(full_module_name)
+    try:
+        module = importlib.import_module(full_module_name)
+    except ImportError as e:
+        import logging
+
+        logging.warning(f"Failed to import model module {full_module_name}: {e}. This model factory will be empty.")
+        continue
 
     base_class = None
     lite_llm_base_class = None

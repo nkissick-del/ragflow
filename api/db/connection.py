@@ -2,16 +2,23 @@
 # Database connection initialization and utilities
 #
 from __future__ import annotations
+import sys
+
+print("DEBUG: Importing api.db.connection...", file=sys.stderr, flush=True)
 
 import logging
-from typing import TYPE_CHECKING
 
+print("DEBUG: Importing common.settings...", file=sys.stderr, flush=True)
 from common import settings
+
+print("DEBUG: Importing common.decorator...", file=sys.stderr, flush=True)
 from common.decorator import singleton
 
 # Import all pooling, locking, and diagnostic components
-from api.db.diagnostics import PoolDiagnostics
-from api.db.locks import DatabaseLock
+# These are handled lazily within functions to avoid import-time side effects or failures
+print("DEBUG: api.db.connection basic imports complete.", file=sys.stderr, flush=True)
+
+from typing import TYPE_CHECKING
 
 # Type hints only - actual imports happen at module end for proper exports
 if TYPE_CHECKING:
@@ -80,7 +87,9 @@ def ensure_database_exists():
 
             try:
                 # Connect to postgres system database using configured credentials
-                conn = psycopg2.connect(host=db_host, port=db_port, user=db_user, password=db_pass, database="postgres")
+                # Add connect_timeout to prevent indefinite hanging during startup
+                print(f"Connecting to PostgreSQL at {db_host}:{db_port} to ensure database '{db_name}' exists...", flush=True)
+                conn = psycopg2.connect(host=db_host, port=db_port, user=db_user, password=db_pass, database="postgres", connect_timeout=10)
                 conn.autocommit = True
                 cursor = conn.cursor()
 
@@ -89,15 +98,18 @@ def ensure_database_exists():
 
                 if cursor.fetchone() is None:
                     # Database doesn't exist, create it
+                    print(f"Database '{db_name}' not found. Creating...", flush=True)
                     cursor.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(db_name)))
                     logging.info(f"Created PostgreSQL database '{db_name}' at {db_host}:{db_port}")
                 else:
                     logging.info(f"PostgreSQL database '{db_name}' already exists at {db_host}:{db_port}")
+                    print(f"PostgreSQL database '{db_name}' already exists.", flush=True)
 
                 cursor.close()
                 conn.close()
 
             except Exception as e:
+                print(f"Error ensuring PostgreSQL database exists: {e}", flush=True)
                 logging.warning(
                     f"Failed to create PostgreSQL database '{db_name}': {e}. "
                     f"If using restricted user, ensure database is pre-created or user has CREATE DATABASE permission. "
@@ -171,18 +183,28 @@ class BaseDataBase:
         database_config.update(pool_config)
         db_type_upper = settings.DATABASE_TYPE.upper()
         self.database_connection = PooledDatabase[db_type_upper].value(db_name, **database_config)
+
+        # Lazy import locks
+        from api.db.locks import DatabaseLock
+
         self.database_connection.lock = DatabaseLock[db_type_upper].value  # type: ignore[attr-defined]
 
         # Log initial pool configuration
         max_conn = database_config.get("max_connections", 32)
         logging.info(f"Initialized {db_type_upper} connection pool: max_connections={max_conn}, max_retries={pool_config['max_retries']}, retry_delay={pool_config['retry_delay']}s")
 
-        # Log initial pool stats
-        stats = PoolDiagnostics.get_pool_stats(self.database_connection)
-        logging.info(f"Connection pool stats: {stats}")
+        # Lazy import diagnostics
+        try:
+            from api.db.diagnostics import PoolDiagnostics
 
-        # Start background health monitoring
-        PoolDiagnostics.start_health_monitoring(self.database_connection)
+            # Log initial pool stats
+            stats = PoolDiagnostics.get_pool_stats(self.database_connection)
+            logging.info(f"Connection pool stats: {stats}")
+
+            # Start background health monitoring
+            PoolDiagnostics.start_health_monitoring(self.database_connection)
+        except ImportError:
+            logging.warning("api.db.diagnostics not available; skipping pool monitoring")
 
         logging.info("Database connection pool initialized")
 
@@ -240,9 +262,11 @@ def log_connection_stats():
     to check the current state of the connection pool.
     """
     try:
+        from api.db.diagnostics import PoolDiagnostics
+
         if DB:
             PoolDiagnostics.log_pool_health(DB)
-    except Exception as e:
+    except (ImportError, Exception) as e:
         logging.error(f"Failed to log connection stats: {e}")
 
 
@@ -292,8 +316,26 @@ def wait_for_schema_ready(max_retries: int = 30, retry_delay: float = 0.5):
                 raise RuntimeError(f"Database schema initialization timeout. Critical tables {critical_tables} not accessible after {max_retries * retry_delay}s") from e
 
 
-# Backward compatibility: re-export lock classes from locks module
-from api.db.locks import MysqlDatabaseLock, PostgresDatabaseLock  # noqa: E402, F401
+# Backward compatibility: re-export lock instances from locks module
+# Handled via property or lazy access if needed, or just import here
+def get_locks():
+    from api.db.locks import MysqlDatabaseLock, PostgresDatabaseLock
+
+    return MysqlDatabaseLock, PostgresDatabaseLock
+
+
+# Also export playhouse pooled database classes for tests
+# We wrap this in a try-except because playhouse might be missing in some builds
+try:
+    from playhouse.pool import PooledMySQLDatabase, PooledPostgresqlDatabase
+except ImportError:
+    # Minimal stubs for type checking if missing
+    class PooledMySQLDatabase:
+        pass
+
+    class PooledPostgresqlDatabase:
+        pass
+
 
 # Backward compatibility: re-export pool classes from pool module
 from api.db.pool import (  # noqa: E402, F401
@@ -303,16 +345,9 @@ from api.db.pool import (  # noqa: E402, F401
     with_retry,
 )
 
-# Also export playhouse pooled database classes for tests
-from playhouse.pool import PooledMySQLDatabase, PooledPostgresqlDatabase  # noqa: E402, F401
-
 __all__ = [
     "BaseDataBase",
     "DB",
-    "DatabaseLock",
-    "MysqlDatabaseLock",
-    "PostgresDatabaseLock",
-    "PoolDiagnostics",
     "PooledDatabase",
     "RetryingPooledMySQLDatabase",
     "RetryingPooledPostgresqlDatabase",

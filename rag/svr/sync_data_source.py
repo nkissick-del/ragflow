@@ -48,34 +48,13 @@ from api.db.services.connector_service import ConnectorService, SyncLogsService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from common import settings
 from common.config_utils import show_configs
-from common.data_source import (
-    BlobStorageConnector,
-    NotionConnector,
-    DiscordConnector,
-    GoogleDriveConnector,
-    MoodleConnector,
-    JiraConnector,
-    DropboxConnector,
-    AirtableConnector,
-    AsanaConnector,
-    ImapConnector,
-    ZendeskConnector,
-)
 from common.constants import FileSource, TaskStatus
 from common.data_source.config import INDEX_BATCH_SIZE
 from common.data_source.models import ConnectorFailure
-from common.data_source.webdav_connector import WebDAVConnector
-from common.data_source.confluence_connector import ConfluenceConnector
-from common.data_source.gmail_connector import GmailConnector
-from common.data_source.box_connector import BoxConnector
-from common.data_source.github.connector import GithubConnector
-from common.data_source.gitlab_connector import GitlabConnector
-from common.data_source.bitbucket.connector import BitbucketConnector
 from common.data_source.interfaces import CheckpointOutputWrapper
 from common.log_utils import init_root_logger
 from common.signal_utils import start_tracemalloc_and_snapshot, stop_tracemalloc
 from common.versions import get_ragflow_version
-from box_sdk_gen import BoxOAuth, OAuthConfig, AccessToken
 
 MAX_CONCURRENT_TASKS = int(os.environ.get("MAX_CONCURRENT_TASKS", "5"))
 task_limiter = asyncio.Semaphore(MAX_CONCURRENT_TASKS)
@@ -186,6 +165,8 @@ class _BlobLikeBase(SyncBase):
     async def _generate(self, task: dict):
         bucket_type = self.conf.get("bucket_type", self.DEFAULT_BUCKET_TYPE)
 
+        from common.data_source import BlobStorageConnector
+
         self.connector = BlobStorageConnector(
             bucket_type=bucket_type,
             bucket_name=self.conf["bucket_name"],
@@ -260,6 +241,8 @@ class Confluence(SyncBase):
                 raise ValueError("Page ID is required when indexing a specific Confluence page.")
             index_recursively = bool(self.conf.get("index_recursively", False))
 
+        from common.data_source.confluence_connector import ConfluenceConnector
+
         self.connector = ConfluenceConnector(
             wiki_base=self.conf["wiki_base"],
             is_cloud=self.conf.get("is_cloud", True),
@@ -329,6 +312,8 @@ class Notion(SyncBase):
     SOURCE_NAME: str = FileSource.NOTION
 
     async def _generate(self, task: dict):
+        from common.data_source import NotionConnector
+
         self.connector = NotionConnector(root_page_id=self.conf["root_page_id"])
         self.connector.load_credentials(self.conf["credentials"])
         document_generator = (
@@ -349,6 +334,8 @@ class Discord(SyncBase):
         server_ids: str | None = self.conf.get("server_ids", None)
         # "channel1,channel2"
         channel_names: str | None = self.conf.get("channel_names", None)
+
+        from common.data_source import DiscordConnector
 
         self.connector = DiscordConnector(
             server_ids=server_ids.split(",") if server_ids else [],
@@ -379,6 +366,8 @@ class Gmail(SyncBase):
         #   credentials: Gmail / Workspace OAuth JSON (with primary admin email)
         #   batch_size:  optional, defaults to INDEX_BATCH_SIZE
         batch_size = self.conf.get("batch_size", INDEX_BATCH_SIZE)
+
+        from common.data_source.gmail_connector import GmailConnector
 
         self.connector = GmailConnector(batch_size=batch_size)
 
@@ -436,6 +425,8 @@ class Dropbox(SyncBase):
     SOURCE_NAME: str = FileSource.DROPBOX
 
     async def _generate(self, task: dict):
+        from common.data_source import DropboxConnector
+
         self.connector = DropboxConnector(batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE))
         self.connector.load_credentials(self.conf["credentials"])
 
@@ -465,6 +456,8 @@ class GoogleDrive(SyncBase):
             "specific_user_emails": self.conf.get("specific_user_emails"),
             "batch_size": self.conf.get("batch_size", INDEX_BATCH_SIZE),
         }
+        from common.data_source import GoogleDriveConnector
+
         self.connector = GoogleDriveConnector(**connector_kwargs)
         self.connector.set_allow_images(self.conf.get("allow_images", False))
 
@@ -558,6 +551,8 @@ class Jira(SyncBase):
             "attachment_size_limit": self.conf.get("attachment_size_limit"),
             "timezone_offset": self.conf.get("timezone_offset"),
         }
+
+        from common.data_source import JiraConnector
 
         self.connector = JiraConnector(**connector_kwargs)
 
@@ -657,6 +652,8 @@ class WebDAV(SyncBase):
     SOURCE_NAME: str = FileSource.WEBDAV
 
     async def _generate(self, task: dict):
+        from common.data_source.webdav_connector import WebDAVConnector
+
         self.connector = WebDAVConnector(base_url=self.conf["base_url"], remote_path=self.conf.get("remote_path", "/"))
         self.connector.load_credentials(self.conf["credentials"])
 
@@ -686,6 +683,8 @@ class Moodle(SyncBase):
     SOURCE_NAME: str = FileSource.MOODLE
 
     async def _generate(self, task: dict):
+        from common.data_source import MoodleConnector
+
         self.connector = MoodleConnector(moodle_url=self.conf["moodle_url"], batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE))
 
         self.connector.load_credentials(self.conf["credentials"])
@@ -711,11 +710,15 @@ class BOX(SyncBase):
     SOURCE_NAME: str = FileSource.BOX
 
     async def _generate(self, task: dict):
+        from common.data_source.box_connector import BoxConnector
+
         self.connector = BoxConnector(
             folder_id=self.conf.get("folder_id", "0"),
         )
 
         credential = json.loads(self.conf["credentials"]["box_tokens"])
+
+        from box_sdk_gen import BoxOAuth, OAuthConfig, AccessToken
 
         auth = BoxOAuth(
             OAuthConfig(
@@ -754,6 +757,8 @@ class Airtable(SyncBase):
         Sync files from Airtable attachments.
         """
 
+        from common.data_source import AirtableConnector
+
         self.connector = AirtableConnector(
             base_id=self.conf.get("base_id"),
             table_name_or_id=self.conf.get("table_name_or_id"),
@@ -791,6 +796,8 @@ class Asana(SyncBase):
     SOURCE_NAME: str = FileSource.ASANA
 
     async def _generate(self, task: dict):
+        from common.data_source import AsanaConnector
+
         self.connector = AsanaConnector(
             self.conf.get("asana_workspace_id"),
             self.conf.get("asana_project_ids"),
@@ -836,6 +843,8 @@ class Github(SyncBase):
         Sync files from Github repositories.
         """
         from common.data_source.connector_runner import ConnectorRunner
+
+        from common.data_source.github.connector import GithubConnector
 
         self.connector = GithubConnector(
             repo_owner=self.conf.get("repository_owner"),
@@ -897,6 +906,8 @@ class IMAP(SyncBase):
     async def _generate(self, task):
         from common.data_source.config import DocumentSource
         from common.data_source.interfaces import StaticCredentialsProvider
+
+        from common.data_source import ImapConnector
 
         self.connector = ImapConnector(
             host=self.conf.get("imap_host"),
@@ -966,6 +977,8 @@ class Zendesk(SyncBase):
     SOURCE_NAME: str = FileSource.ZENDESK
 
     async def _generate(self, task: dict):
+        from common.data_source import ZendeskConnector
+
         self.connector = ZendeskConnector(content_type=self.conf.get("zendesk_content_type"))
         self.connector.load_credentials(self.conf["credentials"])
 
@@ -1041,6 +1054,8 @@ class Gitlab(SyncBase):
         Sync files from GitLab attachments.
         """
 
+        from common.data_source.gitlab_connector import GitlabConnector
+
         self.connector = GitlabConnector(
             project_owner=self.conf.get("project_owner"),
             project_name=self.conf.get("project_name"),
@@ -1075,6 +1090,8 @@ class Bitbucket(SyncBase):
     SOURCE_NAME: str = FileSource.BITBUCKET
 
     async def _generate(self, task: dict):
+        from common.data_source.bitbucket.connector import BitbucketConnector
+
         self.connector = BitbucketConnector(
             workspace=self.conf.get("workspace"),
             repositories=self.conf.get("repository_slugs"),

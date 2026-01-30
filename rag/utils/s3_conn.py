@@ -31,15 +31,15 @@ class RAGFlowS3:
         self.s3_config = settings.S3
         # Use `or None` to convert empty strings to None, ensuring boto3 fallback
         # or explicit disabled state
-        self.access_key = self.s3_config.get("access_key", None) or None
-        self.secret_key = self.s3_config.get("secret_key", None) or None
-        self.session_token = self.s3_config.get("session_token", None) or None
-        self.region_name = self.s3_config.get("region_name", None) or None
-        self.endpoint_url = self.s3_config.get("endpoint_url", None) or None
-        self.signature_version = self.s3_config.get("signature_version", None) or None
-        self.addressing_style = self.s3_config.get("addressing_style", None) or None
-        self.bucket = self.s3_config.get("bucket", None) or None
-        self.prefix_path = self.s3_config.get("prefix_path", None) or None
+        self.access_key = self.s3_config.get("access_key") or None
+        self.secret_key = self.s3_config.get("secret_key") or None
+        self.session_token = self.s3_config.get("session_token") or None
+        self.region_name = self.s3_config.get("region_name") or None
+        self.endpoint_url = self.s3_config.get("endpoint_url") or None
+        self.signature_version = self.s3_config.get("signature_version") or None
+        self.addressing_style = self.s3_config.get("addressing_style") or None
+        self.bucket = self.s3_config.get("bucket") or None
+        self.prefix_path = self.s3_config.get("prefix_path") or None
         if not self.access_key or not self.secret_key:
             logging.info("S3 initialized without explicit credentials; will use boto3 default chain.")
         self.__open__()
@@ -81,8 +81,9 @@ class RAGFlowS3:
                 s3_params = {
                     "aws_access_key_id": self.access_key,
                     "aws_secret_access_key": self.secret_key,
-                    "aws_session_token": self.session_token,
                 }
+                if self.session_token:
+                    s3_params["aws_session_token"] = self.session_token
             if self.region_name:
                 s3_params["region_name"] = self.region_name
             if self.endpoint_url:
@@ -137,7 +138,8 @@ class RAGFlowS3:
     @use_default_bucket
     def put(self, bucket, fnm, binary, *args, **kwargs):
         logging.debug(f"bucket name {bucket}; filename :{fnm}:")
-        for _ in range(1):
+        max_retries = 10
+        for i in range(max_retries):
             try:
                 if not self.bucket_exists(bucket):
                     self.conn[0].create_bucket(Bucket=bucket)
@@ -146,9 +148,12 @@ class RAGFlowS3:
 
                 return r
             except Exception:
-                logging.exception(f"Fail put {bucket}/{fnm}")
-                self.__open__()
-                time.sleep(1)
+                logging.exception(f"Fail put {bucket}/{fnm} (attempt {i + 1}/{max_retries})")
+                if i < max_retries - 1:
+                    self.__open__()
+                    time.sleep(min(2**i, 30))
+                else:
+                    raise
 
     @use_prefix_path
     @use_default_bucket

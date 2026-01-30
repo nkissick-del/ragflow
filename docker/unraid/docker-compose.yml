@@ -82,8 +82,10 @@ services:
       - /mnt/user/appdata/ragflow/redis:/data:rw
       - ./redis.conf:/usr/local/etc/redis/redis.conf:ro
     restart: unless-stopped
+    environment:
+      - REDISCLI_AUTH=${REDIS_PASSWORD}
     healthcheck:
-      test: [ "CMD-SHELL", "redis-cli -a ${REDIS_PASSWORD} ping" ]
+      test: [ "CMD", "redis-cli", "ping" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -172,7 +174,13 @@ services:
   docling:
     image: ${DOCLING_IMAGE}
     container_name: ragflow-docling
-    runtime: nvidia
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [ gpu ]
     ports:
       - ${DOCLING_PORT}:5001
     environment:

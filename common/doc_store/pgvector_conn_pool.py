@@ -57,11 +57,25 @@ class PGVectorConnPool:
         postgres_config = settings.get_base_config("postgres", {})
 
         # Merge configs - pgvector takes precedence
-        host = pgvector_config.get("host") or postgres_config.get("host") or os.getenv("PGVECTOR_HOST") or os.getenv("POSTGRES_HOST", "localhost")
-        port = pgvector_config.get("port") or postgres_config.get("port") or os.getenv("PGVECTOR_PORT") or os.getenv("POSTGRES_PORT", "5432")
-        dbname = pgvector_config.get("name") or postgres_config.get("name") or os.getenv("PGVECTOR_DBNAME") or os.getenv("POSTGRES_DBNAME", "ragflow")
-        user = pgvector_config.get("user") or postgres_config.get("user") or os.getenv("PGVECTOR_USER") or os.getenv("POSTGRES_USER", "ragflow")
-        password = pgvector_config.get("password") or postgres_config.get("password") or os.getenv("PGVECTOR_PASSWORD") or os.getenv("POSTGRES_PASSWORD", "")
+        def get_config_val(key, primary_env, secondary_env=None, default=None):
+            if key in pgvector_config and pgvector_config[key] is not None:
+                return pgvector_config[key]
+            if key in postgres_config and postgres_config[key] is not None:
+                return postgres_config[key]
+            val = os.getenv(primary_env)
+            if val is not None:
+                return val
+            if secondary_env:
+                val = os.getenv(secondary_env)
+                if val is not None:
+                    return val
+            return default
+
+        host = get_config_val("host", "PGVECTOR_HOST", "POSTGRES_HOST", "localhost")
+        port = get_config_val("port", "PGVECTOR_PORT", "POSTGRES_PORT", "5432")
+        dbname = get_config_val("name", "PGVECTOR_DBNAME", "POSTGRES_DBNAME", "ragflow")
+        user = get_config_val("user", "PGVECTOR_USER", "POSTGRES_USER", "ragflow")
+        password = get_config_val("password", "PGVECTOR_PASSWORD", "POSTGRES_PASSWORD", "")
 
         min_conn = int(pgvector_config.get("min_connections", 2))
         max_conn = int(pgvector_config.get("max_connections", 20))

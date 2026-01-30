@@ -321,7 +321,7 @@ RAGFlow supports flexible dependency configurations for faster builds and smalle
 | Use Case | RAGFLOW_EXTRAS Value |
 |----------|---------------------|
 | Full (default) | `all` |
-| Full-lite (excludes deepdoc; includes LLMs, integrations, search, graphrag, observability with PostgreSQL pgvector support for vector embeddings) | `full-lite` |
+| Full-lite (excludes deepdoc; includes LLMs, integrations, search, graphrag; uses Elasticsearch/OpenSearch for document vectors; PostgreSQL pgvector for observability/telemetry) | `full-lite` |
 | Docling sidecar (minimal) | `db-postgres,storage-s3,vectorstore-elasticsearch` |
 | With S3-compatible storage (e.g., Garage, AWS) + deepdoc | `db-postgres,storage-s3,vectorstore-elasticsearch,deepdoc` |
 | Custom selection | `minimal,llm-anthropic,observability` |
@@ -376,9 +376,8 @@ docker build --build-arg RAGFLOW_EXTRAS="minimal,llm-anthropic,observability" -t
    > [!TIP]
    > You can optionally add `-p 5001:5001` if you also need to access Docling from the host machine.
 
-   Then set `DOCLING_BASE_URL` in `.env`. You have two options:
-   - **Option 1 (Host only)**: `DOCLING_BASE_URL=http://docling` (The port `5001` must be mapped or accessible)
-   - **Option 2 (Host and Port)**: `DOCLING_BASE_URL=http://docling:5001` (Recommended for clarity and container-to-container resolution)
+   Then set `DOCLING_BASE_URL` in `.env`. It MUST be the full base URL including protocol and port:
+   - `DOCLING_BASE_URL=http://docling:5001` (Recommended for clarity and reliable container-to-container resolution).
    
    **Option B: Host networking (simpler for development)**
    ```bash
@@ -388,7 +387,8 @@ docker build --build-arg RAGFLOW_EXTRAS="minimal,llm-anthropic,observability" -t
    - **Mac/Windows**: `DOCLING_BASE_URL=http://host.docker.internal:5001`
    - **Linux**: Check your `docker0` bridge IP via `ip addr show docker0` (commonly `172.17.0.1`), then set `DOCLING_BASE_URL=http://<docker0-ip>:5001`
    
-   If you prefer to separate the port, you can use `DOCLING_BASE_URL=http://<ip>` and ensure the `DOCLING_PORT` variable (if supported by your docker-compose version) is set to `5001`.
+   > [!IMPORTANT]
+   > `DOCLING_BASE_URL` is used directly by the RAGFlow service and must include the port (e.g., `:5001`) even if Docling is running on the default port, to avoid ambiguity in container networking.
 
 4. Set parser: `layout_recognizer: "Docling"` in [service_conf.yaml](./docker/service_conf.yaml.template). 
 

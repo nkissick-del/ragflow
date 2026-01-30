@@ -230,6 +230,3 @@ scripts/publish_dev_image.sh
 
 # Added by cargo
 /target
-docker/unraid/docker-compose.yml.updated
-docker/unraid/docker-compose.yml
-docker/unraid/.env.updated

@@ -172,19 +172,7 @@ class PGVectorConnection(PGVectorConnectionBase):
                     # "for very high dims (3072, 4096) make this conditional or document/choose IVFFlat instead"
                     method = "hnsw"
                     ops = "vector_cosine_ops"
-                    if dim >= 3072:
-                        # Optional: switch to ivfflat if needed, but HNSW is generally better if disk allows.
-                        # I'll stick to HNSW as the primary request was HNSW.
-                        pass
 
-                    idx_sql = sql.SQL("CREATE INDEX IF NOT EXISTS {} ON {} USING {} ({} {})").format(
-                        sql.Identifier(index_name_safe),
-                        sql.Identifier(index_name),
-                        sql.Placeholder(),  # This won't work for USING, need sql.SQL
-                        sql.Identifier(vector_col),
-                        sql.SQL(ops),
-                    )
-                    # wait, USING method must be SQL, not placeholder.
                     idx_sql = sql.SQL("CREATE INDEX IF NOT EXISTS {} ON {} USING {} ({} {})").format(
                         sql.Identifier(index_name_safe), sql.Identifier(index_name), sql.SQL(method), sql.Identifier(vector_col), sql.SQL(ops)
                     )
@@ -449,7 +437,12 @@ class PGVectorConnection(PGVectorConnectionBase):
                     valid_select.append(sql.Identifier(f) if f != "*" else sql.SQL("*"))
                 else:
                     self.logger.warning(f"Skipping forbidden column in select: {f}")
-            select_clause = sql.SQL(", ").join(valid_select) if valid_select else sql.SQL("*")
+
+            if not valid_select:
+                self.logger.error(f"No valid fields found in select_fields: {select_fields}")
+                raise ValueError(f"No valid fields found in select_fields: {select_fields}")
+
+            select_clause = sql.SQL(", ").join(valid_select)
         else:
             select_clause = sql.SQL("*")
 
@@ -574,7 +567,7 @@ class PGVectorConnection(PGVectorConnectionBase):
                         insert_sql = sql.SQL("""
                             INSERT INTO {} ({})
                             VALUES ({})
-                            ON CONFLICT (id) DO NOTHING
+                            ON CONFLICT (id) DO UPDATE SET id = EXCLUDED.id
                         """).format(sql.Identifier(index_name), col_sql, placeholders)
 
                     try:

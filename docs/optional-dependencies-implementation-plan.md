@@ -171,8 +171,11 @@ search-crawl = ["Crawl4AI>=0.4.0", "selenium-wire==5.1.0", "webdriver-manager==4
 search-all = ["ragflow[search-web]", "ragflow[search-crawl]"]
 # ML and embeddings
 ml-embeddings = ["infinity-sdk==0.7.0-dev2", "infinity-emb>=0.0.66"]
-ml-onnx = ["onnxruntime==1.23.2", "onnxruntime-gpu==1.23.2"]
-ml-all = ["ragflow[ml-embeddings]", "ragflow[ml-onnx]"]
+ml-onnx = [
+    "onnxruntime==1.23.2; sys_platform == 'darwin' or platform_machine != 'x86_64'",
+    "onnxruntime-gpu==1.23.2; sys_platform != 'darwin' and platform_machine == 'x86_64'",
+]
+ml-all = ["ragflow[ml-embeddings]", "ragflow[ml-onnx]"]  # Note: This definition corrects a previously missing extras group
 
 # Convenience groups
 all = [

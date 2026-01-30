@@ -17,11 +17,17 @@ const CopyToClipboard = ({ text }: Props) => {
 
   return (
     <Tooltip>
-      <TooltipTrigger>
-        <Clipboard text={text} onCopy={handleCopy}>
-          {copied ? <CheckOutlined /> : <CopyOutlined />}
-        </Clipboard>
-      </TooltipTrigger>
+      <Clipboard text={text} onCopy={handleCopy}>
+        <TooltipTrigger asChild>
+          <button
+            aria-label={t('copy')}
+            className="flex cursor-pointer items-center border-none bg-transparent p-0 outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+            type="button"
+          >
+            {copied ? <CheckOutlined /> : <CopyOutlined />}
+          </button>
+        </TooltipTrigger>
+      </Clipboard>
       <TooltipContent>{copied ? t('copied') : t('copy')}</TooltipContent>
     </Tooltip>
   );

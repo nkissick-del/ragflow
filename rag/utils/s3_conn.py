@@ -150,8 +150,8 @@ class RAGFlowS3:
             except Exception:
                 logging.exception(f"Fail put {bucket}/{fnm} (attempt {i + 1}/{max_retries})")
                 if i < max_retries - 1:
-                    self.__open__()
                     time.sleep(min(2**i, 30))
+                    self.__open__()
                 else:
                     raise
 

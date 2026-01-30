@@ -377,7 +377,7 @@ docker build --build-arg RAGFLOW_EXTRAS="minimal,llm-anthropic,observability" -t
    > You can optionally add `-p 5001:5001` if you also need to access Docling from the host machine.
 
    Then set `DOCLING_BASE_URL` in `.env`. It MUST be the full base URL including protocol and port:
-   - `DOCLING_BASE_URL=http://docling:5001` (Recommended for clarity and reliable container-to-container resolution).
+   - `DOCLING_BASE_URL=http://docling:5001` (Recommended for clarity and reliable container-to-container resolution)
    
    **Option B: Host networking (simpler for development)**
    ```bash

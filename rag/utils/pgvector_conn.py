@@ -429,7 +429,9 @@ class PGVectorConnection(PGVectorConnectionBase):
             match_where_params = [tm.matching_text]
 
         # Build SELECT
-        if select_fields:
+        if not select_fields:
+            select_clause = sql.SQL("*")
+        else:
             # Validate select fields
             valid_select = []
             for f in select_fields:
@@ -443,8 +445,6 @@ class PGVectorConnection(PGVectorConnectionBase):
                 raise ValueError(f"No valid fields found in select_fields: {select_fields}")
 
             select_clause = sql.SQL(", ").join(valid_select)
-        else:
-            select_clause = sql.SQL("*")
 
         # Build ORDER BY
         order_clause = sql.SQL("score DESC")
@@ -553,22 +553,11 @@ class PGVectorConnection(PGVectorConnectionBase):
                     placeholders = sql.SQL(", ").join([sql.Placeholder()] * len(values))
                     col_sql = sql.SQL(", ").join(columns)
 
-                    # Build update clause (exclude id)
-                    update_parts = [sql.SQL("{} = EXCLUDED.{}").format(sql.Identifier(col), sql.Identifier(col)) for col in valid_cols]
-                    update_clause = sql.SQL(", ").join(update_parts)
-
-                    if update_parts:
-                        insert_sql = sql.SQL("""
-                            INSERT INTO {} ({})
-                            VALUES ({})
-                            ON CONFLICT (id) DO UPDATE SET {}
-                        """).format(sql.Identifier(index_name), col_sql, placeholders, update_clause)
-                    else:
-                        insert_sql = sql.SQL("""
-                            INSERT INTO {} ({})
-                            VALUES ({})
-                            ON CONFLICT (id) DO UPDATE SET id = EXCLUDED.id
-                        """).format(sql.Identifier(index_name), col_sql, placeholders)
+                    insert_sql = sql.SQL("""
+                        INSERT INTO {} ({})
+                        VALUES ({})
+                        ON CONFLICT (id) DO NOTHING
+                    """).format(sql.Identifier(index_name), col_sql, placeholders)
 
                     try:
                         cur.execute(insert_sql, values)

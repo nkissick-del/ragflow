@@ -143,7 +143,7 @@ class TestDoclingIntegration(unittest.TestCase):
         mock_session.post.return_value = mock_submit
         mock_session.get.side_effect = side_effect_get
 
-        with patch.dict(os.environ, {"DOCLING_BASE_URL": "http://mock-docling"}):
+        with patch.dict(os.environ, {"DOCLING_BASE_URL": "http://mock-docling:5001"}):
             parser = DoclingParser()
             # Test SEMANTIC mode - should return string
             sections_semantic, _ = parser.parse_pdf("test.pdf", binary=b"dummy", use_semantic_chunking=True)

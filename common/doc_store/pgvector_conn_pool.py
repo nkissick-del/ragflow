@@ -72,7 +72,7 @@ class PGVectorConnPool:
             return default
 
         host = get_config_val("host", "PGVECTOR_HOST", "POSTGRES_HOST", "localhost")
-        port = get_config_val("port", "PGVECTOR_PORT", "POSTGRES_PORT", "5432")
+        port = str(get_config_val("port", "PGVECTOR_PORT", "POSTGRES_PORT", "5432"))
         dbname = get_config_val("name", "PGVECTOR_DBNAME", "POSTGRES_DBNAME", "ragflow")
         user = get_config_val("user", "PGVECTOR_USER", "POSTGRES_USER", "ragflow")
         password = get_config_val("password", "PGVECTOR_PASSWORD", "POSTGRES_PASSWORD", "")

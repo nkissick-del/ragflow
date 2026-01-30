@@ -101,7 +101,7 @@ TAG="${2:-$DEFAULT_TAG}"
 FULL_IMAGE="$IMAGE_NAME:$TAG"
 
 # Validate RAGFLOW_EXTRAS (comma-separated list of alphanumeric/underscore/dash identifiers)
-if [[ ! "$RAGFLOW_EXTRAS" =~ ^[a-zA-Z0-9_\,-]*$ ]]; then
+if [[ ! "$RAGFLOW_EXTRAS" =~ ^$|^([A-Za-z0-9_-]+)(,[A-Za-z0-9_-]+)*$ ]]; then
   echo "Error: RAGFLOW_EXTRAS contains invalid characters. Only alphanumeric, underscores, dashes, and commas are allowed."
   exit 1
 fi

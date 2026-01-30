@@ -114,7 +114,7 @@ class PGVectorConnPool:
                 # Check if connection is closed or executing
                 if conn.closed:
                     logger.warning("Got closed connection from pool, discarding")
-                    conn.close()
+                    PGVectorConnPool._pool.putconn(conn, close=True)
                     continue
 
                 # Perform lightweight health check
@@ -126,7 +126,7 @@ class PGVectorConnPool:
             except Exception as e:
                 logger.warning(f"Connection validation failed (attempt {attempt + 1}/{max_retries}): {e}")
                 try:
-                    conn.close()
+                    PGVectorConnPool._pool.putconn(conn, close=True)
                 except Exception:
                     pass
 
@@ -158,12 +158,12 @@ class PGVectorConnPool:
                 yield cur
                 if commit:
                     conn.commit()
-            except Exception as original_error:
+            except Exception:
                 try:
                     conn.rollback()
                 except Exception as rollback_error:
                     logger.warning(f"Rollback failed: {rollback_error}")
-                raise original_error
+                raise
             finally:
                 cur.close()
 

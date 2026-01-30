@@ -309,27 +309,22 @@ def init_settings():
     if lower_case_doc_engine == "elasticsearch":
         import memory.utils.es_conn as memory_es_conn
 
-        ES = get_base_config("es", {})
         msgStoreConn = memory_es_conn.ESConnection()
     elif lower_case_doc_engine == "infinity":
         import memory.utils.infinity_conn as memory_infinity_conn
 
-        INFINITY = get_base_config("infinity", {"uri": "infinity:23817", "postgres_port": 5432, "db_name": "default_db"})
         msgStoreConn = memory_infinity_conn.InfinityConnection()
     elif lower_case_doc_engine == "opensearch":
         import memory.utils.opensearch_conn as memory_opensearch_conn
 
-        OS = get_base_config("os", {})
         msgStoreConn = memory_opensearch_conn.OSConnection()
     elif lower_case_doc_engine == "oceanbase":
         import memory.utils.ob_conn as memory_ob_conn
 
-        OB = get_base_config("oceanbase", {})
         msgStoreConn = memory_ob_conn.OBConnection()
     elif lower_case_doc_engine == "seekdb":
         import memory.utils.ob_conn as memory_ob_conn
 
-        OB = get_base_config("seekdb", {})
         msgStoreConn = memory_ob_conn.OBConnection()
     elif lower_case_doc_engine == "pgvector":
         import rag.utils.pgvector_conn

@@ -53,17 +53,17 @@ class InvokeParam(ComponentParamBase):
 class Invoke(ComponentBase, ABC):
     component_name = "Invoke"
 
-    def _handle_response(self, response, parser_cls):
+    def _handle_response(self, response):
+        from deepdoc.parser import HtmlParser
+
         if self._param.clean_html:
-            sections = parser_cls()(None, response.content)
+            sections = HtmlParser()(None, response.content)
             self.set_output("result", "\n".join(sections))
         else:
             self.set_output("result", response.text)
 
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 3)))
     def _invoke(self, **kwargs):
-        from deepdoc.parser import HtmlParser
-
         if self.check_if_canceled("Invoke processing"):
             return
 
@@ -106,22 +106,23 @@ class Invoke(ComponentBase, ABC):
             try:
                 if method == "get":
                     response = requests.get(url=url, params=args, headers=headers, proxies=proxies, timeout=self._param.timeout)
-                    self._handle_response(response, HtmlParser)
-
-                if method == "put":
+                elif method == "put":
                     if self._param.datatype.lower() == "json":
                         response = requests.put(url=url, json=args, headers=headers, proxies=proxies, timeout=self._param.timeout)
                     else:
                         response = requests.put(url=url, data=args, headers=headers, proxies=proxies, timeout=self._param.timeout)
-                    self._handle_response(response, HtmlParser)
-
-                if method == "post":
+                elif method == "post":
                     if self._param.datatype.lower() == "json":
                         response = requests.post(url=url, json=args, headers=headers, proxies=proxies, timeout=self._param.timeout)
                     else:
                         response = requests.post(url=url, data=args, headers=headers, proxies=proxies, timeout=self._param.timeout)
-                    self._handle_response(response, HtmlParser)
+                else:
+                    raise ValueError(f"Unsupported HTTP method: {method}")
 
+                if not response.ok:
+                    raise Exception(f"HTTP {response.status_code}: {response.text}")
+
+                self._handle_response(response)
                 return self.output("result")
             except Exception as e:
                 if self.check_if_canceled("Invoke processing"):

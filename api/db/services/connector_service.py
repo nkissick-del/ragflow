@@ -191,6 +191,14 @@ class SyncLogsService(CommonService):
             update_date=timestamp_to_date(current_timestamp()),
         ).where(cls.model.id == id).execute()
 
+    @staticmethod
+    def build_filename(doc):
+        name = doc.get("semantic_identifier", "")
+        ext = doc.get("extension") or ""
+        if ext and not name.endswith(ext):
+            return name + ext
+        return name
+
     @classmethod
     def duplicate_and_parse(cls, kb, docs, tenant_id, src, auto_parse=True):
         from api.db.services.file_service import FileService
@@ -206,17 +214,15 @@ class SyncLogsService(CommonService):
             def read(self) -> bytes:
                 return self.blob
 
-        errs = []
-        files = [FileObj(id=d["id"], filename=d["semantic_identifier"] + (f"{d['extension']}" if not d["semantic_identifier"].endswith(d["extension"]) else ""), blob=d["blob"]) for d in docs]
+        files = [FileObj(id=d["id"], filename=cls.build_filename(d), blob=d["blob"]) for d in docs]
         doc_ids = []
         err, doc_blob_pairs = FileService.upload_document(kb, files, tenant_id, src)
-        errs.extend(err)
 
         # Create a mapping from filename to metadata for later use
         metadata_map = {}
         for d in docs:
             if d.get("metadata"):
-                filename = d["semantic_identifier"] + (f"{d['extension']}" if not d["semantic_identifier"].endswith(d["extension"]) else "")
+                filename = cls.build_filename(d)
                 metadata_map[filename] = d["metadata"]
 
         kb_table_num_map = {}
@@ -231,7 +237,7 @@ class SyncLogsService(CommonService):
                 continue
             DocumentService.run(tenant_id, doc, kb_table_num_map)
 
-        return errs, doc_ids
+        return err, doc_ids
 
     @classmethod
     def get_latest_task(cls, connector_id, kb_id):
@@ -255,18 +261,9 @@ class Connector2KbService(CommonService):
             cls.save(**{"id": get_uuid(), "connector_id": conn_id, "kb_id": kb_id, "auto_parse": conn.get("auto_parse", "1")})
             SyncLogsService.schedule(conn_id, kb_id, reindex=True)
 
-        errs = []
-        for conn_id in old_conn_ids:
-            if conn_id in connector_ids:
-                continue
-            cls.filter_delete([cls.model.kb_id == kb_id, cls.model.connector_id == conn_id])
-            e, conn = ConnectorService.get_by_id(conn_id)
-            if not e:
-                continue
-            # Documents and sync logs are retained on unlink to ensure historical data remains
             # accessible and to prevent accidental data loss if the connector is re-linked.
             SyncLogsService.filter_update([SyncLogs.connector_id == conn_id, SyncLogs.kb_id == kb_id, SyncLogs.status.in_([TaskStatus.SCHEDULE, TaskStatus.RUNNING])], {"status": TaskStatus.CANCEL})
-        return "\n".join(errs)
+        return ""
 
     @classmethod
     def list_connectors(cls, kb_id):

@@ -2,6 +2,7 @@
 
 import logging
 import os
+import email.utils
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -86,31 +87,29 @@ class WebDAVConnector(LoadConnector, PollConnector):
         return None
 
     def _parse_modified_time(self, modified_time: Any, item_path: str) -> datetime:
-        """Parse modified time from WebDAV item
-
-        Args:
-            modified_time: The modified time value to parse
-            item_path: Path of the item for logging
-
-        Returns:
-            Parsed datetime object in UTC
-        """
+        """Parse modified time from WebDAV item"""
         if modified_time:
             if isinstance(modified_time, datetime):
                 modified = modified_time
                 if modified.tzinfo is None:
                     modified = modified.replace(tzinfo=timezone.utc)
             elif isinstance(modified_time, str):
-                try:
-                    modified = datetime.strptime(modified_time, "%a, %d %b %Y %H:%M:%S %Z")
-                    modified = modified.replace(tzinfo=timezone.utc)
-                except (ValueError, TypeError):
+                # Try RFC 2822
+                modified = email.utils.parsedate_to_datetime(modified_time)
+                if modified:
+                    if modified.tzinfo:
+                        modified = modified.astimezone(timezone.utc)
+                    else:
+                        modified = modified.replace(tzinfo=timezone.utc)
+                else:
+                    # Try ISO 8601
                     try:
                         modified = datetime.fromisoformat(modified_time.replace("Z", "+00:00"))
                     except (ValueError, TypeError):
                         logging.warning(f"Could not parse modified time for {item_path}: {modified_time}")
                         modified = datetime.now(timezone.utc)
             else:
+                logging.warning(f"Unexpected modified_time type for {item_path}: {type(modified_time)} ({modified_time}). Falling back to now.")
                 modified = datetime.now(timezone.utc)
         else:
             modified = datetime.now(timezone.utc)
@@ -156,6 +155,7 @@ class WebDAVConnector(LoadConnector, PollConnector):
                 else:
                     try:
                         modified = self._parse_modified_time(item.get("modified"), item_path)
+                        item["modified_parsed"] = modified
                         logging.debug(f"File {item_path}: modified={modified}, start={start}, end={end}, include={start < modified <= end}")
                         if start < modified <= end:
                             files.append((item_path, item))
@@ -218,7 +218,7 @@ class WebDAVConnector(LoadConnector, PollConnector):
                     logging.warning(f"Downloaded content is empty for {file_path}")
                     continue
 
-                modified = self._parse_modified_time(file_info.get("modified"), file_path)
+                modified = file_info.get("modified_parsed") or self._parse_modified_time(file_info.get("modified"), file_path)
 
                 if filename_counts.get(file_name, 0) > 1:
                     relative_path = file_path

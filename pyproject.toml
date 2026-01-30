@@ -85,7 +85,7 @@ db-mysql = ["pymysql>=1.1.1"]
 # =============================================================================
 # OBJECT STORAGE (choose ONE or more)
 # =============================================================================
-storage-minio = []
+storage-minio = []  # minio is included in core dependencies (minio==7.2.4) — no additional packages provided
 storage-s3 = ["mypy-boto3-s3==1.40.26"]
 storage-azure = ["azure-identity==1.17.1", "azure-storage-file-datalake==12.16.0"]
 storage-opendal = ["opendal>=0.45.0"]
@@ -96,7 +96,7 @@ storage-webdav = ["webdav4>=0.10.0"]
 # =============================================================================
 vectorstore-elasticsearch = ["elasticsearch-dsl==8.12.0"]
 vectorstore-opensearch = ["opensearch-py==2.7.1"]
-vectorstore-infinity = ["infinity-sdk==0.7.0-dev2"]
+vectorstore-infinity = ["infinity-sdk==0.7.0-dev2"]  # 0.7.0-dev2 is required for latest gRPC features; revisit once stable release is available
 vectorstore-postgres = ["psycopg2-binary>=2.9.11"]
 vectorstore-oceanbase = ["pyobvector==0.2.22"]
 

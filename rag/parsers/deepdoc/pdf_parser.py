@@ -1535,10 +1535,7 @@ class VisionParser(RAGFlowPdfParser):
 
     def __images__(self, fnm, zoomin=3, page_from=0, page_to=299, callback=None):
         if pdfplumber is None:
-            logging.error("pdfplumber is required for VisionParser.__images__. Install it with: pip install pdfplumber")
-            self.page_images = None
-            self.total_page = 0
-            return
+            raise ImportError("pdfplumber is required for VisionParser.__images__. Install it with: pip install pdfplumber")
 
         try:
             with _pdfplumber_lock:

@@ -50,7 +50,7 @@ __all__ = list(__all_classes.keys()) + ["__all_classes"]
 
 del _package_path, _import_submodules, _extract_classes_from_module
 
-from typing import Any, Dict, Optional, Type
+from typing import Any, Optional
 
 
 def component_class(class_name: str) -> Optional[Type[Any]]:

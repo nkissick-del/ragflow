@@ -174,10 +174,11 @@ while IFS= read -r line || [[ -n "$line" ]]; do
         default="${BASH_REMATCH[2]}"
 
         if [ -n "${!varname}" ]; then
-            # Use envsubst to safely expand variables without evaluating command substitutions or interpreting backslashes.
-            echo "$line" | envsubst >> "${CONF_FILE}"
+            # Normalize ${VARNAME:-default} to ${VARNAME} before envsubst
+            echo "$line" | sed -E "s/\\\$\{${varname}:-[^}]+\}/\\\$\{${varname}\}/g" | envsubst >> "${CONF_FILE}"
         else
-            echo "$line" | sed -E "s/\\\$\{[^:]+:-([^}]+)\}/\1/g" | envsubst >> "${CONF_FILE}"
+            # Extract default and write directly to CONF_FILE to prevent envsubst from expanding literal $ in defaults
+            echo "$line" | sed -E "s/\\\$\{[^:]+:-([^}]+)\}/\1/g" >> "${CONF_FILE}"
         fi
     else
         echo "$line" | envsubst >> "${CONF_FILE}"

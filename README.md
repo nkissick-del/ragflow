@@ -322,11 +322,11 @@ RAGFlow supports flexible dependency configurations for faster builds and smalle
 |----------|---------------------|
 | Full (default) | `all` |
 | Full-lite (excludes deepdoc; uses Elasticsearch/OpenSearch) | `full-lite` |
-| Docling sidecar (`docling-sidecar`) | `db-postgres,storage-s3,vectorstore-elasticsearch` |
+| Docling sidecar (`docling-sidecar`) | `docling-sidecar` |
 | With S3-compatible storage (e.g., Garage, AWS) + deepdoc | `db-postgres,storage-s3,vectorstore-elasticsearch,deepdoc` |
 | Custom selection | `docling-sidecar,llm-anthropic,observability` |
 
-The `full-lite` option is a recommended balance of features and image size. It includes all LLM providers, integrations, web search tools, GraphRAG, and agent capabilities, but excludes the heavy `deepdoc` parsing suite (intended for use with Docling sidecar). It defaults to Elasticsearch/OpenSearch for document vectors, and uses PostgreSQL pgvector for observability and telemetry metadata.
+The `full-lite` option is a recommended balance of features and image size. It includes all LLM providers, integrations, web search tools, GraphRAG, and agent capabilities, but excludes the heavy `deepdoc` parsing suite (intended for use with Docling sidecar). It defaults to Elasticsearch/OpenSearch for document vectors, and uses PostgreSQL with pgvector to store vector embeddings for observability and telemetry features.
 
 ### Dependency Groups
 

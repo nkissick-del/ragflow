@@ -257,7 +257,8 @@ class PGVectorConnection(PGVectorConnectionBase):
 
                     sql_query = sql.SQL("""
                         SELECT id, content_with_weight, docnm_kwd, kb_id,
-                                1 - ({} <=> %s::vector) as score
+                                1 - ({} <=> %s::vector) as score,
+                                COUNT(*) OVER() AS total_count
                         FROM {}
                         WHERE ({}) {}
                         ORDER BY score DESC
@@ -271,7 +272,8 @@ class PGVectorConnection(PGVectorConnectionBase):
 
                     sql_query = sql.SQL("""
                         SELECT id, content_with_weight, docnm_kwd, kb_id,
-                                ts_rank_cd(content_tsvector, websearch_to_tsquery('simple', %s)) as score
+                                ts_rank_cd(content_tsvector, websearch_to_tsquery('simple', %s)) as score,
+                                COUNT(*) OVER() AS total_count
                         FROM {}
                         WHERE ({}) AND content_tsvector @@ websearch_to_tsquery('simple', %s) {}
                         ORDER BY score DESC
@@ -295,7 +297,8 @@ class PGVectorConnection(PGVectorConnectionBase):
                     sql_query = sql.SQL("""
                         SELECT id, content_with_weight, docnm_kwd, kb_id,
                                (%s * (1 - ({} <=> %s::vector)) + 
-                                %s * COALESCE(ts_rank_cd(content_tsvector, websearch_to_tsquery('simple', %s)), 0)) as score
+                                %s * COALESCE(ts_rank_cd(content_tsvector, websearch_to_tsquery('simple', %s)), 0)) as score,
+                                COUNT(*) OVER() AS total_count
                         FROM {}
                         WHERE ({}) {}
                         ORDER BY score DESC
@@ -309,14 +312,16 @@ class PGVectorConnection(PGVectorConnectionBase):
                 rows = cur.fetchall()
 
                 hits = []
+                actual_total = 0
                 for row in rows:
-                    doc_id, content, doc_name, kb_id, score = row
+                    doc_id, content, doc_name, kb_id, score, total_count = row
+                    actual_total = total_count
                     highlight = None
                     if query.query_text:
                         highlight = PostProcessor.highlight(content or "", [query.query_text])
                     hits.append(VectorStoreHit(id=doc_id, score=float(score) if score else 0.0, text=content or "", highlight=highlight, metadata={"doc_name": doc_name, "kb_id": kb_id}))
 
-                return VectorStoreQueryResult(hits=hits, total=len(hits))
+                return VectorStoreQueryResult(hits=hits, total=actual_total)
 
         except Exception as e:
             self.logger.error(f"PGVector query failed: {e}")
@@ -589,12 +594,15 @@ class PGVectorConnection(PGVectorConnectionBase):
                     values = [[doc[c] for c in cols] for doc in doc_list]
 
                     try:
+                        cur.execute("SAVEPOINT sp_batch")
                         extras.execute_values(cur, insert_sql.as_string(cur.connection), values)
+                        cur.execute("RELEASE SAVEPOINT sp_batch")
                     except Exception:
-                        # If a batch fails, retry individually to collect specific errors
-                        cur.connection.rollback()
+                        # If a batch fails, rollback to savepoint and retry individually to collect specific errors
+                        cur.execute("ROLLBACK TO SAVEPOINT sp_batch")
                         for doc in doc_list:
                             try:
+                                cur.execute("SAVEPOINT sp_single")
                                 single_values = [doc[c] for c in cols]
                                 placeholders = sql.SQL(", ").join([sql.Placeholder()] * len(single_values))
                                 single_insert_sql = sql.SQL("""
@@ -603,9 +611,10 @@ class PGVectorConnection(PGVectorConnectionBase):
                                     ON CONFLICT (id) DO UPDATE SET {}
                                 """).format(sql.Identifier(index_name), col_sql, placeholders, update_sql if update_parts else sql.SQL("id = EXCLUDED.id"))
                                 cur.execute(single_insert_sql, single_values)
+                                cur.execute("RELEASE SAVEPOINT sp_single")
                             except Exception as single_e:
                                 errors.append(f"{doc['id']}: {str(single_e)}")
-                                cur.connection.rollback()
+                                cur.execute("ROLLBACK TO SAVEPOINT sp_single")
 
         except Exception as e:
             errors.append(str(e))

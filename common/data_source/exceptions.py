@@ -33,6 +33,8 @@ class UnexpectedValidationError(Exception):
 
 
 class RateLimitTriedTooManyTimesError(Exception):
+    """Exception raised when repeated attempts exceed a rate-limit retry threshold."""
+
     pass
 
 

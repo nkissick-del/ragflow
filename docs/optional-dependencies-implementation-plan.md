@@ -223,17 +223,16 @@ RUN --mount=type=cache,id=ragflow_uv,target=/root/.cache/uv,sharing=locked \
         uv sync --python 3.12 --frozen --all-extras; \
     else \
         # Build --extra flags for each comma-separated extra \
-        EXTRA_FLAGS=""; \
-        IFS=',' read -ra EXTRAS <<< "$RAGFLOW_EXTRAS"; \
-        for extra in "${EXTRAS[@]}"; do \
+        EXTRAS_ARRAY=(); \
+        IFS=',' read -ra EXTRAS_RAW <<< "$RAGFLOW_EXTRAS"; \
+        for extra in "${EXTRAS_RAW[@]}"; do \
             # Trim leading/trailing whitespace \
-            extra="${extra#"${extra%%[![:space:]]*}"}"; \
-            extra="${extra%"${extra##*[![:space:]]}"}"; \
+            extra=$(echo "$extra" | xargs); \
             # Skip empty elements \
             [ -z "$extra" ] && continue; \
-            EXTRA_FLAGS="$EXTRA_FLAGS --extra $extra"; \
+            EXTRAS_ARRAY+=("--extra" "$extra"); \
         done; \
-        uv sync --python 3.12 --frozen $EXTRA_FLAGS; \
+        uv sync --python 3.12 --frozen "${EXTRAS_ARRAY[@]}"; \
     fi; \
     uv pip install pip==24.3.1
 ```
@@ -343,7 +342,7 @@ pip install -e ".[vectorstore-all,llm-all]"
 docker build -t ragflow:full .
 
 # Minimal image (SQLite + Elasticsearch)
-docker build --build-arg RAGFLOW_EXTRAS="vectorstore-elasticsearch" -t ragflow:docling-sidecar .
+docker build --build-arg RAGFLOW_EXTRAS="vectorstore-elasticsearch" -t ragflow:minimal .
 
 # Custom image
 docker build --build-arg RAGFLOW_EXTRAS="db-postgres,vectorstore-postgres,llm-openai" -t ragflow:custom .

@@ -24,11 +24,12 @@ from typing import List
 
 class Colors:
     """ANSI color codes for terminal output"""
-    RED = '\033[0;31m'
-    GREEN = '\033[0;32m'
-    YELLOW = '\033[1;33m'
-    BLUE = '\033[0;34m'
-    NC = '\033[0m'  # No Color
+
+    RED = "\033[0;31m"
+    GREEN = "\033[0;32m"
+    YELLOW = "\033[1;33m"
+    BLUE = "\033[0;34m"
+    NC = "\033[0m"  # No Color
 
 
 class TestRunner:
@@ -36,14 +37,14 @@ class TestRunner:
 
     def __init__(self):
         self.project_root = Path(__file__).parent.resolve()
-        self.test_root = Path(self.project_root / 'test')
-        
+        self.test_root = Path(self.project_root / "test")
+
         # Test directories
-        self.unit_dir = self.test_root / 'unit_test'
-        self.integration_dir = self.test_root / 'integration'
-        self.contract_dir = self.test_root / 'api_contract'
-        self.benchmark_dir = self.test_root / 'benchmark'
-        
+        self.unit_dir = self.test_root / "unit_test"
+        self.integration_dir = self.test_root / "integration"
+        self.contract_dir = self.test_root / "api_contract"
+        self.benchmark_dir = self.test_root / "benchmark"
+
         # Default options
         self.coverage = False
         self.parallel = False
@@ -74,10 +75,10 @@ class TestRunner:
         if self.test_type in ["integration", "contract", "all"]:
             # Check for integration/contract test requirements
             missing = []
-            
+
             if not os.getenv("ZHIPU_AI_API_KEY"):
                 missing.append("ZHIPU_AI_API_KEY")
-            
+
             if missing:
                 self.print_warning("Missing environment variables for integration/contract tests:")
                 for var in missing:
@@ -132,7 +133,7 @@ EXAMPLES:
     def get_test_paths(self) -> List[Path]:
         """Get test paths based on test type"""
         paths = []
-        
+
         if self.test_type == "unit":
             paths.append(self.unit_dir)
         elif self.test_type == "integration":
@@ -143,17 +144,17 @@ EXAMPLES:
             paths.append(self.benchmark_dir)
         else:  # all
             paths.extend([self.unit_dir, self.integration_dir, self.contract_dir, self.benchmark_dir])
-        
+
         # Filter out non-existent paths
         return [p for p in paths if p.exists()]
 
     def build_pytest_command(self) -> List[str]:
         """Build the pytest command arguments"""
         test_paths = self.get_test_paths()
-        
+
         if not test_paths:
             raise ValueError(f"No test directories found for test type: {self.test_type}")
-        
+
         # Use python -m pytest to ensure virtual environment is used
         cmd = [self.python, "-m", "pytest"] + [str(p) for p in test_paths]
 
@@ -175,18 +176,15 @@ EXAMPLES:
                 source_dir = self.project_root / source
                 if source_dir.exists():
                     cmd.extend(["--cov", str(source_dir)])
-            
-            cmd.extend([
-                "--cov-report", "html",
-                "--cov-report", "term",
-                "--cov-report", "term-missing"
-            ])
+
+            cmd.extend(["--cov-report", "html", "--cov-report", "xml", "--cov-report", "term", "--cov-report", "term-missing", "--junitxml", "pytest-unit.xml"])
 
         # Add parallel execution
         if self.parallel:
             # Try to get number of CPU cores
             try:
                 import multiprocessing
+
                 cpu_count = multiprocessing.cpu_count()
                 cmd.extend(["-n", str(cpu_count)])
             except ImportError:
@@ -272,68 +270,26 @@ Examples:
   python run_tests.py --unit --coverage  # Run unit tests with coverage
   python run_tests.py --parallel         # Run in parallel
   python run_tests.py --test test/unit_test/services/test_dialog_service.py  # Run specific test
-"""
+""",
         )
 
         # Test type selection (mutually exclusive)
         test_type_group = parser.add_mutually_exclusive_group()
-        test_type_group.add_argument(
-            "--unit",
-            action="store_true",
-            help="Run unit tests only (test/unit_test/)"
-        )
-        test_type_group.add_argument(
-            "--integration",
-            action="store_true",
-            help="Run integration tests only (test/integration/)"
-        )
-        test_type_group.add_argument(
-            "--contract",
-            action="store_true",
-            help="Run API contract tests only (test/api_contract/)"
-        )
-        test_type_group.add_argument(
-            "--benchmark",
-            action="store_true",
-            help="Run benchmark tests only (test/benchmark/)"
-        )
-        test_type_group.add_argument(
-            "--all",
-            action="store_true",
-            help="Run all tests (default)"
-        )
+        test_type_group.add_argument("--unit", action="store_true", help="Run unit tests only (test/unit_test/)")
+        test_type_group.add_argument("--integration", action="store_true", help="Run integration tests only (test/integration/)")
+        test_type_group.add_argument("--contract", action="store_true", help="Run API contract tests only (test/api_contract/)")
+        test_type_group.add_argument("--benchmark", action="store_true", help="Run benchmark tests only (test/benchmark/)")
+        test_type_group.add_argument("--all", action="store_true", help="Run all tests (default)")
 
-        parser.add_argument(
-            "-c", "--coverage",
-            action="store_true",
-            help="Run tests with coverage report"
-        )
+        parser.add_argument("-c", "--coverage", action="store_true", help="Run tests with coverage report")
 
-        parser.add_argument(
-            "-p", "--parallel",
-            action="store_true",
-            help="Run tests in parallel (requires pytest-xdist)"
-        )
+        parser.add_argument("-p", "--parallel", action="store_true", help="Run tests in parallel (requires pytest-xdist)")
 
-        parser.add_argument(
-            "-v", "--verbose",
-            action="store_true",
-            help="Verbose output"
-        )
+        parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
 
-        parser.add_argument(
-            "-t", "--test",
-            type=str,
-            default="",
-            help="Run specific test file or directory"
-        )
+        parser.add_argument("-t", "--test", type=str, default="", help="Run specific test file or directory")
 
-        parser.add_argument(
-            "-m", "--markers",
-            type=str,
-            default="",
-            help="Run tests with specific markers"
-        )
+        parser.add_argument("-m", "--markers", type=str, default="", help="Run tests with specific markers")
 
         try:
             args = parser.parse_args()

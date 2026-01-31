@@ -135,7 +135,19 @@ jobs:
           source .venv/bin/activate
           which pytest || echo "pytest not in PATH"
           echo "Start to run unit test"
-          python3 run_tests.py
+          # Run with coverage
+          python3 run_tests.py --unit --coverage
+
+      - name: Pytest coverage comment
+        if: ${{ github.event_name == 'pull_request' && !cancelled() }}
+        uses: MishaKav/pytest-coverage-comment@main
+        with:
+          pytest-xml-coverage-path: ./coverage.xml
+          title: Code Coverage
+          badge-title: Coverage
+          hide-comment: false
+          create-new-comment: false
+          junitxml-path: ./pytest-unit.xml
 
       - name: Build ragflow:nightly
         run: |

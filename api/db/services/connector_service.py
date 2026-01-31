@@ -41,20 +41,23 @@ class ConnectorService(CommonService):
             task = SyncLogsService.get_latest_task(connector_id, c2k.kb_id)
             if not task:
                 if status == TaskStatus.SCHEDULE:
-                    SyncLogsService.schedule(connector_id, c2k.kb_id)
+                    if not SyncLogsService.schedule(connector_id, c2k.kb_id):
+                        return f"Failed to schedule sync task for connector {connector_id} and knowledge base {c2k.kb_id}"
                     ConnectorService.update_by_id(connector_id, {"status": status})
-                    return
+                    return ""
 
             if task.status == TaskStatus.DONE:
                 if status == TaskStatus.SCHEDULE:
-                    SyncLogsService.schedule(connector_id, c2k.kb_id, task.poll_range_end, total_docs_indexed=task.total_docs_indexed)
+                    if not SyncLogsService.schedule(connector_id, c2k.kb_id, task.poll_range_end, total_docs_indexed=task.total_docs_indexed):
+                        return f"Failed to schedule sync task for connector {connector_id} and knowledge base {c2k.kb_id}"
                     ConnectorService.update_by_id(connector_id, {"status": status})
-                    return
+                    return ""
 
             task = task.to_dict()
             task["status"] = status
             SyncLogsService.update_by_id(task["id"], task)
         ConnectorService.update_by_id(connector_id, {"status": status})
+        return ""
 
     @classmethod
     def list(cls, tenant_id):
@@ -72,7 +75,8 @@ class ConnectorService(CommonService):
         docs = DocumentService.query(source_type=f"{conn.source}/{conn.id}", kb_id=kb_id)
         err = FileService.delete_docs([d.id for d in docs], tenant_id)
         if not err:
-            SyncLogsService.schedule(connector_id, kb_id, reindex=True)
+            if not SyncLogsService.schedule(connector_id, kb_id, reindex=True):
+                return f"Failed to schedule sync task for connector {connector_id} and knowledge base {kb_id}"
         return err
 
 
@@ -269,7 +273,7 @@ class Connector2KbService(CommonService):
                 )
                 cls.save(**{"id": get_uuid(), "connector_id": conn_id, "kb_id": kb_id, "auto_parse": conn.get("auto_parse", "1")})
                 if not SyncLogsService.schedule(conn_id, kb_id, reindex=True):
-                    logging.error(f"Failed to schedule sync task for connector {conn_id} and knowledge base {kb_id}")
+                    return f"Failed to schedule sync task for connector {conn_id} and knowledge base {kb_id}"
 
             return ""
         except (ValueError, KeyError) as e:

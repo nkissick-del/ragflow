@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, call
 import sys
 import os
 
@@ -118,8 +118,6 @@ class TestConnectorService(unittest.TestCase):
             # 2. save (to link connector to kb)
             # 3. schedule (to start sync)
 
-            from unittest.mock import call
-
             expected_calls = [
                 call.filter_update(unittest.mock.ANY, {"status": MockTaskStatus.CANCEL}),
                 call.save(id=unittest.mock.ANY, connector_id=unittest.mock.ANY, kb_id=unittest.mock.ANY, auto_parse=unittest.mock.ANY),
@@ -151,7 +149,6 @@ class TestConnectorService(unittest.TestCase):
 
 def tearDownModule():
     """Restore sys.modules and remove injected mocks"""
-    global _original_modules
     for mod in list(sys.modules.keys()):
         if mod in _MOCKED_MODULES:
             if mod in _original_modules:

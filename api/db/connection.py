@@ -127,7 +127,7 @@ def ensure_database_exists():
                 conn.close()
                 logging.info(f"Ensured MySQL database '{db_name}' exists at {db_host}:{db_port}")
             except Exception as e:
-                logging.warning(f"Failed to pre-create MySQL database '{db_name}': {e}. Migrations may handle creation.")
+                logging.warning(f"Failed to pre-create MySQL database '{db_name}': {e}. Migrations may handle creation.", exc_info=True)
 
         else:
             logging.warning(f"Unknown database type '{db_type}'; skipping pre-flight DB creation")

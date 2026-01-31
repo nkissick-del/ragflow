@@ -125,6 +125,8 @@ PARALLEL_DEVICES: int = 0
 
 STORAGE_IMPL_TYPE = os.getenv("STORAGE_IMPL", "MINIO")
 _s3_max_retries = int(os.getenv("S3_MAX_RETRIES", "3"))
+if _s3_max_retries < 0:
+    logging.warning(f"Configured S3_MAX_RETRIES ({_s3_max_retries}) is negative; clamping to 0.")
 S3_MAX_RETRIES = max(0, _s3_max_retries)
 STORAGE_IMPL = None
 

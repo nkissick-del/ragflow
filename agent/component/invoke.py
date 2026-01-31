@@ -127,6 +127,7 @@ class Invoke(ComponentBase, ABC):
                     if 500 <= status_code < 600 or status_code in (408, 429):
                         raise Exception(f"HTTP {status_code}: {truncated_text}")
 
+                    # Client errors (4xx) that are not allowed to be retried are reported as "error"
                     allowed_4xx = {400}
                     if status_code not in allowed_4xx:
                         self.set_output("error", {"status_code": status_code, "message": truncated_text})
@@ -143,6 +144,7 @@ class Invoke(ComponentBase, ABC):
                 time.sleep(self._param.delay_after_error)
 
         if last_e:
+            # Transient, network, or server errors that persisted through all retries are reported as "_ERROR"
             self.set_output("_ERROR", str(last_e))
             return f"Http request error: {last_e}"
 

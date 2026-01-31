@@ -15,7 +15,16 @@ class TestS3Connection(unittest.TestCase):
         # Mock dependencies that have side effects on import
         sys.modules["boto3"] = MagicMock()
         sys.modules["botocore"] = MagicMock()
-        sys.modules["botocore.exceptions"] = MagicMock()
+        mock_exceptions = MagicMock()
+
+        class ClientError(Exception):
+            def __init__(self, error_response, operation_name):
+                self.response = error_response
+                self.operation_name = operation_name
+                super().__init__(f"An error occurred ({error_response['Error']['Code']}) when calling the {operation_name} operation: {error_response['Error']['Message']}")
+
+        mock_exceptions.ClientError = ClientError
+        sys.modules["botocore.exceptions"] = mock_exceptions
         sys.modules["botocore.config"] = MagicMock()
 
         # Mock config_utils to avoid loading real YAML files

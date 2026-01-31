@@ -219,9 +219,9 @@ class RAGFlowS3:
     @use_prefix_path
     @use_default_bucket
     def get_presigned_url(self, bucket, fnm, expires, *args, **kwargs):
+        max_retries = kwargs.pop("max_retries", self.max_retries)
         params = {"Bucket": bucket, "Key": fnm}
         params.update({k: v for k, v in kwargs.items() if k not in ["Bucket", "Key"]})
-        max_retries = kwargs.pop("max_retries", self.max_retries)
         for i in range(max_retries):
             try:
                 if not self.conn:
@@ -243,8 +243,7 @@ class RAGFlowS3:
 
                 if i < max_retries - 1:
                     time.sleep(min(2**i, 30))
-                    if is_credential_error:
-                        self.__open__()
+                    self.__open__()
                 else:
                     raise
 

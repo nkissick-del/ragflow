@@ -129,8 +129,7 @@ class TestConnectorService(unittest.TestCase):
             mock_sync_logs_service.filter_update.assert_called_with(unittest.mock.ANY, {"status": MockTaskStatus.CANCEL})
 
     @patch("api.db.services.connector_service.SyncLogsService")
-    @patch("api.db.services.connector_service.Connector2KbService")
-    def test_link_connectors_collects_failures(self, mock_c2k_service, mock_sync_logs_service):
+    def test_link_connectors_collects_failures(self, mock_sync_logs_service):
         """Test that link_connectors collects and returns failure messages"""
         kb_id = "kb_1"
         tenant_id = "tenant_1"

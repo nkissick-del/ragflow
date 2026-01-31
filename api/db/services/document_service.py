@@ -330,7 +330,7 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_unfinished_docs(cls):
-        fields = [cls.model.id, cls.model.process_begin_at, cls.model.parser_config, cls.model.progress_msg, cls.model.run, cls.model.parser_id]
+        fields = [cls.model.id, cls.model.process_begin_at, cls.model.parser_config, cls.model.progress_msg, cls.model.run, cls.model.parser_id, cls.model.progress]
         unfinished_task_query = Task.select(Task.doc_id).where((Task.progress >= 0) & (Task.progress < 1))
 
         docs = cls.model.select(*fields).where(
@@ -563,34 +563,48 @@ class DocumentService(CommonService):
     def _sync_progress(cls, docs: list[dict]):
         from api.db.services.task_service import TaskService
 
+        doc_ids = [d["id"] for d in docs]
+        if not doc_ids:
+            return
+
+        all_tasks = TaskService.get_tasks_progress_by_doc_ids(doc_ids)
+        tasks_by_doc_id = {}
+        if all_tasks:
+            for t in all_tasks:
+                if t["doc_id"] not in tasks_by_doc_id:
+                    tasks_by_doc_id[t["doc_id"]] = []
+                tasks_by_doc_id[t["doc_id"]].append(t)
+
         for d in docs:
             try:
-                tsks = TaskService.query(doc_id=d["id"], order_by=Task.create_time)
+                tsks = tasks_by_doc_id.get(d["id"], [])
                 if not tsks:
                     continue
                 msg = []
                 prg = 0
                 finished = True
                 bad = 0
-                e, doc = DocumentService.get_by_id(d["id"])
-                status = doc.run  # TaskStatus.RUNNING.value
+
+                status = d.get("run")  # TaskStatus.RUNNING.value
                 if status == TaskStatus.CANCEL.value:
                     continue
-                doc_progress = doc.progress if doc and doc.progress else 0.0
+                doc_progress = d.get("progress", 0.0)
                 special_task_running = False
                 priority = 0
                 for t in tsks:
-                    task_type = (t.task_type or "").lower()
+                    task_type = (t.get("task_type") or "").lower()
                     if task_type in PIPELINE_SPECIAL_PROGRESS_FREEZE_TASK_TYPES:
                         special_task_running = True
-                    if 0 <= t.progress < 1:
+                    t_prog = t.get("progress", 0.0)
+                    if 0 <= t_prog < 1:
                         finished = False
-                    if t.progress == -1:
+                    if t_prog == -1:
                         bad += 1
-                    prg += t.progress if t.progress >= 0 else 0
-                    if t.progress_msg.strip():
-                        msg.append(t.progress_msg)
-                    priority = max(priority, t.priority)
+                    prg += t_prog if t_prog >= 0 else 0
+                    t_msg = t.get("progress_msg", "")
+                    if t_msg.strip():
+                        msg.append(t_msg)
+                    priority = max(priority, t.get("priority", 0))
                 prg /= len(tsks)
                 if finished and bad:
                     prg = -1

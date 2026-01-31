@@ -7,6 +7,7 @@ import i18n from '@/locales/config';
 import { useSendNextSharedMessage } from '@/pages/agent/hooks/use-send-shared-message';
 import { MessageCircle, Minimize2, Send, X } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   useGetSharedChatSearchParams,
   useSendSharedMessage,
@@ -14,6 +15,7 @@ import {
 import FloatingChatWidgetMarkdown from './floating-chat-widget-markdown';
 
 const FloatingChatWidget = () => {
+  const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   const [inputValue, setInputValue] = useState('');
@@ -306,6 +308,7 @@ const FloatingChatWidget = () => {
       >
         <button
           type="button"
+          aria-label={isOpen ? t('common.close') : t('header.chat')}
           onClick={() => {
             const newIsOpen = !isOpen;
             setIsOpen(newIsOpen);
@@ -350,6 +353,7 @@ const FloatingChatWidget = () => {
         <button
           type="button"
           onClick={toggleChat}
+          aria-label={isOpen ? t('common.close') : t('header.chat')}
           className={`w-14 h-14 bg-blue-600 hover:bg-blue-700 text-white rounded-full transition-all duration-300 flex items-center justify-center group ${
             isOpen ? 'scale-95' : 'scale-100 hover:scale-105'
           }`}
@@ -500,6 +504,7 @@ const FloatingChatWidget = () => {
                   type="button"
                   onClick={handleSendMessage}
                   disabled={!inputValue.trim() || sendLoading}
+                  aria-label={t('chat.send')}
                   className="p-3 bg-blue-600 text-white rounded-full hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                   <Send size={18} />
@@ -551,6 +556,7 @@ const FloatingChatWidget = () => {
               <button
                 type="button"
                 onClick={minimizeChat}
+                aria-label="Minimize"
                 className="p-1.5 hover:bg-white hover:bg-opacity-20 rounded-full transition-colors"
               >
                 <Minimize2 size={16} />
@@ -558,6 +564,7 @@ const FloatingChatWidget = () => {
               <button
                 type="button"
                 onClick={toggleChat}
+                aria-label={t('common.close')}
                 className="p-1.5 hover:bg-white hover:bg-opacity-20 rounded-full transition-colors"
               >
                 <X size={16} />
@@ -677,6 +684,7 @@ const FloatingChatWidget = () => {
                     type="button"
                     onClick={handleSendMessage}
                     disabled={!inputValue.trim() || sendLoading}
+                    aria-label={t('chat.send')}
                     className="p-3 bg-blue-600 text-white rounded-full hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
                     <Send size={18} />
@@ -693,6 +701,7 @@ const FloatingChatWidget = () => {
         <button
           type="button"
           onClick={toggleChat}
+          aria-label={isOpen ? t('common.close') : t('header.chat')}
           className={`w-14 h-14 bg-blue-600 hover:bg-blue-700 text-white rounded-full transition-all duration-300 flex items-center justify-center group ${
             isOpen ? 'scale-95' : 'scale-100 hover:scale-105'
           }`}

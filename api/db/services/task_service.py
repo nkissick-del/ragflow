@@ -185,7 +185,7 @@ class TaskService(CommonService):
             list[dict]: List of task dictionaries containing task details.
                        Returns None if no tasks are found.
         """
-        fields = [cls.model.id, cls.model.doc_id, cls.model.from_page, cls.model.progress, cls.model.progress_msg, cls.model.digest, cls.model.chunk_ids, cls.model.create_time]
+        fields = [cls.model.id, cls.model.doc_id, cls.model.from_page, cls.model.progress, cls.model.progress_msg, cls.model.digest, cls.model.chunk_ids, cls.model.create_time, cls.model.task_type, cls.model.priority]
         tasks = cls.model.select(*fields).order_by(cls.model.create_time.desc()).where(cls.model.doc_id.in_(doc_ids))
         tasks = list(tasks.dicts())
         if not tasks:

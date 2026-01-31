@@ -165,7 +165,6 @@ const MessageItem = ({
                 )}
               >
                 <MarkdownContent
-                  loading={loading}
                   content={messageContent}
                   reference={reference}
                   clickDocumentButton={clickDocumentButton}

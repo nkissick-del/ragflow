@@ -1,5 +1,6 @@
 import { PlusOutlined } from '@ant-design/icons';
 import React, { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { Trash2 } from 'lucide-react';
 import { Button } from '../ui/button';
@@ -17,6 +18,7 @@ interface EditTagsProps {
 
 const EditTag = React.forwardRef<HTMLDivElement, EditTagsProps>(
   ({ value = [], onChange, disabled }: EditTagsProps) => {
+    const { t } = useTranslation();
     const [inputVisible, setInputVisible] = useState(false);
     const [inputValue, setInputValue] = useState('');
     const inputRef = useRef<HTMLInputElement>(null);
@@ -63,14 +65,17 @@ const EditTag = React.forwardRef<HTMLDivElement, EditTagsProps>(
                   {tag}
                 </div>
                 {!disabled && (
-                  <Trash2
-                    size={14}
-                    className="text-text-secondary hover:text-state-error"
+                  <button
+                    className="cursor-pointer border-none bg-transparent p-0 text-text-secondary hover:text-state-error focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-state-error focus-visible:ring-offset-1 rounded-sm ml-1"
                     onClick={(e) => {
                       e.preventDefault();
                       handleClose(tag);
                     }}
-                  />
+                    aria-label={`${t('common.remove')} ${tag}`}
+                    type="button"
+                  >
+                    <Trash2 size={14} />
+                  </button>
                 )}
               </div>
             </div>
@@ -107,6 +112,7 @@ const EditTag = React.forwardRef<HTMLDivElement, EditTagsProps>(
               className="w-fit flex items-center justify-center gap-2 bg-bg-card border-border-button border"
               onClick={showInput}
               disabled={disabled}
+              aria-label={t('common.add')}
             >
               <PlusOutlined />
             </Button>
@@ -116,5 +122,7 @@ const EditTag = React.forwardRef<HTMLDivElement, EditTagsProps>(
     );
   },
 );
+
+EditTag.displayName = 'EditTag';
 
 export default EditTag;

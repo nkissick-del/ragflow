@@ -27,17 +27,17 @@ for mod in _MOCKED_MODULES:
         _original_modules[mod] = sys.modules[mod]
     sys.modules[mod] = MagicMock()
 
-# Setup peewee and anthropic properly for imports
-import types
+# Ensure we use what we already mocked or create specific ones if needed
+# The common setup for peewee/anthropic is already in mock_utils or started above
+# but here we need specific attributes for these tests.
+peewee_mock = sys.modules["peewee"]
+if isinstance(peewee_mock, MagicMock):
+    peewee_mock.SQL = MagicMock()
+    peewee_mock.fn = MagicMock()
 
-peewee_mock = types.ModuleType("peewee")
-peewee_mock.SQL = MagicMock()
-peewee_mock.fn = MagicMock()
-sys.modules["peewee"] = peewee_mock
-
-anthropic_mock = types.ModuleType("anthropic")
-anthropic_mock.BaseModel = MagicMock()
-sys.modules["anthropic"] = anthropic_mock
+anthropic_mock = sys.modules["anthropic"]
+if isinstance(anthropic_mock, MagicMock):
+    anthropic_mock.BaseModel = MagicMock()
 
 
 # Setup CommonService to be a class
@@ -118,12 +118,14 @@ class TestConnectorService(unittest.TestCase):
             # 2. save (to link connector to kb)
             # 3. schedule (to start sync)
 
-            relevant_calls = [c for c in manager.mock_calls if any(x in c[0] for x in ["filter_update", "save", "schedule"])]
+            from unittest.mock import call
 
-            self.assertEqual(len(relevant_calls), 3)
-            self.assertIn("filter_update", relevant_calls[0][0])
-            self.assertIn("save", relevant_calls[1][0])
-            self.assertIn("schedule", relevant_calls[2][0])
+            expected_calls = [
+                call.filter_update(unittest.mock.ANY, {"status": MockTaskStatus.CANCEL}),
+                call.save(id=unittest.mock.ANY, connector_id=unittest.mock.ANY, kb_id=unittest.mock.ANY, auto_parse=unittest.mock.ANY),
+                call.schedule(unittest.mock.ANY, unittest.mock.ANY, reindex=unittest.mock.ANY),
+            ]
+            manager.assert_has_calls(expected_calls, any_order=False)
 
             # Check arguments for filter_update specifically for cancellation
             mock_sync_logs_service.filter_update.assert_called_with(unittest.mock.ANY, {"status": MockTaskStatus.CANCEL})
@@ -145,6 +147,17 @@ class TestConnectorService(unittest.TestCase):
 
             with self.assertRaises(RuntimeError):
                 Connector2KbService.link_connectors("kb_1", [{"id": "c1"}], "t1")
+
+
+def tearDownModule():
+    """Restore sys.modules and remove injected mocks"""
+    global _original_modules
+    for mod in list(sys.modules.keys()):
+        if mod in _MOCKED_MODULES:
+            if mod in _original_modules:
+                sys.modules[mod] = _original_modules[mod]
+            else:
+                del sys.modules[mod]
 
 
 if __name__ == "__main__":

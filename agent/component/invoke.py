@@ -130,7 +130,7 @@ class Invoke(ComponentBase, ABC):
                     allowed_4xx = {400}
                     if status_code not in allowed_4xx:
                         self.set_output("error", {"status_code": status_code, "message": truncated_text})
-                        return self.output("result")
+                        return self.output("error")
 
                 self._handle_response(response)
                 return self.output("result")

@@ -55,7 +55,6 @@ def setup_mocks():
     sys.modules["common.float_utils"] = MagicMock()
     # rag.utils package
     mock_rag_utils = mock_package("rag.utils")
-    sys.modules["rag.utils"] = mock_rag_utils
 
     # These will be populated later or individually
     sys.modules["rag.utils.s3_conn"] = MagicMock()

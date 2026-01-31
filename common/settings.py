@@ -124,7 +124,8 @@ EMBEDDING_BATCH_SIZE: int = 16
 PARALLEL_DEVICES: int = 0
 
 STORAGE_IMPL_TYPE = os.getenv("STORAGE_IMPL", "MINIO")
-S3_MAX_RETRIES = int(os.getenv("S3_MAX_RETRIES", "3"))
+_s3_max_retries = int(os.getenv("S3_MAX_RETRIES", "3"))
+S3_MAX_RETRIES = max(0, _s3_max_retries)
 STORAGE_IMPL = None
 
 

@@ -16,14 +16,17 @@
 
 class TaskCanceledException(Exception):
     def __init__(self, msg):
+        super().__init__(msg)
         self.msg = msg
 
 
 class FieldValueRequiredException(Exception):
     def __init__(self, msg):
+        super().__init__(msg)
         self.msg = msg
 
 
 class ConnectorError(Exception):
     def __init__(self, msg):
+        super().__init__(msg)
         self.msg = msg

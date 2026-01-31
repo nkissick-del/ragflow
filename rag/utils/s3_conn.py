@@ -40,7 +40,7 @@ class RAGFlowS3:
         self.addressing_style = self.s3_config.get("addressing_style") or None
         self.bucket = self.s3_config.get("bucket") or None
         self.prefix_path = self.s3_config.get("prefix_path") or None
-        self.max_retries = max(0, settings.S3_MAX_RETRIES)
+        self.max_retries = max(0, getattr(settings, "S3_MAX_RETRIES", 3))
         if not self.access_key or not self.secret_key:
             logging.info("S3 initialized without explicit credentials; will use boto3 default chain.")
         self.__open__()
@@ -224,14 +224,18 @@ class RAGFlowS3:
                 self.__open__()
             if not self.conn:
                 raise RuntimeError("S3 connection not available")
-            return self.conn[0].generate_presigned_url("get_object", Params={"Bucket": bucket, "Key": fnm, **kwargs}, ExpiresIn=expires)
+            params = {"Bucket": bucket, "Key": fnm}
+            params.update({k: v for k, v in kwargs.items() if k not in ["Bucket", "Key"]})
+            return self.conn[0].generate_presigned_url("get_object", Params=params, ExpiresIn=expires)
         except Exception:
             try:
                 logging.info(f"Retrying get_presigned_url for {bucket}/{fnm} after credential refresh")
                 self.__open__()
                 if not self.conn:
                     raise RuntimeError("S3 connection not available")
-                return self.conn[0].generate_presigned_url("get_object", Params={"Bucket": bucket, "Key": fnm, **kwargs}, ExpiresIn=expires)
+                params = {"Bucket": bucket, "Key": fnm}
+                params.update({k: v for k, v in kwargs.items() if k not in ["Bucket", "Key"]})
+                return self.conn[0].generate_presigned_url("get_object", Params=params, ExpiresIn=expires)
             except Exception:
                 logging.exception(f"fail get url {bucket}/{fnm}")
                 raise

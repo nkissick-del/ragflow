@@ -101,7 +101,7 @@ def ensure_database_exists():
                 conn.close()
 
             except Exception as e:
-                logging.error(
+                logging.warning(
                     f"Failed to ensure PostgreSQL database '{db_name}' exists: {e}. "
                     f"If using restricted user, ensure database is pre-created or user has CREATE DATABASE permission. "
                     f"See docs/POSTGRESQL_SECURITY.md for sandboxed setup.",

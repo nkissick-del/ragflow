@@ -268,7 +268,8 @@ class Connector2KbService(CommonService):
                     [SyncLogs.connector_id == conn_id, SyncLogs.kb_id == kb_id, SyncLogs.status.in_([TaskStatus.SCHEDULE, TaskStatus.RUNNING])], {"status": TaskStatus.CANCEL}
                 )
                 cls.save(**{"id": get_uuid(), "connector_id": conn_id, "kb_id": kb_id, "auto_parse": conn.get("auto_parse", "1")})
-                SyncLogsService.schedule(conn_id, kb_id, reindex=True)
+                if not SyncLogsService.schedule(conn_id, kb_id, reindex=True):
+                    logging.error(f"Failed to schedule sync task for connector {conn_id} and knowledge base {kb_id}")
 
             return ""
         except (ValueError, KeyError) as e:

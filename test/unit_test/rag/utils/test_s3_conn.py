@@ -42,18 +42,21 @@ class TestS3Connection(unittest.TestCase):
         settings.S3 = {"access_key": "test_ak", "secret_key": "test_sk", "bucket": "test_bucket"}
         settings.S3_MAX_RETRIES = 3
 
+    def _get_s3_class(self):
+        from rag.utils.s3_conn import RAGFlowS3
+
+        if hasattr(RAGFlowS3, "__wrapped__"):
+            return RAGFlowS3.__wrapped__
+        if hasattr(RAGFlowS3, "__closure__") and RAGFlowS3.__closure__:
+            return RAGFlowS3.__closure__[0].cell_contents
+        return RAGFlowS3
+
     def tearDown(self):
         teardown_mocks(self.original_modules)
 
     @patch("rag.utils.s3_conn.boto3.client")
     def test_init_and_open_success(self, mock_boto_client):
-        from rag.utils.s3_conn import RAGFlowS3
-
-        # Use __wrapped__ if available, otherwise use closure
-        if hasattr(RAGFlowS3, "__wrapped__"):
-            s3_cls = RAGFlowS3.__wrapped__
-        else:
-            s3_cls = RAGFlowS3.__closure__[0].cell_contents
+        s3_cls = self._get_s3_class()
 
         s3 = s3_cls()
         self.assertIsNotNone(s3.conn)
@@ -63,12 +66,7 @@ class TestS3Connection(unittest.TestCase):
     @patch("rag.utils.s3_conn.boto3.client")
     def test_open_failure_sets_conn_none(self, mock_boto_client):
         mock_boto_client.side_effect = Exception("Connection failed")
-        from rag.utils.s3_conn import RAGFlowS3
-
-        if hasattr(RAGFlowS3, "__wrapped__"):
-            s3_cls = RAGFlowS3.__wrapped__
-        else:
-            s3_cls = RAGFlowS3.__closure__[0].cell_contents
+        s3_cls = self._get_s3_class()
 
         s3 = s3_cls()
         self.assertIsNone(s3.conn)
@@ -76,12 +74,7 @@ class TestS3Connection(unittest.TestCase):
     @patch("rag.utils.s3_conn.boto3.client")
     def test_methods_raise_runtime_error_when_no_conn(self, mock_boto_client):
         mock_boto_client.side_effect = Exception("Connection failed")
-        from rag.utils.s3_conn import RAGFlowS3
-
-        if hasattr(RAGFlowS3, "__wrapped__"):
-            s3_cls = RAGFlowS3.__wrapped__
-        else:
-            s3_cls = RAGFlowS3.__closure__[0].cell_contents
+        s3_cls = self._get_s3_class()
 
         s3 = s3_cls()
         self.assertIsNone(s3.conn)
@@ -101,24 +94,15 @@ class TestS3Connection(unittest.TestCase):
         mock_boto_client.return_value = mock_s3
 
         # Mock get_object to fail then succeed
-        mock_s3.get_object.side_effect = [Exception("Failed 1"), Exception("Failed 2"), {"Body": MagicMock(read=lambda: b"data")}]
+        mock_s3.get_object.side_effect = [Exception("Failed 1"), {"Body": MagicMock(read=lambda: b"data")}]
 
-        from rag.utils.s3_conn import RAGFlowS3
-
-        if hasattr(RAGFlowS3, "__wrapped__"):
-            s3_cls = RAGFlowS3.__wrapped__
-        else:
-            s3_cls = RAGFlowS3.__closure__[0].cell_contents
-
+        s3_cls = self._get_s3_class()
         s3 = s3_cls()
         # Reset call count after init
         mock_boto_client.reset_mock()
 
         # Test with override
-        try:
-            s3.get("bucket", "key", max_retries=2)
-        except Exception:
-            pass
+        s3.get("bucket", "key", max_retries=2)
 
         self.assertEqual(mock_s3.get_object.call_count, 2)
 
@@ -127,12 +111,7 @@ class TestS3Connection(unittest.TestCase):
         mock_s3 = MagicMock()
         mock_boto_client.return_value = mock_s3
 
-        from rag.utils.s3_conn import RAGFlowS3
-
-        if hasattr(RAGFlowS3, "__wrapped__"):
-            s3_cls = RAGFlowS3.__wrapped__
-        else:
-            s3_cls = RAGFlowS3.__closure__[0].cell_contents
+        s3_cls = self._get_s3_class()
 
         s3 = s3_cls()
         # Reset after init

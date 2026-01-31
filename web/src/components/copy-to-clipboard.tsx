@@ -2,6 +2,7 @@ import { useTranslate } from '@/hooks/common-hooks';
 import { CheckOutlined, CopyOutlined } from '@ant-design/icons';
 import { useState } from 'react';
 import { CopyToClipboard as Clipboard, Props } from 'react-copy-to-clipboard';
+import { Button } from './ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 
 const CopyToClipboard = ({ text }: Props) => {
@@ -17,11 +18,18 @@ const CopyToClipboard = ({ text }: Props) => {
 
   return (
     <Tooltip>
-      <TooltipTrigger>
-        <Clipboard text={text} onCopy={handleCopy}>
-          {copied ? <CheckOutlined /> : <CopyOutlined />}
-        </Clipboard>
-      </TooltipTrigger>
+      <Clipboard text={text} onCopy={handleCopy}>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="w-6 h-6 text-text-secondary"
+            aria-label={t('copy')}
+          >
+            {copied ? <CheckOutlined /> : <CopyOutlined />}
+          </Button>
+        </TooltipTrigger>
+      </Clipboard>
       <TooltipContent>{copied ? t('copied') : t('copy')}</TooltipContent>
     </Tooltip>
   );

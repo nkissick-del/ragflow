@@ -40,6 +40,7 @@ class RAGFlowS3:
         self.addressing_style = self.s3_config.get("addressing_style") or None
         self.bucket = self.s3_config.get("bucket") or None
         self.prefix_path = self.s3_config.get("prefix_path") or None
+        self.max_retries = 3
         if not self.access_key or not self.secret_key:
             logging.info("S3 initialized without explicit credentials; will use boto3 default chain.")
         self.__open__()
@@ -100,6 +101,7 @@ class RAGFlowS3:
 
             self.conn = [boto3.client("s3", **s3_params)]
         except Exception:
+            self.conn = []
             logging.exception(f"Fail to connect at region {self.region_name} or endpoint {self.endpoint_url}")
 
     def __close__(self):
@@ -138,7 +140,7 @@ class RAGFlowS3:
     @use_default_bucket
     def put(self, bucket, fnm, binary, *args, **kwargs):
         logging.debug(f"bucket name {bucket}; filename :{fnm}:")
-        max_retries = 10
+        max_retries = kwargs.get("max_retries", self.max_retries)
         for i in range(max_retries):
             try:
                 if not self.bucket_exists(bucket):
@@ -166,7 +168,7 @@ class RAGFlowS3:
     @use_prefix_path
     @use_default_bucket
     def get(self, bucket, fnm, *args, **kwargs):
-        max_retries = 10
+        max_retries = self.max_retries
         for i in range(max_retries):
             try:
                 r = self.conn[0].get_object(Bucket=bucket, Key=fnm)
@@ -195,19 +197,18 @@ class RAGFlowS3:
     @use_prefix_path
     @use_default_bucket
     def get_presigned_url(self, bucket, fnm, expires, *args, **kwargs):
-        max_retries = 10
-        for i in range(max_retries):
+        try:
+            if not self.conn:
+                self.__open__()
+            return self.conn[0].generate_presigned_url("get_object", Params={"Bucket": bucket, "Key": fnm}, ExpiresIn=expires)
+        except Exception:
             try:
-                r = self.conn[0].generate_presigned_url("get_object", Params={"Bucket": bucket, "Key": fnm}, ExpiresIn=expires)
-
-                return r
+                logging.info(f"Retrying get_presigned_url for {bucket}/{fnm} after credential refresh")
+                self.__open__()
+                return self.conn[0].generate_presigned_url("get_object", Params={"Bucket": bucket, "Key": fnm}, ExpiresIn=expires)
             except Exception:
-                logging.exception(f"fail get url {bucket}/{fnm} (attempt {i + 1}/{max_retries})")
-                if i < max_retries - 1:
-                    time.sleep(min(2**i, 30))
-                    self.__open__()
-                else:
-                    raise
+                logging.exception(f"fail get url {bucket}/{fnm}")
+                raise
 
     @use_default_bucket
     def rm_bucket(self, bucket, *args, **kwargs):

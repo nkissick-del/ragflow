@@ -327,7 +327,11 @@ RAGFlow supports flexible dependency configurations for faster builds and smalle
 | Custom selection | `docling-sidecar,llm-anthropic,observability` |
 
 
-The `full-lite` option is a recommended balance of features and image size. It includes all LLM providers, integrations, web search tools, GraphRAG, and agent capabilities, but excludes the heavy `deepdoc` parsing suite (intended for use with Docling sidecar). It defaults to Elasticsearch/OpenSearch for document vectors. Note that `full-lite` DOES NOT include the `observability` group by default; if you need pgvector-backed telemetry features, you must add it explicitly (e.g., `full-lite,observability`).
+The `full-lite` option is a recommended balance of features and image size. It differs from the standard installation in four key ways:
+- **Comprehensive features**: It includes all LLM providers, integrations, web search tools, GraphRAG, and agent capabilities.
+- **Excludes deepdoc**: The heavy `deepdoc` parsing suite is excluded, as it is intended for use with a Docling sidecar.
+- **Vector database**: It defaults to Elasticsearch or OpenSearch for document vectors.
+- **No observability by default**: The `full-lite` option DOES NOT include the `observability` group. If you need pgvector-backed telemetry features, you must add it explicitly (e.g., `full-lite,observability`).
 
 ### Dependency Groups
 
@@ -377,7 +381,7 @@ docker build --build-arg RAGFLOW_EXTRAS="docling-sidecar,llm-anthropic,observabi
    docker run --name docling --network <network> ds4sd/docling-serve
    ```
    > [!TIP]
-   > RAGFlow talks to Docling directly via the shared network. Port mapping (`-p 5001:5001`) is only necessary if you want to access Docling from your host machine (e.g., for manual testing) and does not affect RAGFlow's ability to reach the container.
+   > RAGFlow communicates with Docling using the internal container network, so no port mapping is required for RAGFlow-to-Docling communication. You only need to add the port mapping (`-p 5001:5001`) if you want to connect to Docling from your host machine for manual testing or debugging.
 
    Then set `DOCLING_BASE_URL` in `.env`. It MUST be the full base URL including protocol and port:
    - `DOCLING_BASE_URL=http://docling:5001` (Recommended for clarity and reliable container-to-container resolution)

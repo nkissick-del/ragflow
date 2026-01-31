@@ -119,7 +119,7 @@ class RAGFlowPdfParser:
                 self.updown_cnt_mdl.load_model(os.path.join(model_dir, "updown_concat_xgb.model"))
         else:
             self.updown_cnt_mdl = None
-            logging.warning("xgboost is not installed. DeepDOC vertical merging will be less accurate.")
+            logging.warning("xgboost is not installed. DeepDOC vertical text merging will be significantly reduced (or disabled for ML-guided merging) when xgboost is unavailable.")
 
         self.page_from = 0
         self.column_num = 1
@@ -677,10 +677,8 @@ class RAGFlowPdfParser:
                         if self.updown_cnt_mdl.predict(xgb.DMatrix([fea]))[0] <= 0.5:
                             i += 1
                             continue
-                    else:
-                        # Fallback: skip XGBoost-based merging if xgboost is not available
-                        i += 1
-                        continue
+                    # Note: If xgboost is missing, we proceed to call dfs(down, i+1) and pop
+                    # as a simpler heuristic fallback to ensure vertical concatenation still occurs.
                     dfs(down, i + 1)
                     boxes.pop(i)
                     return

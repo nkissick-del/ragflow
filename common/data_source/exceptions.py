@@ -5,6 +5,7 @@ class ConnectorMissingCredentialError(Exception):
     """Missing credentials exception"""
 
     def __init__(self, connector_name: str):
+        self.connector_name = connector_name
         super().__init__(f"Missing credentials for {connector_name}")
 
 

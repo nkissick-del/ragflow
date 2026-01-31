@@ -44,7 +44,7 @@ def _import_submodules() -> None:
             module = importlib.import_module(mod_name)
             _extract_classes_from_module(module)  # noqa: F821
         except ImportError as e:
-            logger.debug("Skipping module %s due to missing dependencies: %s", mod_name, e)
+            logger.info("Skipping module %s due to missing dependencies: %s", mod_name, e)
 
 
 def _extract_classes_from_module(module: ModuleType) -> None:

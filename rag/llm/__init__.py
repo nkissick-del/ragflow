@@ -19,8 +19,9 @@
 import importlib
 import inspect
 import logging
-
 from strenum import StrEnum
+
+logger = logging.getLogger(__name__)
 
 
 class SupportedLiteLLMProvider(StrEnum):
@@ -154,7 +155,7 @@ for module_name, mapping_dict in MODULE_MAPPING.items():
         module = importlib.import_module(full_module_name)
     except ImportError as e:
         if getattr(e, "name", None) == full_module_name:
-            logging.warning(f"Failed to import model module {full_module_name}: {e}. This model factory will be empty.")
+            logger.warning(f"Failed to import model module {full_module_name}: {e}. This model factory will be empty.")
             continue
         raise
 

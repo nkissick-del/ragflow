@@ -34,7 +34,7 @@ def _import_submodules() -> None:
             module = importlib.import_module(f".{module_name}", package=__name__)
             _extract_classes_from_module(module)  # noqa: F821
         except ImportError as e:
-            logging.debug(f"Skipping module {module_name} due to missing dependencies: {e}")
+            logging.warning(f"Skipping module {module_name} due to missing dependencies: {e}")
 
 
 def _extract_classes_from_module(module: ModuleType) -> None:
@@ -52,9 +52,11 @@ del _package_path, _import_submodules, _extract_classes_from_module
 
 
 def component_class(class_name: str) -> Optional[Type[Any]]:
-    for module_name in ["agent.component", "agent.tools", "rag.flow"]:
+    modules = ["agent.component", "agent.tools", "rag.flow"]
+    for module_name in modules:
         try:
             return getattr(importlib.import_module(module_name), class_name)
         except (ImportError, AttributeError):
             pass
+    logging.warning(f"component_class: Could not resolve class {class_name} in modules {modules}")
     return None

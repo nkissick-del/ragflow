@@ -14,9 +14,8 @@
 #  limitations under the License.
 #
 import os
-import sys
 
-print("DEBUG: Importing common.settings deps...", file=sys.stderr, flush=True)
+
 import json
 import secrets
 from datetime import date
@@ -27,7 +26,7 @@ from common.config_utils import get_base_config, decrypt_database_config
 from common.misc_utils import pip_install_torch
 from common.constants import SVR_QUEUE_NAME, Storage
 
-print("DEBUG: common.settings static deps complete.", file=sys.stderr, flush=True)
+# Connection instances and settings initialized in init_settings()
 
 # Connection instances and settings initialized in init_settings()
 LLM = None
@@ -327,11 +326,9 @@ def init_settings():
 
         msgStoreConn = memory_ob_conn.OBConnection()
     elif lower_case_doc_engine == "pgvector":
-        import rag.utils.pgvector_conn
+        import memory.utils.pgvector_conn as memory_pgvector_conn
 
-        # For now, we'll use the same PGVectorConnection for message store
-        # although it might need its own memory-optimized wrapper later.
-        msgStoreConn = rag.utils.pgvector_conn.PGVectorConnection()
+        msgStoreConn = memory_pgvector_conn.PGVectorConnection()
     else:
         raise Exception(f"Not supported message store engine: {DOC_ENGINE}")
 

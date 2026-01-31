@@ -3,6 +3,7 @@
 import logging
 import os
 import email.utils
+from io import BytesIO
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -108,13 +109,13 @@ class WebDAVConnector(LoadConnector, PollConnector):
                         if modified.tzinfo is None:
                             modified = modified.replace(tzinfo=timezone.utc)
                     except (ValueError, TypeError):
-                        logging.warning(f"Could not parse modified time for {item_path}: {modified_time}")
-                        modified = datetime.now(timezone.utc)
+                        logging.warning(f"Could not parse modified time for {item_path}: {modified_time}. Skipping.")
+                        modified = None
             else:
-                logging.warning(f"Unexpected modified_time type for {item_path}: {type(modified_time)} ({modified_time}). Falling back to now.")
-                modified = datetime.now(timezone.utc)
+                logging.warning(f"Unexpected modified_time type for {item_path}: {type(modified_time)} ({modified_time}). Skipping.")
+                modified = None
         else:
-            modified = datetime.now(timezone.utc)
+            modified = None
         return modified
 
     def _list_files_recursive(
@@ -157,6 +158,8 @@ class WebDAVConnector(LoadConnector, PollConnector):
                 else:
                     try:
                         modified = self._parse_modified_time(item.get("modified"), item_path)
+                        if modified is None:
+                            continue
                         item["modified_parsed"] = modified
                         logging.debug(f"File {item_path}: modified={modified}, start={start}, end={end}, include={start < modified <= end}")
                         if start < modified <= end:
@@ -210,7 +213,6 @@ class WebDAVConnector(LoadConnector, PollConnector):
 
             try:
                 logging.debug(f"Downloading file: {file_path}")
-                from io import BytesIO
 
                 buffer = BytesIO()
                 self.client.download_fileobj(file_path, buffer)
@@ -221,6 +223,9 @@ class WebDAVConnector(LoadConnector, PollConnector):
                     continue
 
                 modified = file_info.get("modified_parsed") or self._parse_modified_time(file_info.get("modified"), file_path)
+                if modified is None:
+                    logging.warning(f"Skipping {file_path} due to missing or invalid modified time")
+                    continue
 
                 if filename_counts.get(file_name, 0) > 1:
                     relative_path = file_path

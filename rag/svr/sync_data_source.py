@@ -842,7 +842,6 @@ class Github(SyncBase):
         Sync files from Github repositories.
         """
         from common.data_source.connector_runner import ConnectorRunner
-
         from common.data_source.github.connector import GithubConnector
 
         self.connector = GithubConnector(

@@ -81,7 +81,7 @@ def ensure_database_exists():
             try:
                 # Connect to postgres system database using configured credentials
                 # Add connect_timeout to prevent indefinite hanging during startup
-                print(f"Connecting to PostgreSQL at {db_host}:{db_port} to ensure database '{db_name}' exists...", flush=True)
+                logging.info(f"Connecting to PostgreSQL at {db_host}:{db_port} to ensure database '{db_name}' exists...")
                 conn = psycopg2.connect(host=db_host, port=db_port, user=db_user, password=db_pass, database="postgres", connect_timeout=10)
                 conn.autocommit = True
                 cursor = conn.cursor()
@@ -91,18 +91,17 @@ def ensure_database_exists():
 
                 if cursor.fetchone() is None:
                     # Database doesn't exist, create it
-                    print(f"Database '{db_name}' not found. Creating...", flush=True)
+                    logging.info(f"Database '{db_name}' not found. Creating...")
                     cursor.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(db_name)))
                     logging.info(f"Created PostgreSQL database '{db_name}' at {db_host}:{db_port}")
                 else:
                     logging.info(f"PostgreSQL database '{db_name}' already exists at {db_host}:{db_port}")
-                    print(f"PostgreSQL database '{db_name}' already exists.", flush=True)
 
                 cursor.close()
                 conn.close()
 
             except Exception as e:
-                print(f"Error ensuring PostgreSQL database exists: {e}", flush=True)
+                logging.error("Error ensuring PostgreSQL database exists", exc_info=True)
                 logging.warning(
                     f"Failed to create PostgreSQL database '{db_name}': {e}. "
                     f"If using restricted user, ensure database is pre-created or user has CREATE DATABASE permission. "
@@ -256,11 +255,15 @@ def log_connection_stats():
     """
     try:
         from api.db.diagnostics import PoolDiagnostics
+    except ImportError:
+        logging.error("Failed to import PoolDiagnostics from api.db.diagnostics")
+        return
 
+    try:
         if DB:
             PoolDiagnostics.log_pool_health(DB)
     except Exception as e:
-        logging.error(f"Failed to log connection stats: {e}")
+        logging.error(f"Error in PoolDiagnostics.log_pool_health: {e}", exc_info=True)
 
 
 def wait_for_schema_ready(max_retries: int = 30, retry_delay: float = 0.5):

@@ -167,7 +167,8 @@ RUN --mount=type=cache,id=ragflow_uv,target=/root/.cache/uv,sharing=locked \
     echo "Using extras: all-extras"; \
     uv sync --python 3.12 --frozen --all-extras; \
     else \
-    # Define allowed extras (matches pyproject.toml optional-dependencies keys) \
+    # Define allowed extras (matches pyproject.toml [project.optional-dependencies] keys).
+    # IMPORTANT: This list must be kept in sync with pyproject.toml manually.
     ALLOWED_EXTRAS="db-postgres db-mysql storage-minio storage-s3 storage-azure storage-opendal storage-webdav vectorstore-elasticsearch vectorstore-opensearch vectorstore-infinity vectorstore-postgres vectorstore-oceanbase deepdoc llm-anthropic llm-google llm-cohere llm-mistral llm-baidu llm-alibaba llm-volcengine llm-zhipu llm-groq llm-replicate llm-voyage llm-ollama llm-hunyuan llm-all grpc integrations-jira integrations-slack integrations-discord integrations-github integrations-gitlab integrations-google integrations-box integrations-dropbox integrations-asana integrations-airtable integrations-office365 integrations-moodle integrations-all search-tavily search-duckduckgo search-scholar search-crawl search-wikipedia search-all graphrag agent-tools agent-sql agent-translation embeddings finance-china finance-global observability docling-sidecar full-lite test dev"; \
     # Build --extra flags for each comma-separated extra \
     EXTRA_FLAGS=""; \

@@ -20,6 +20,8 @@ import logging
 from types import ModuleType
 from typing import Dict, Type
 
+logger = logging.getLogger(__name__)
+
 _package_path = os.path.dirname(__file__)
 __all_classes: Dict[str, Type] = {}
 
@@ -34,7 +36,7 @@ def _import_submodules() -> None:
             module = importlib.import_module(f".{module_name}", package=__name__)
             _extract_classes_from_module(module)  # noqa: F821
         except ImportError as e:
-            logging.debug("Skipping module %s due to missing dependencies: %s", module_name, e)
+            logger.debug("Skipping module %s due to missing dependencies: %s", module_name, e)
 
 
 def _extract_classes_from_module(module: ModuleType) -> None:

@@ -162,6 +162,7 @@ def read_potential_broken_pdf(blob):
         try:
             import pdfplumber
         except ImportError:
+            logging.error("pdfplumber is not installed. Potential broken PDF repair will be skipped.", exc_info=True)
             return False
 
         try:

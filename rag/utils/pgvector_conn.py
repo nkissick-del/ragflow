@@ -68,7 +68,7 @@ TABLE_NAME_REGEX = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 # Table creation SQL template
 CREATE_TABLE_SQL = """
-CREATE TABLE IF NOT EXISTS {table_name} (
+CREATE TABLE IF NOT EXISTS {{table_name}} (
     id VARCHAR(64) PRIMARY KEY,
     kb_id VARCHAR(64) NOT NULL,
     doc_id VARCHAR(64),
@@ -108,10 +108,10 @@ CREATE TABLE IF NOT EXISTS {table_name} (
 );
 
 -- Indexes
-CREATE INDEX IF NOT EXISTS idx_{table_name_safe}_kb_id ON {table_name} (kb_id);
-CREATE INDEX IF NOT EXISTS idx_{table_name_safe}_doc_id ON {table_name} (doc_id);
-CREATE INDEX IF NOT EXISTS idx_{table_name_safe}_available ON {table_name} (available_int);
-CREATE INDEX IF NOT EXISTS idx_{table_name_safe}_tsvector ON {table_name} USING GIN (content_tsvector);
+CREATE INDEX IF NOT EXISTS idx_{table_name_safe}_kb_id ON {{table_name}} (kb_id);
+CREATE INDEX IF NOT EXISTS idx_{table_name_safe}_doc_id ON {{table_name}} (doc_id);
+CREATE INDEX IF NOT EXISTS idx_{table_name_safe}_available ON {{table_name}} (available_int);
+CREATE INDEX IF NOT EXISTS idx_{table_name_safe}_tsvector ON {{table_name}} USING GIN (content_tsvector);
 """
 
 # Trigger for updating tsvector
@@ -124,9 +124,9 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS trg_update_tsvector_{table_name_safe} ON {table_name};
+DROP TRIGGER IF EXISTS trg_update_tsvector_{table_name_safe} ON {{table_name}};
 CREATE TRIGGER trg_update_tsvector_{table_name_safe}
-    BEFORE INSERT OR UPDATE ON {table_name}
+    BEFORE INSERT OR UPDATE ON {{table_name}}
     FOR EACH ROW
     EXECUTE FUNCTION update_content_tsvector_{table_name_safe}();
 """
@@ -165,7 +165,7 @@ class PGVectorConnection(PGVectorConnectionBase):
             with self._pool.cursor() as cur:
                 # Create table
                 # Use psycopg2.sql for all identifiers and composition
-                create_sql = sql.SQL(CREATE_TABLE_SQL).format(table_name=sql.Identifier(index_name), table_name_safe=sql.Identifier(table_name_safe))
+                create_sql = sql.SQL(CREATE_TABLE_SQL.format(table_name_safe=table_name_safe)).format(table_name=sql.Identifier(index_name))
                 cur.execute(create_sql)
 
                 # Create vector indexes for all supported dimensions
@@ -181,7 +181,7 @@ class PGVectorConnection(PGVectorConnectionBase):
                     cur.execute(idx_sql)
 
                 # Create tsvector trigger
-                trigger_sql = sql.SQL(CREATE_TSVECTOR_TRIGGER_SQL).format(table_name=sql.Identifier(index_name), table_name_safe=sql.Identifier(table_name_safe))
+                trigger_sql = sql.SQL(CREATE_TSVECTOR_TRIGGER_SQL.format(table_name_safe=table_name_safe)).format(table_name=sql.Identifier(index_name))
                 cur.execute(trigger_sql)
 
             self.logger.info(f"Created pgvector table: {index_name}")
@@ -194,6 +194,9 @@ class PGVectorConnection(PGVectorConnectionBase):
         """Delete a table (only if dataset_id is empty - full tenant deletion)."""
         if dataset_id:
             # Don't drop table if only deleting a dataset within tenant
+            return False
+        if not TABLE_NAME_REGEX.match(index_name):
+            self.logger.error(f"Invalid index name: {index_name}")
             return False
         try:
             with self._pool.cursor() as cur:
@@ -597,7 +600,8 @@ class PGVectorConnection(PGVectorConnectionBase):
                         cur.execute("SAVEPOINT sp_batch")
                         extras.execute_values(cur, insert_sql.as_string(cur.connection), values)
                         cur.execute("RELEASE SAVEPOINT sp_batch")
-                    except Exception:
+                    except Exception as e:
+                        self.logger.warning(f"Batch insert error for index {index_name} with {len(doc_list)} docs. Error: {e}")
                         # If a batch fails, rollback to savepoint and retry individually to collect specific errors
                         cur.execute("ROLLBACK TO SAVEPOINT sp_batch")
                         for doc in doc_list:
@@ -646,8 +650,12 @@ class PGVectorConnection(PGVectorConnectionBase):
                 return True
 
             # Build WHERE clause
-            where_parts = [sql.SQL("kb_id = %s")]
-            where_params = [dataset_id]
+            if dataset_id is None:
+                where_parts = [sql.SQL("kb_id IS NULL")]
+                where_params = []
+            else:
+                where_parts = [sql.SQL("kb_id = %s")]
+                where_params = [dataset_id]
 
             # Handle specific ID update
             if "id" in condition and isinstance(condition["id"], str):
@@ -690,8 +698,12 @@ class PGVectorConnection(PGVectorConnectionBase):
             raise ValueError(f"Invalid table name: {index_name}")
 
         try:
-            where_parts = [sql.SQL("kb_id = %s")]
-            params = [dataset_id]
+            if dataset_id is None:
+                where_parts = [sql.SQL("kb_id IS NULL")]
+                params = []
+            else:
+                where_parts = [sql.SQL("kb_id = %s")]
+                params = [dataset_id]
 
             if "id" in condition:
                 ids = condition["id"]
@@ -745,6 +757,9 @@ class PGVectorConnection(PGVectorConnectionBase):
             self.logger.error(f"Unauthorized SQL operation attempted: {sql_str}")
             raise ValueError("Only read-only operations (SELECT, DESCRIBE, EXPLAIN) are allowed.")
 
+        # NOTE: It is recommended that the database connection uses a restricted
+        # DB role to further prevent side effects (e.g., pg_notify, lo_export).
+
         # Check for multiple statements (semicolon)
         if ";" in sql_str.rstrip(";"):
             raise ValueError("Multiple SQL statements are not allowed.")
@@ -757,6 +772,7 @@ class PGVectorConnection(PGVectorConnectionBase):
 
         try:
             with self._pool.cursor(commit=False) as cur:
+                cur.execute("SET statement_timeout = '30s'")
                 cur.execute(sql_str)
                 if format == "json":
                     colnames = [desc[0] for desc in cur.description]
@@ -767,5 +783,7 @@ class PGVectorConnection(PGVectorConnectionBase):
         except Exception as e:
             # Log sanitized statement instead of raw SQL
             sanitized_sql = re.sub(r"'.*?'", "'*'", sql_str)
+            sanitized_sql = re.sub(r'".*?"', '"*"', sanitized_sql)
+            sanitized_sql = re.sub(r"\b\d+\b", "0", sanitized_sql)
             self.logger.error(f"PGVector SQL execution failed for: {sanitized_sql}. Error: {e}")
             raise Exception("Database error occurred during SQL execution.")

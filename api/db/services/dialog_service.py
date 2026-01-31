@@ -36,7 +36,7 @@ from api.db.services.llm_service import LLMBundle
 from common.metadata_utils import apply_meta_data_filter
 from api.db.services.tenant_llm_service import TenantLLMService
 from common.time_utils import current_timestamp, datetime_format
-from graphrag.general.mind_map_extractor import MindMapExtractor
+from rag.graphrag.general.mind_map_extractor import MindMapExtractor
 from rag.advanced_rag import DeepResearcher
 from rag.templates.resume import forbidden_select_fields4resume
 from rag.templates.tag import label_question
@@ -576,16 +576,89 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
 
 
 async def use_sql(question, field_map, tenant_id, chat_mdl, quota=True, kb_ids=None):
-    sys_prompt = """
-You are a Database Administrator. You need to check the fields of the following tables based on the user's list of questions and write the SQL corresponding to the last question.
-Ensure that:
-1. Field names should not start with a digit. If any field name starts with a digit, use double quotes around it.
-2. Write only the SQL, no explanations or additional text.
-"""
-    user_prompt = """
-Table name: {};
-Table of database fields are as follows:
+    logging.debug(f"use_sql: Question: {question}")
+
+    # Determine which document engine we're using
+    if settings.DOC_ENGINE_INFINITY:
+        doc_engine = "infinity"
+    elif settings.DOC_ENGINE_OCEANBASE:
+        doc_engine = "oceanbase"
+    else:
+        doc_engine = "es"
+
+    # Construct the full table name
+    # For Elasticsearch: ragflow_{tenant_id} (kb_id is in WHERE clause)
+    # For Infinity: ragflow_{tenant_id}_{kb_id} (each KB has its own table)
+    base_table = index_name(tenant_id)
+    if doc_engine == "infinity" and kb_ids and len(kb_ids) == 1:
+        # Infinity: append kb_id to table name
+        table_name = f"{base_table}_{kb_ids[0]}"
+        logging.debug(f"use_sql: Using Infinity table name: {table_name}")
+    else:
+        # Elasticsearch/OpenSearch: use base index name
+        table_name = base_table
+        logging.debug(f"use_sql: Using ES/OS table name: {table_name}")
+
+    # Generate engine-specific SQL prompts
+    if doc_engine == "infinity":
+        # Build Infinity prompts with JSON extraction context
+        json_field_names = list(field_map.keys())
+        sys_prompt = """You are a Database Administrator. Write SQL for a table with JSON 'chunk_data' column.
+
+JSON Extraction: json_extract_string(chunk_data, '$.FieldName')
+Numeric Cast: CAST(json_extract_string(chunk_data, '$.FieldName') AS INTEGER/FLOAT)
+NULL Check: json_extract_isnull(chunk_data, '$.FieldName') == false
+
+RULES:
+1. Use EXACT field names (case-sensitive) from the list below
+2. For SELECT: include doc_id, docnm, and json_extract_string() for requested fields
+3. For COUNT: use COUNT(*) or COUNT(DISTINCT json_extract_string(...))
+4. Add AS alias for extracted field names
+5. DO NOT select 'content' field
+6. Only add NULL check (json_extract_isnull() == false) in WHERE clause when:
+   - Question asks to "show me" or "display" specific columns
+   - Question mentions "not null" or "excluding null"
+   - Add NULL check for count specific column
+   - DO NOT add NULL check for COUNT(*) queries (COUNT(*) counts all rows including nulls)
+7. Output ONLY the SQL, no explanations"""
+        user_prompt = """Table: {}
+Fields (EXACT case): {}
 {}
+Question: {}
+Write SQL using json_extract_string() with exact field names. Include doc_id, docnm for data queries. Only SQL.""".format(
+            table_name, ", ".join(json_field_names), "\n".join([f"  - {field}" for field in json_field_names]), question
+        )
+    elif doc_engine == "oceanbase":
+        # Build OceanBase prompts with JSON extraction context
+        json_field_names = list(field_map.keys())
+        sys_prompt = """You are a Database Administrator. Write SQL for a table with JSON 'chunk_data' column.
+
+JSON Extraction: json_extract_string(chunk_data, '$.FieldName')
+Numeric Cast: CAST(json_extract_string(chunk_data, '$.FieldName') AS INTEGER/FLOAT)
+NULL Check: json_extract_isnull(chunk_data, '$.FieldName') == false
+
+RULES:
+1. Use EXACT field names (case-sensitive) from the list below
+2. For SELECT: include doc_id, docnm_kwd, and json_extract_string() for requested fields
+3. For COUNT: use COUNT(*) or COUNT(DISTINCT json_extract_string(...))
+4. Add AS alias for extracted field names
+5. DO NOT select 'content' field
+6. Only add NULL check (json_extract_isnull() == false) in WHERE clause when:
+   - Question asks to "show me" or "display" specific columns
+   - Question mentions "not null" or "excluding null"
+   - Add NULL check for count specific column
+   - DO NOT add NULL check for COUNT(*) queries (COUNT(*) counts all rows including nulls)
+7. Output ONLY the SQL, no explanations"""
+        user_prompt = """Table: {}
+Fields (EXACT case): {}
+{}
+Question: {}
+Write SQL using json_extract_string() with exact field names. Include doc_id, docnm_kwd for data queries. Only SQL.""".format(
+            table_name, ", ".join(json_field_names), "\n".join([f"  - {field}" for field in json_field_names]), question
+        )
+    else:
+        # Build ES/OS prompts with direct field access
+        sys_prompt = """You are a Database Administrator. Write SQL queries.
 
 Question are as follows:
 {}
@@ -636,7 +709,28 @@ Please write the SQL, only SQL, without any other explanations or text.
     try:
         tbl, sql = await get_table()
     except Exception as e:
-        user_prompt = """
+        logging.warning(f"use_sql: Initial SQL execution FAILED with error: {e}")
+        # Build retry prompt with error information
+        if doc_engine in ("infinity", "oceanbase"):
+            # Build Infinity error retry prompt
+            json_field_names = list(field_map.keys())
+            user_prompt = """
+Table name: {};
+JSON fields available in 'chunk_data' column (use these exact names in json_extract_string):
+{}
+
+Question: {}
+Please write the SQL using json_extract_string(chunk_data, '$.field_name') with the field names from the list above. Only SQL, no explanations.
+
+
+The SQL error you provided last time is as follows:
+{}
+
+Please correct the error and write SQL again using json_extract_string(chunk_data, '$.field_name') syntax with the correct field names. Only SQL, no explanations.
+""".format(table_name, "\n".join([f"  - {field}" for field in json_field_names]), question, e)
+        else:
+            # Build ES/OS error retry prompt
+            user_prompt = """
         Table name: {};
         Table of database fields are as follows:
         {}

@@ -16,16 +16,34 @@ from common import settings
 from common.time_utils import date_string_to_timestamp
 
 CONTINUOUS_FIELD_TYPE = {IntegerField, FloatField, DateTimeField}
-AUTO_DATE_TIMESTAMP_FIELD_PREFIX = {"create", "start", "end", "update", "read_access", "write_access"}
+AUTO_DATE_TIMESTAMP_FIELD_PREFIX = {
+    "create",
+    "start",
+    "end",
+    "update",
+    "read_access",
+    "write_access",
+}
 
 
-class TextFieldTypeEnum:
+from enum import Enum
+
+
+class TextFieldTypeEnum(Enum):
     MYSQL = "LONGTEXT"
+    OCEANBASE = "LONGTEXT"
     POSTGRES = "TEXT"
 
 
 class LongTextField(TextField):
-    field_type = getattr(TextFieldTypeEnum, getattr(settings.DATABASE_TYPE, "upper", lambda: settings.DATABASE_TYPE)().upper(), "TEXT") if hasattr(settings, "DATABASE_TYPE") else "TEXT"
+    field_type = (
+        getattr(
+            TextFieldTypeEnum,
+            getattr(settings.DATABASE_TYPE, "upper", lambda: settings.DATABASE_TYPE)().upper(),
+            TextFieldTypeEnum.POSTGRES,
+        ).value
+        # if hasattr(settings, "DATABASE_TYPE") else "TEXT" # Removing this check as settings should have it, or defaults handled above
+    )
 
 
 class JSONField(LongTextField):
@@ -46,7 +64,11 @@ class JSONField(LongTextField):
     def python_value(self, value):
         if not value:
             return self.default_value
-        return json_loads(value, object_hook=self._object_hook, object_pairs_hook=self._object_pairs_hook)
+        return json_loads(
+            value,
+            object_hook=self._object_hook,
+            object_pairs_hook=self._object_pairs_hook,
+        )
 
 
 class ListField(JSONField):
@@ -59,7 +81,14 @@ class ListField(JSONField):
 
 
 class SerializedField(LongTextField):
-    def __init__(self, serialized_type=SerializedType.PICKLE, object_hook=None, object_pairs_hook=None, default_on_null=None, **kwargs):
+    def __init__(
+        self,
+        serialized_type=SerializedType.PICKLE,
+        object_hook=None,
+        object_pairs_hook=None,
+        default_on_null=None,
+        **kwargs,
+    ):
         self._serialized_type = serialized_type
         self._object_hook = object_hook
         self._object_pairs_hook = object_pairs_hook
@@ -81,13 +110,22 @@ class SerializedField(LongTextField):
         if self._serialized_type == SerializedType.JSON:
             if value is None:
                 return self._default_on_null
-            return json_loads(value, object_hook=self._object_hook, object_pairs_hook=self._object_pairs_hook)
+            return json_loads(
+                value,
+                object_hook=self._object_hook,
+                object_pairs_hook=self._object_pairs_hook,
+            )
         raise ValueError(f"the serialized type {self._serialized_type} is not supported")
 
 
 class JsonSerializedField(SerializedField):
     def __init__(self, object_hook=utils.from_dict_hook, object_pairs_hook=None, **kwargs):
-        super().__init__(serialized_type=SerializedType.JSON, object_hook=object_hook, object_pairs_hook=object_pairs_hook, **kwargs)
+        super().__init__(
+            serialized_type=SerializedType.JSON,
+            object_hook=object_hook,
+            object_pairs_hook=object_pairs_hook,
+            **kwargs,
+        )
 
 
 def is_continuous_field(cls: typing.Type) -> bool:

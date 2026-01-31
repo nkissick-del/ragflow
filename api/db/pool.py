@@ -49,10 +49,14 @@ def with_retry(
 
                     if should_retry:
                         current_delay = retry_delay * (2**attempt)
-                        logging.warning(f"{func_name} failed: {exc}, retrying ({attempt + 1}/{max_retries + 1})")
+                        logging.warning(
+                            f"{func_name} failed: {exc}, retrying ({attempt + 1}/{max_retries + 1})"
+                        )
                         time.sleep(current_delay)
                     else:
-                        logging.error(f"{func_name} failed after {attempt + 1} attempt(s): {exc}")
+                        logging.error(
+                            f"{func_name} failed after {attempt + 1} attempt(s): {exc}"
+                        )
                         raise
 
         return wrapper  # type: ignore[return-value]
@@ -82,12 +86,16 @@ class RetryingPooledMySQLDatabase(PooledMySQLDatabase):
                 should_retry = self._should_retry_mysql_error(e)
 
                 if should_retry and attempt < self.max_retries:
-                    logging.warning(f"MySQL connection issue (attempt {attempt + 1}/{self.max_retries}): {e}")
+                    logging.warning(
+                        f"MySQL connection issue (attempt {attempt + 1}/{self.max_retries}): {e}"
+                    )
                     PoolDiagnostics.log_pool_health(self)
                     self._handle_connection_loss()
                     time.sleep(self.retry_delay * (2**attempt))
                 else:
-                    logging.error(f"MySQL execution failure after {attempt + 1} attempts: {e}")
+                    logging.error(
+                        f"MySQL execution failure after {attempt + 1} attempts: {e}"
+                    )
                     PoolDiagnostics.log_pool_health(self)
                     raise
 
@@ -139,7 +147,9 @@ class RetryingPooledMySQLDatabase(PooledMySQLDatabase):
                 should_retry = self._should_retry_mysql_error(e)
 
                 if should_retry and attempt < self.max_retries:
-                    logging.warning(f"Lost MySQL connection during transaction (attempt {attempt + 1}/{self.max_retries})")
+                    logging.warning(
+                        f"Lost MySQL connection during transaction (attempt {attempt + 1}/{self.max_retries})"
+                    )
                     PoolDiagnostics.log_pool_health(self)
                     self._handle_connection_loss()
                     time.sleep(self.retry_delay * (2**attempt))
@@ -170,12 +180,16 @@ class RetryingPooledPostgresqlDatabase(PooledPostgresqlDatabase):
                 should_retry = self._should_retry_postgres_error(e)
 
                 if should_retry and attempt < self.max_retries:
-                    logging.warning(f"PostgreSQL connection issue (attempt {attempt + 1}/{self.max_retries}): {e}")
+                    logging.warning(
+                        f"PostgreSQL connection issue (attempt {attempt + 1}/{self.max_retries}): {e}"
+                    )
                     PoolDiagnostics.log_pool_health(self)
                     self._handle_connection_loss()
                     time.sleep(self.retry_delay * (2**attempt))
                 else:
-                    logging.error(f"PostgreSQL execution failure after {attempt + 1} attempts: {e}")
+                    logging.error(
+                        f"PostgreSQL execution failure after {attempt + 1} attempts: {e}"
+                    )
                     PoolDiagnostics.log_pool_health(self)
                     raise
 
@@ -213,7 +227,9 @@ class RetryingPooledPostgresqlDatabase(PooledPostgresqlDatabase):
             "connection reset by peer",
         ]
         error_str = str(e).lower()
-        return any(msg in error_str for msg in transient_errors) or isinstance(e, InterfaceError)
+        return any(msg in error_str for msg in transient_errors) or isinstance(
+            e, InterfaceError
+        )
 
     def begin(self):
         """Begin transaction with retry on connection loss."""
@@ -224,7 +240,9 @@ class RetryingPooledPostgresqlDatabase(PooledPostgresqlDatabase):
             try:
                 result = super().begin()
                 if attempt > 0:
-                    logging.info(f"PostgreSQL transaction started after {attempt} retries")
+                    logging.info(
+                        f"PostgreSQL transaction started after {attempt} retries"
+                    )
                 else:
                     TransactionLogger.log_transaction_state(self, "begin")
                 return result
@@ -232,7 +250,9 @@ class RetryingPooledPostgresqlDatabase(PooledPostgresqlDatabase):
                 should_retry = self._should_retry_postgres_error(e)
 
                 if should_retry and attempt < self.max_retries:
-                    logging.warning(f"PostgreSQL connection lost during transaction (attempt {attempt + 1}/{self.max_retries})")
+                    logging.warning(
+                        f"PostgreSQL connection lost during transaction (attempt {attempt + 1}/{self.max_retries})"
+                    )
                     PoolDiagnostics.log_pool_health(self)
                     self._handle_connection_loss()
                     time.sleep(self.retry_delay * (2**attempt))
@@ -241,10 +261,100 @@ class RetryingPooledPostgresqlDatabase(PooledPostgresqlDatabase):
                     raise
 
 
+class RetryingPooledOceanBaseDatabase(PooledMySQLDatabase):
+    """Pooled OceanBase database with retry mechanism.
+
+    OceanBase is compatible with MySQL protocol, so we inherit from PooledMySQLDatabase.
+    This class provides connection pooling and automatic retry for connection issues.
+    """
+
+    def __init__(self, *args, **kwargs):
+        self.max_retries = kwargs.pop("max_retries", 5)
+        self.retry_delay = kwargs.pop("retry_delay", 1)
+        super().__init__(*args, **kwargs)
+
+    def execute_sql(self, sql, params=None, commit=True):
+        for attempt in range(self.max_retries + 1):
+            try:
+                return super().execute_sql(sql, params, commit)
+            except (OperationalError, InterfaceError) as e:
+                # OceanBase/MySQL specific error codes
+                # 2013: Lost connection to MySQL server during query
+                # 2006: MySQL server has gone away
+                error_codes = [2013, 2006]
+                error_messages = ["", "Lost connection", "gone away"]
+
+                should_retry = (
+                    (hasattr(e, "args") and e.args and e.args[0] in error_codes)
+                    or any(msg in str(e).lower() for msg in error_messages)
+                    or (
+                        hasattr(e, "__class__")
+                        and e.__class__.__name__ == "InterfaceError"
+                    )
+                )
+
+                if should_retry and attempt < self.max_retries:
+                    logging.warning(
+                        f"OceanBase connection issue (attempt {attempt + 1}/{self.max_retries}): {e}"
+                    )
+                    self._handle_connection_loss()
+                    time.sleep(self.retry_delay * (2**attempt))
+                else:
+                    logging.error(f"OceanBase execution failure: {e}")
+                    raise
+        return None
+
+    def _handle_connection_loss(self):
+        try:
+            self.close()
+        except Exception:
+            pass
+        try:
+            self.connect()
+        except Exception as e:
+            logging.error(f"Failed to reconnect to OceanBase: {e}")
+            time.sleep(0.1)
+            try:
+                self.connect()
+            except Exception as e2:
+                logging.error(
+                    f"Failed to reconnect to OceanBase on second attempt: {e2}"
+                )
+                raise
+
+    def begin(self):
+        for attempt in range(self.max_retries + 1):
+            try:
+                return super().begin()
+            except (OperationalError, InterfaceError) as e:
+                error_codes = [2013, 2006]
+                error_messages = ["", "Lost connection"]
+
+                should_retry = (
+                    (hasattr(e, "args") and e.args and e.args[0] in error_codes)
+                    or (str(e) in error_messages)
+                    or (
+                        hasattr(e, "__class__")
+                        and e.__class__.__name__ == "InterfaceError"
+                    )
+                )
+
+                if should_retry and attempt < self.max_retries:
+                    logging.warning(
+                        f"Lost connection during transaction (attempt {attempt + 1}/{self.max_retries})"
+                    )
+                    self._handle_connection_loss()
+                    time.sleep(self.retry_delay * (2**attempt))
+                else:
+                    raise
+        return None
+
+
 class PooledDatabase(Enum):
     """Enum for selecting between MySQL and PostgreSQL pooled databases."""
 
     MYSQL = RetryingPooledMySQLDatabase
+    OCEANBASE = RetryingPooledOceanBaseDatabase
     POSTGRES = RetryingPooledPostgresqlDatabase
 
 
@@ -252,4 +362,5 @@ class DatabaseMigrator(Enum):
     """Enum for selecting between MySQL and PostgreSQL migrators."""
 
     MYSQL = MySQLMigrator
+    OCEANBASE = MySQLMigrator
     POSTGRES = PostgresqlMigrator

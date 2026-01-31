@@ -30,7 +30,7 @@ RAGFlow is an open-source RAG (Retrieval-Augmented Generation) engine based on d
 - **Document Processing**: `deepdoc/` - PDF parsing, OCR, layout analysis
 - **LLM Integration**: `rag/llm/` - Model abstractions for chat, embedding, reranking
 - **RAG Pipeline**: `rag/flow/` - Chunking, parsing, tokenization
-- **Graph RAG**: `graphrag/` - Knowledge graph construction and querying
+- **Graph RAG**: `rag/graphrag/` - Knowledge graph construction and querying
 
 ### Agent System (`/agent/`)
 
@@ -192,6 +192,7 @@ RAGFlow supports switching between Elasticsearch (default) and Infinity:
 - uv package manager
 - 16GB+ RAM, 50GB+ disk space
 
+
 ## Optional Dependencies (Docker)
 
 RAGFlow supports optional dependencies that can be installed conditionally at container startup. This follows the modularization principles in [AGENTS.md](AGENTS.md).
@@ -231,3 +232,4 @@ USE_MY_PACKAGE=true
 
 # 3. Update docker-compose.yml if needed (for volume persistence)
 ```
+

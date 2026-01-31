@@ -222,8 +222,13 @@ class MysqlDatabaseLock:
         return magic  # type: ignore[return-value]
 
 
+class OceanBaseDatabaseLock(MysqlDatabaseLock):
+    pass
+
+
 class DatabaseLock(Enum):
     """Enum for selecting between MySQL and PostgreSQL lock implementations."""
 
     MYSQL = MysqlDatabaseLock
+    OCEANBASE = OceanBaseDatabaseLock
     POSTGRES = PostgresDatabaseLock

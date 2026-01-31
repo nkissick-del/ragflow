@@ -15,6 +15,7 @@ from api.db.pool import (
     with_retry,
     RetryingPooledMySQLDatabase,
     RetryingPooledPostgresqlDatabase,
+    RetryingPooledOceanBaseDatabase,
     PooledDatabase,
     DatabaseMigrator,
 )
@@ -39,6 +40,7 @@ from api.db.fields import (
     AUTO_DATE_TIMESTAMP_FIELD_PREFIX,
     CONTINUOUS_FIELD_TYPE,
     coerce_timestamp_range,
+    TextFieldTypeEnum as TextFieldType,
 )
 
 # Base models
@@ -101,6 +103,7 @@ __all__ = [
     "with_retry",
     "RetryingPooledMySQLDatabase",
     "RetryingPooledPostgresqlDatabase",
+    "RetryingPooledOceanBaseDatabase",
     "PooledDatabase",
     "DatabaseMigrator",
     "DatabaseLock",
@@ -159,4 +162,5 @@ __all__ = [
     "alter_db_add_column",
     "alter_db_column_type",
     "alter_db_rename_column",
+    "TextFieldType",
 ]

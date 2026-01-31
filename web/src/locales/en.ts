@@ -101,6 +101,11 @@ export default {
       welcome: 'Welcome to',
       dataset: 'Dataset',
       memories: 'Memory',
+      discord: 'Discord',
+      github: 'GitHub',
+      docs: 'Documents',
+      theme: 'Theme',
+      notifications: 'Notifications',
     },
     memories: {
       llmTooltip:

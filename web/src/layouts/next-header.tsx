@@ -151,6 +151,7 @@ export function Header() {
           target="_blank"
           href="https://discord.com/invite/NjYzJD3GM3"
           rel="noreferrer"
+          aria-label={t('header.discord')}
         >
           <IconFontFill name="a-DiscordIconSVGVectorIcon"></IconFontFill>
         </a>
@@ -158,6 +159,7 @@ export function Header() {
           target="_blank"
           href="https://github.com/infiniflow/ragflow"
           rel="noreferrer"
+          aria-label={t('header.github')}
         >
           <IconFontFill name="GitHub"></IconFontFill>
         </a>
@@ -176,10 +178,18 @@ export function Header() {
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
-        <Button variant={'ghost'} onClick={handleDocHelpCLick}>
+        <Button
+          variant={'ghost'}
+          onClick={handleDocHelpCLick}
+          aria-label={t('header.docs')}
+        >
           <CircleHelp />
         </Button>
-        <Button variant={'ghost'} onClick={onThemeClick}>
+        <Button
+          variant={'ghost'}
+          onClick={onThemeClick}
+          aria-label={t('header.theme')}
+        >
           {theme === 'light' ? <Sun /> : <Moon />}
         </Button>
         <BellButton></BellButton>

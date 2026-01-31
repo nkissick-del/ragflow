@@ -1,0 +1,775 @@
+
+> @1.0.0 lint /app/web
+> eslint src --ext .ts,.tsx --report-unused-disable-directives --max-warnings 0
+
+
+/app/web/src/components/avatar-upload.tsx
+   48:7  warning  React Hook useCallback has an unnecessary dependency: 'onChange'. Either exclude it or remove the dependency array                                                                                                                                                  react-hooks/exhaustive-deps
+  192:7  warning  React Hook useCallback has missing dependencies: 'handleMouseMove' and 'handleMouseUp'. Either include them or remove the dependency array                                                                                                                          react-hooks/exhaustive-deps
+  236:9  warning  Unexpected console statement                                                                                                                                                                                                                                        no-console
+  252:8  warning  React Hook useEffect has missing dependencies: 'imageToCrop' and 'isCropModalOpen'. Either include them or remove the dependency array. Mutable values like 'containerRef.current' aren't valid dependencies because mutating them doesn't re-render the component  react-hooks/exhaustive-deps
+
+/app/web/src/components/card-singleline-container/index.tsx
+  29:3  warning  Unexpected console statement  no-console
+
+/app/web/src/components/children-delimiter-form.tsx
+  20:31  error  Component definition is missing display name  react/display-name
+
+/app/web/src/components/chunk-method-dialog/index.tsx
+  219:5  warning  Unexpected console statement  no-console
+  238:5  warning  Unexpected console statement  no-console
+
+/app/web/src/components/chunk-method-dialog/use-default-parser-values.ts
+  44:6  warning  React Hook useMemo has an unnecessary dependency: 't'. Either exclude it or remove the dependency array  react-hooks/exhaustive-deps
+
+/app/web/src/components/delimiter-form-field.tsx
+  19:31  error  Component definition is missing display name  react/display-name
+
+/app/web/src/components/document-preview/csv-preview.tsx
+  54:11  warning  Unexpected console statement  no-console
+
+/app/web/src/components/document-preview/doc-preview.tsx
+   67:13  error    'contentType' is assigned a value but never used                                                                  @typescript-eslint/no-unused-vars
+  116:6   warning  React Hook useEffect has a missing dependency: 'fetchDocument'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/app/web/src/components/document-preview/document-header.tsx
+  10:16  error  Component definition is missing display name  react/display-name
+
+/app/web/src/components/document-preview/hooks.ts
+  113:9  warning  Unexpected console statement  no-console
+
+/app/web/src/components/document-preview/image-preview.tsx
+  41:6  warning  React Hook useEffect has a missing dependency: 'fetchImage'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/app/web/src/components/document-preview/pdf-preview.tsx
+  105:42  error  Redundant Boolean call  no-extra-boolean-cast
+
+/app/web/src/components/document-preview/ppt-preview.tsx
+  27:5   warning  Unexpected console statement                                                                                      no-console
+  38:13  error    'pptxPrviewer' is never reassigned. Use 'const' instead                                                           prefer-const
+  44:14  error    'err' is defined but never used                                                                                   @typescript-eslint/no-unused-vars
+  53:6   warning  React Hook useEffect has a missing dependency: 'fetchDocument'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/app/web/src/components/document-preview/txt-preview.tsx
+  28:7  warning  Unexpected console statement                                                                                 no-console
+  30:5  warning  Unexpected console statement                                                                                 no-console
+  39:6  warning  React Hook useEffect has a missing dependency: 'fetchTxt'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/app/web/src/components/dynamic-form.tsx
+  450:21  warning  Unexpected console statement                        no-console
+  477:13  warning  Unexpected console statement                        no-console
+  746:11  warning  Unexpected console statement                        no-console
+  959:19  error    'beValid' is never reassigned. Use 'const' instead  prefer-const
+  960:15  warning  Unexpected console statement                        no-console
+  973:19  warning  Unexpected console statement                        no-console
+  983:15  warning  Unexpected console statement                        no-console
+
+/app/web/src/components/file-upload.tsx
+  519:13  warning  'onFilesUpload' was used before it was defined                                                                            @typescript-eslint/no-use-before-define
+  524:5   warning  React Hook React.useCallback has a missing dependency: 'onFilesUpload'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/app/web/src/components/floating-chat-widget-markdown.tsx
+  63:9  error  'text' is never reassigned. Use 'const' instead  prefer-const
+
+/app/web/src/components/floating-chat-widget.tsx
+   93:14  error  'error' is defined but never used  @typescript-eslint/no-unused-vars
+  121:14  error  'error' is defined but never used  @typescript-eslint/no-unused-vars
+
+/app/web/src/components/hooks/use-toast.tsx
+  18:7  error  'actionTypes' is assigned a value but only used as a type  @typescript-eslint/no-unused-vars
+
+/app/web/src/components/indented-tree/indented-tree.tsx
+  405:5  warning  React Hook useCallback has a missing dependency: 'isDark'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/app/web/src/components/json-edit/index.tsx
+   93:6   warning  React Hook useEffect has missing dependencies: 'i18n.language', 'onChange', 'options', and 'value'. Either include them or remove the dependency array. If 'onChange' changes too often, find the parent component that defines it and wrap that definition in useCallback  react-hooks/exhaustive-deps
+  105:16  error    'e' is defined but never used                                                                                                                                                                                                                                               @typescript-eslint/no-unused-vars
+  129:26  error    'err' is defined but never used                                                                                                                                                                                                                                             @typescript-eslint/no-unused-vars
+  159:16  error    'err' is defined but never used                                                                                                                                                                                                                                             @typescript-eslint/no-unused-vars
+
+/app/web/src/components/jsonjoy-builder/components/schema-editor/json-schema-editor.tsx
+  52:44  warning  'handleMouseMove' was used before it was defined  @typescript-eslint/no-use-before-define
+  53:42  warning  'handleMouseUp' was used before it was defined    @typescript-eslint/no-use-before-define
+
+/app/web/src/components/jsonjoy-builder/components/schema-editor/json-schema-visualizer.tsx
+  54:14  error  '_error' is defined but never used  @typescript-eslint/no-unused-vars
+
+/app/web/src/components/jsonjoy-builder/components/schema-editor/schema-visual-editor.tsx
+   71:23  error  '_' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  103:21  error  '_' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/app/web/src/components/jsonjoy-builder/components/schema-editor/types/number-editor.tsx
+  102:24  error  '_' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  108:24  error  '_' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  114:33  error  '_' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  120:33  error  '_' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  126:27  error  '_' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  132:21  error  '_' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/app/web/src/components/jsonjoy-builder/components/schema-editor/types/string-editor.tsx
+  52:19  error  '_' is assigned a value but never used   @typescript-eslint/no-unused-vars
+  52:35  error  '__' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  89:23  error  '_' is assigned a value but never used   @typescript-eslint/no-unused-vars
+
+/app/web/src/components/jsonjoy-builder/lib/schema-editor.ts
+  48:27  error  '_' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/app/web/src/components/jsonjoy-builder/lib/schema-inference.ts
+  220:15  error  '_' is defined but never used  @typescript-eslint/no-unused-vars
+  221:17  error  '_' is defined but never used  @typescript-eslint/no-unused-vars
+
+/app/web/src/components/list-filter-bar/filter-popover.tsx
+  302:15  warning  Unexpected console statement  no-console
+
+/app/web/src/components/list-filter-bar/use-handle-filter-submit.ts
+  29:7  error    'value' is never reassigned. Use 'const' instead                                                                  prefer-const
+  55:9  error    'validFields' is never reassigned. Use 'const' instead                                                            prefer-const
+  65:6  warning  React Hook useCallback has a missing dependency: 'filterValue'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/app/web/src/components/markdown-content/index.tsx
+  209:11  error  'replacedText' is never reassigned. Use 'const' instead  prefer-const
+
+/app/web/src/components/message-item/index.tsx
+  46:3  error  'loading' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/app/web/src/components/next-markdown-content/index.tsx
+  212:11  error  'replacedText' is never reassigned. Use 'const' instead  prefer-const
+
+/app/web/src/components/originui/password-input.tsx
+  13:11  error  'toggleVisibility' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/app/web/src/components/parse-configuration/raptor-form-fields.tsx
+  53:7   error  'MaxTokenField' is assigned a value but never used   @typescript-eslint/no-unused-vars
+  54:7   error  'ThresholdField' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  55:7   error  'MaxCluster' is assigned a value but never used      @typescript-eslint/no-unused-vars
+  56:7   error  'Prompt' is assigned a value but never used          @typescript-eslint/no-unused-vars
+  80:20  error  'field' is defined but never used                    @typescript-eslint/no-unused-vars
+
+/app/web/src/components/pdf-previewer/index.tsx
+  95:42  error  Redundant Boolean call  no-extra-boolean-cast
+
+/app/web/src/components/prompt-editor/index.tsx
+  126:9  warning  Unexpected console statement  no-console
+
+/app/web/src/components/ui/audio-button.tsx
+   19:9   error    'isDark' is assigned a value but never used                                                                            @typescript-eslint/no-unused-vars
+   46:7   warning  'draw' was used before it was defined                                                                                  @typescript-eslint/no-use-before-define
+   90:6   warning  React Hook useEffect has a missing dependency: 'startVisualization'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  257:7   warning  Unexpected console statement                                                                                           no-console
+  261:9   warning  Unexpected console statement                                                                                           no-console
+  324:30  error    'open' is defined but never used                                                                                       @typescript-eslint/no-unused-vars
+
+/app/web/src/components/ui/button.tsx
+  128:28  error  Component definition is missing display name  react/display-name
+
+/app/web/src/components/ui/dual-range-slider.tsx
+  61:26  error  Component definition is missing display name  react/display-name
+
+/app/web/src/components/ui/input-select.tsx
+  51:5  error  'ref' is defined but never used  @typescript-eslint/no-unused-vars
+
+/app/web/src/components/ui/input.tsx
+   86:17  error    Redundant double negation                                                                                                                               no-extra-boolean-cast
+   95:7   warning  React Hook useMemo has missing dependencies: 'prefix', 'ref', 'showPassword', 'suffix', and 'type'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+  157:1   error    Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-empty-interface')
+  158:18  error    An interface declaring no members is equivalent to its supertype                                                                                        @typescript-eslint/no-empty-object-type
+
+/app/web/src/components/ui/modal/modal-manage.tsx
+  29:3  warning  Unexpected console statement  no-console
+
+/app/web/src/components/ui/modal/modal.tsx
+  101:5  warning  Unexpected console statement  no-console
+
+/app/web/src/components/ui/slider.tsx
+  33:20  error  Component definition is missing display name  react/display-name
+
+/app/web/src/components/ui/textarea.tsx
+  79:29  error  Component definition is missing display name  react/display-name
+
+/app/web/src/components/ui/time-picker.tsx
+  247:28  warning  'parseTimeInput' was used before it was defined  @typescript-eslint/no-use-before-define
+
+/app/web/src/components/ui/tree-view.tsx
+   97:10  warning  'TreeItem' was used before it was defined          @typescript-eslint/no-use-before-define
+  144:18  warning  'TreeNode' was used before it was defined          @typescript-eslint/no-use-before-define
+  153:18  warning  'TreeLeaf' was used before it was defined          @typescript-eslint/no-use-before-define
+  194:10  warning  'AccordionTrigger' was used before it was defined  @typescript-eslint/no-use-before-define
+  204:12  warning  'TreeIcon' was used before it was defined          @typescript-eslint/no-use-before-define
+  211:12  warning  'TreeActions' was used before it was defined       @typescript-eslint/no-use-before-define
+  213:13  warning  'TreeActions' was used before it was defined       @typescript-eslint/no-use-before-define
+  214:11  warning  'AccordionTrigger' was used before it was defined  @typescript-eslint/no-use-before-define
+  215:10  warning  'AccordionContent' was used before it was defined  @typescript-eslint/no-use-before-define
+  224:11  warning  'AccordionContent' was used before it was defined  @typescript-eslint/no-use-before-define
+  265:10  warning  'TreeIcon' was used before it was defined          @typescript-eslint/no-use-before-define
+  271:10  warning  'TreeActions' was used before it was defined       @typescript-eslint/no-use-before-define
+  273:11  warning  'TreeActions' was used before it was defined       @typescript-eslint/no-use-before-define
+
+/app/web/src/constants/common.ts
+  148:3  error  Duplicate enum member value text/markdown  @typescript-eslint/no-duplicate-enum-values
+
+/app/web/src/hooks/__tests__/logic-hooks.useScrollToBottom.test.tsx
+    1:1  error    The folder "__tests__" does not match the "KEBAB_CASE" pattern  check-file/folder-naming-convention
+   83:7  warning  Unexpected console statement                                    no-console
+   99:7  warning  Unexpected console statement                                    no-console
+  105:5  warning  Unexpected console statement                                    no-console
+
+/app/web/src/hooks/__tests__/use-file-request.test.tsx
+   1:1  error  The folder "__tests__" does not match the "KEBAB_CASE" pattern  check-file/folder-naming-convention
+  87:9  error  'wrapper' is assigned a value but never used                    @typescript-eslint/no-unused-vars
+
+/app/web/src/hooks/auth-hooks.ts
+  41:3  warning  Unexpected console statement  no-console
+
+/app/web/src/hooks/common-hooks.tsx
+  114:15  warning  Unexpected console statement  no-console
+
+/app/web/src/hooks/logic-hooks.ts
+  264:16  error    Unexpected constant condition      no-constant-condition
+  304:24  error    'e' is defined but never used      @typescript-eslint/no-unused-vars
+  310:15  warning  Unexpected console statement       no-console
+  318:16  error    'e' is defined but never used      @typescript-eslint/no-unused-vars
+  361:16  error    'error' is defined but never used  @typescript-eslint/no-unused-vars
+
+/app/web/src/hooks/logic-hooks/navigate-hooks.ts
+  179:11  error  'params' is never reassigned. Use 'const' instead  prefer-const
+
+/app/web/src/hooks/use-agent-request.ts
+  370:16  error  'error' is defined but never used  @typescript-eslint/no-unused-vars
+
+/app/web/src/hooks/use-document-request.ts
+  423:16  error  'error' is defined but never used  @typescript-eslint/no-unused-vars
+  562:16  error  'error' is defined but never used  @typescript-eslint/no-unused-vars
+
+/app/web/src/hooks/use-file-request.ts
+  72:16  error  'error' is defined but never used  @typescript-eslint/no-unused-vars
+  72:23  error  Empty block statement              no-empty
+
+/app/web/src/hooks/use-llm-request.tsx
+  493:7  warning  Unexpected console statement  no-console
+  516:9  warning  Unexpected console statement  no-console
+
+/app/web/src/hooks/use-send-message.ts
+  134:16  error    Unexpected constant condition  no-constant-condition
+  140:17  warning  Unexpected console statement   no-console
+  147:17  warning  Unexpected console statement   no-console
+  163:15  warning  Unexpected console statement   no-console
+  168:9   warning  Unexpected console statement   no-console
+
+/app/web/src/hooks/use-user-setting-request.tsx
+  238:14  error  'error' is defined but never used  @typescript-eslint/no-unused-vars
+
+/app/web/src/interfaces/database/agent.ts
+  186:26  error  Constraining the generic type `TForm` to `any` does nothing and is unnecessary  @typescript-eslint/no-unnecessary-type-constraint
+
+/app/web/src/interfaces/database/flow.ts
+  139:26  error  Constraining the generic type `TForm` to `any` does nothing and is unnecessary  @typescript-eslint/no-unnecessary-type-constraint
+
+/app/web/src/interfaces/request/file-manager.ts
+  7:11  error  'BaseRequestBody' is defined but never used  @typescript-eslint/no-unused-vars
+
+/app/web/src/locales/vi.ts
+  411:169  error  Irregular whitespace not allowed  no-irregular-whitespace
+
+/app/web/src/pages/admin/components/theme-switch.tsx
+  8:21  error  Component definition is missing display name  react/display-name
+
+/app/web/src/pages/admin/login.tsx
+  84:7  warning  Unexpected console statement  no-console
+
+/app/web/src/pages/admin/roles.tsx
+  343:25  error  Forbidden extra non-null assertion  @typescript-eslint/no-extra-non-null-assertion
+  420:43  error  Forbidden extra non-null assertion  @typescript-eslint/no-extra-non-null-assertion
+
+/app/web/src/pages/admin/sandbox-settings.tsx
+  52:11  error  't' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/app/web/src/pages/admin/service-status.tsx
+  106:33  error  Forbidden extra non-null assertion  @typescript-eslint/no-extra-non-null-assertion
+  257:28  error  Forbidden extra non-null assertion  @typescript-eslint/no-extra-non-null-assertion
+  262:27  error  Forbidden extra non-null assertion  @typescript-eslint/no-extra-non-null-assertion
+
+/app/web/src/pages/admin/task-executor-detail.tsx
+  82:9  warning  Unexpected console statement  no-console
+
+/app/web/src/pages/agent/canvas/context-menu/index.tsx
+  79:13  error  'pane' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/app/web/src/pages/agent/canvas/node/dropdown/accordion-operators.tsx
+  169:9  error  'list' is never reassigned. Use 'const' instead  prefer-const
+
+/app/web/src/pages/agent/canvas/node/note-node/use-watch-change.ts
+  12:16  warning  Assignments to the 'values' variable from inside React Hook useEffect will be lost after each render. To preserve the value over time, store it in a useRef Hook and keep the mutable value in the '.current' property. Otherwise, you can move this variable directly inside useEffect  react-hooks/exhaustive-deps
+  13:11  error    'nextValues' is never reassigned. Use 'const' instead                                                                                                                                                                                                                                    prefer-const
+  21:7   error    'values' is never reassigned. Use 'const' instead                                                                                                                                                                                                                                        prefer-const
+
+/app/web/src/pages/agent/canvas/node/use-build-categorize-handle-positions.ts
+  17:9  error  'FormSchema' is assigned a value but only used as a type  @typescript-eslint/no-unused-vars
+
+/app/web/src/pages/agent/canvas/node/variable-display.tsx
+  10:7  error  'content' is never reassigned. Use 'const' instead  prefer-const
+
+/app/web/src/pages/agent/chat/use-send-agent-message.ts
+  312:9  warning  Unexpected console statement  no-console
+
+/app/web/src/pages/agent/form-hooks.ts
+  23:76  error  Irregular whitespace not allowed  no-irregular-whitespace
+
+/app/web/src/pages/agent/form/agent-form/agent-tools.tsx
+  62:22  warning  `'` can be escaped with `&apos;`, `&#39;`  react/no-unescaped-entities
+
+/app/web/src/pages/agent/form/agent-form/use-watch-change.ts
+  13:16  warning  Assignments to the 'values' variable from inside React Hook useEffect will be lost after each render. To preserve the value over time, store it in a useRef Hook and keep the mutable value in the '.current' property. Otherwise, you can move this variable directly inside useEffect  react-hooks/exhaustive-deps
+  14:11  error    'nextValues' is never reassigned. Use 'const' instead                                                                                                                                                                                                                                    prefer-const
+
+/app/web/src/pages/agent/form/begin-form/use-watch-change.ts
+  37:16  warning  Assignments to the 'values' variable from inside React Hook useEffect will be lost after each render. To preserve the value over time, store it in a useRef Hook and keep the mutable value in the '.current' property. Otherwise, you can move this variable directly inside useEffect  react-hooks/exhaustive-deps
+
+/app/web/src/pages/agent/form/categorize-form/dynamic-categorize.tsx
+  177:9  error  'FormSchema' is assigned a value but only used as a type  @typescript-eslint/no-unused-vars
+
+/app/web/src/pages/agent/form/categorize-form/use-watch-change.ts
+  12:16  warning  Assignments to the 'values' variable from inside React Hook useEffect will be lost after each render. To preserve the value over time, store it in a useRef Hook and keep the mutable value in the '.current' property. Otherwise, you can move this variable directly inside useEffect  react-hooks/exhaustive-deps
+
+/app/web/src/pages/agent/form/code-form/use-watch-change.ts
+  57:16  warning  Assignments to the 'values' variable from inside React Hook useEffect will be lost after each render. To preserve the value over time, store it in a useRef Hook and keep the mutable value in the '.current' property. Otherwise, you can move this variable directly inside useEffect  react-hooks/exhaustive-deps
+  58:11  error    'nextValues' is never reassigned. Use 'const' instead                                                                                                                                                                                                                                    prefer-const
+
+/app/web/src/pages/agent/form/components/prompt-editor/variable-picker-plugin.tsx
+  181:7  warning  Unexpected console statement  no-console
+
+/app/web/src/pages/agent/form/components/query-variable-list.tsx
+  23:7  error  'options' is never reassigned. Use 'const' instead  prefer-const
+
+/app/web/src/pages/agent/form/iteration-form/use-watch-form-change.ts
+  20:16  warning  Assignments to the 'values' variable from inside React Hook useEffect will be lost after each render. To preserve the value over time, store it in a useRef Hook and keep the mutable value in the '.current' property. Otherwise, you can move this variable directly inside useEffect  react-hooks/exhaustive-deps
+  21:7   warning  Unexpected console statement                                                                                                                                                                                                                                                             no-console
+  22:11  error    'nextValues' is never reassigned. Use 'const' instead                                                                                                                                                                                                                                    prefer-const
+
+/app/web/src/pages/agent/form/loop-form/use-watch-form-change.ts
+  15:7   error  'values' is never reassigned. Use 'const' instead      prefer-const
+  20:11  error  'nextValues' is never reassigned. Use 'const' instead  prefer-const
+
+/app/web/src/pages/agent/form/message-form/use-watch-change.ts
+  13:16  warning  Assignments to the 'values' variable from inside React Hook useEffect will be lost after each render. To preserve the value over time, store it in a useRef Hook and keep the mutable value in the '.current' property. Otherwise, you can move this variable directly inside useEffect  react-hooks/exhaustive-deps
+
+/app/web/src/pages/agent/form/searxng-form/index.tsx
+  35:11  error  't' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/app/web/src/pages/agent/form/string-transform-form/use-watch-form-change.ts
+  13:16  warning  Assignments to the 'values' variable from inside React Hook useEffect will be lost after each render. To preserve the value over time, store it in a useRef Hook and keep the mutable value in the '.current' property. Otherwise, you can move this variable directly inside useEffect  react-hooks/exhaustive-deps
+  14:11  error    'nextValues' is never reassigned. Use 'const' instead                                                                                                                                                                                                                                    prefer-const
+
+/app/web/src/pages/agent/form/switch-form/use-watch-change.ts
+  12:5   warning  Unexpected console statement                                                                                                                                                                                                                                                             no-console
+  14:16  warning  Assignments to the 'values' variable from inside React Hook useEffect will be lost after each render. To preserve the value over time, store it in a useRef Hook and keep the mutable value in the '.current' property. Otherwise, you can move this variable directly inside useEffect  react-hooks/exhaustive-deps
+  15:11  error    'nextValues' is never reassigned. Use 'const' instead                                                                                                                                                                                                                                    prefer-const
+
+/app/web/src/pages/agent/form/tavily-form/use-watch-change.ts
+  13:16  warning  Assignments to the 'values' variable from inside React Hook useEffect will be lost after each render. To preserve the value over time, store it in a useRef Hook and keep the mutable value in the '.current' property. Otherwise, you can move this variable directly inside useEffect  react-hooks/exhaustive-deps
+  14:11  error    'nextValues' is never reassigned. Use 'const' instead                                                                                                                                                                                                                                    prefer-const
+
+/app/web/src/pages/agent/form/tool-form/exesql-form/index.tsx
+  28:35  warning  Unexpected console statement  no-console
+
+/app/web/src/pages/agent/form/tool-form/mcp-form/use-watch-change.ts
+  16:14  warning  Assignments to the 'values' variable from inside React Hook useMemo will be lost after each render. To preserve the value over time, store it in a useRef Hook and keep the mutable value in the '.current' property. Otherwise, you can move this variable directly inside useMemo  react-hooks/exhaustive-deps
+
+/app/web/src/pages/agent/form/tool-form/searxng-form/index.tsx
+  26:11  error  't' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/app/web/src/pages/agent/form/tool-form/use-watch-change.ts
+  6:7  error  'values' is never reassigned. Use 'const' instead  prefer-const
+
+/app/web/src/pages/agent/form/user-fill-up-form/use-watch-change.ts
+  22:16  warning  Assignments to the 'values' variable from inside React Hook useEffect will be lost after each render. To preserve the value over time, store it in a useRef Hook and keep the mutable value in the '.current' property. Otherwise, you can move this variable directly inside useEffect  react-hooks/exhaustive-deps
+
+/app/web/src/pages/agent/form/variable-aggregator-form/use-watch-change.ts
+  10:7  error  'values' is never reassigned. Use 'const' instead  prefer-const
+
+/app/web/src/pages/agent/gobal-variable-sheet/component/add-variable-modal.tsx
+   91:6   warning  React Hook useEffect has missing dependencies: 'handleCustomSchema', 'handleCustomValidate', 'handleFieldUpdate', 'handleRender', and 'setDefaultValues'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+  109:11  warning  Unexpected console statement                                                                                                                                                                                  no-console
+
+/app/web/src/pages/agent/gobal-variable-sheet/hooks/use-form.tsx
+  14:14  error  'error' is defined but never used  @typescript-eslint/no-unused-vars
+
+/app/web/src/pages/agent/gobal-variable-sheet/hooks/use-object-fields.tsx
+   48:17  error    Do not access Object.prototype method 'hasOwnProperty' from target object                                          no-prototype-builtins
+   97:6   warning  React Hook useCallback has a missing dependency: 'validateKeys'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  112:7   warning  Unexpected console statement                                                                                       no-console
+  115:6   warning  React Hook useCallback has a missing dependency: 'validateKeys'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  127:7   warning  Unexpected console statement                                                                                       no-console
+  130:6   warning  React Hook useCallback has a missing dependency: 'validateKeys'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/app/web/src/pages/agent/hooks.tsx
+  84:9  warning  Unexpected console statement  no-console
+
+/app/web/src/pages/agent/hooks/use-add-node.ts
+  78:25  error  Expected a `const` instead of a literal type assertion  @typescript-eslint/prefer-as-const
+  89:25  error  Expected a `const` instead of a literal type assertion  @typescript-eslint/prefer-as-const
+
+/app/web/src/pages/agent/hooks/use-download-output.ts
+  18:14  error  'error' is defined but never used  @typescript-eslint/no-unused-vars
+  18:21  error  Empty block statement              no-empty
+
+/app/web/src/pages/agent/hooks/use-watch-form-change.ts
+  16:16  warning  Assignments to the 'values' variable from inside React Hook useEffect will be lost after each render. To preserve the value over time, store it in a useRef Hook and keep the mutable value in the '.current' property. Otherwise, you can move this variable directly inside useEffect  react-hooks/exhaustive-deps
+  17:11  error    'nextValues' is never reassigned. Use 'const' instead                                                                                                                                                                                                                                    prefer-const
+
+/app/web/src/pages/agent/store.ts
+  472:15  error  'currentHandleTargets' is never reassigned. Use 'const' instead            prefer-const
+  577:9   error  Unused eslint-disable directive (no problems were reported from 'eqeqeq')
+
+/app/web/src/pages/agent/use-agent-history-manager.ts
+  75:5  warning  Unexpected console statement  no-console
+
+/app/web/src/pages/agent/webhook-sheet/index.tsx
+  52:9  error  'errorItem' is never reassigned. Use 'const' instead  prefer-const
+
+/app/web/src/pages/agents/agent-log-page.tsx
+  146:5  warning  Unexpected console statement                                                                                                                                                                                                               no-console
+  182:6  warning  React Hook useEffect has a missing dependency: 'handleSearch'. Either include it or remove the dependency array. Mutable values like 'pagination.current' aren't valid dependencies because mutating them doesn't re-render the component  react-hooks/exhaustive-deps
+
+/app/web/src/pages/agents/agent-templates.tsx
+  57:11  error  'dsl' is never reassigned. Use 'const' instead  prefer-const
+
+/app/web/src/pages/agents/use-import-json.ts
+  80:11  warning  Unexpected console statement  no-console
+
+/app/web/src/pages/chunk/parsed-result/add-knowledge/components/knowledge-chunk/components/chunk-creating-modal/index.tsx
+  102:9  error  'handleRemove' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/app/web/src/pages/chunk/parsed-result/add-knowledge/components/knowledge-chunk/components/chunk-result-bar/checkbox-sets.tsx
+  14:16  error    Component definition is missing display name  react/display-name
+  25:7   warning  Unexpected console statement                  no-console
+
+/app/web/src/pages/chunk/parsed-result/add-knowledge/components/knowledge-chunk/components/chunk-result-bar/index.tsx
+  23:16  error  Component definition is missing display name  react/display-name
+
+/app/web/src/pages/dataflow-result/components/chunk-card/index.tsx
+  42:11  error  'theme' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/app/web/src/pages/dataflow-result/components/chunk-result-bar/checkbox-sets.tsx
+  13:16  error    Component definition is missing display name  react/display-name
+  18:7   warning  Unexpected console statement                  no-console
+
+/app/web/src/pages/dataflow-result/components/chunk-result-bar/index.tsx
+  12:16  error  Component definition is missing display name  react/display-name
+
+/app/web/src/pages/dataflow-result/components/parse-editer/hook.ts
+  15:5  warning  Unexpected console statement  no-console
+
+/app/web/src/pages/dataflow-result/components/parse-editer/index.tsx
+  17:3  warning  Unexpected console statement  no-console
+
+/app/web/src/pages/dataflow-result/components/parse-editer/json-parser.tsx
+  132:21  warning  Unexpected console statement  no-console
+
+/app/web/src/pages/dataflow-result/components/rerun-button/index.tsx
+  14:11  error    'className' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  17:5   warning  Unexpected console statement                    no-console
+
+/app/web/src/pages/dataflow-result/components/time-line/index.tsx
+  58:3  error  'data' is defined but never used  @typescript-eslint/no-unused-vars
+
+/app/web/src/pages/dataflow-result/hooks.ts
+  219:5  warning  Unexpected console statement  no-console
+  260:9  warning  Unexpected console statement  no-console
+  285:3  warning  Unexpected console statement  no-console
+
+/app/web/src/pages/dataflow-result/index.tsx
+  71:7  error  'fileUrl' is never reassigned. Use 'const' instead  prefer-const
+
+/app/web/src/pages/dataflow-result/parser.tsx
+  51:5  warning  Unexpected console statement  no-console
+  66:5  warning  Unexpected console statement  no-console
+
+/app/web/src/pages/dataset/components/metedata/hooks/use-manage-modal.ts
+  372:7  warning  Unexpected console statement  no-console
+
+/app/web/src/pages/dataset/components/metedata/manage-modal-column.tsx
+  64:9  error  'showTypeColumn' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/app/web/src/pages/dataset/contexts/knowledge-base-context.tsx
+  25:1  error  Unused eslint-disable directive (no problems were reported from 'react-refresh/only-export-components')
+
+/app/web/src/pages/dataset/dataset-overview/dataset-filter.tsx
+  31:8  error  'rest' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/app/web/src/pages/dataset/dataset-overview/index.tsx
+  176:11  warning  Unexpected console statement  no-console
+  215:5   warning  Unexpected console statement  no-console
+  239:5   warning  Unexpected console statement  no-console
+
+/app/web/src/pages/dataset/dataset-overview/overview-table.tsx
+  369:5  warning  Unexpected console statement                                                                                                                                     no-console
+  384:6  warning  React Hook useMemo has missing dependencies: 'dataSourceInfo', 'kowledgeId', and 'navigateToDataflowResult'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+/app/web/src/pages/dataset/dataset-setting/chunk-method-learn-more.tsx
+  8:16  error  Component definition is missing display name  react/display-name
+
+/app/web/src/pages/dataset/dataset-setting/components/added-source-card.tsx
+  73:19  warning  Unexpected console statement  no-console
+
+/app/web/src/pages/dataset/dataset-setting/components/link-data-pipeline.tsx
+   26:25  error    'isDefault' is assigned a value but never used          @typescript-eslint/no-unused-vars
+   26:36  error    'linked' is assigned a value but never used             @typescript-eslint/no-unused-vars
+   26:44  error    'openLinkModalFunc' is assigned a value but never used  @typescript-eslint/no-unused-vars
+   27:9   error    'openUnlinkModal' is assigned a value but never used    @typescript-eslint/no-unused-vars
+  124:5   warning  Unexpected console statement                            no-console
+  135:5   warning  Unexpected console statement                            no-console
+
+/app/web/src/pages/dataset/dataset-setting/components/link-data-pipline-modal.tsx
+  41:5  warning  Unexpected console statement  no-console
+
+/app/web/src/pages/dataset/dataset-setting/components/link-data-source-modal.tsx
+  31:5  warning  Unexpected console statement  no-console
+
+/app/web/src/pages/dataset/dataset-setting/components/link-data-source.tsx
+  156:6  warning  React Hook useMemo has a missing dependency: 'dataSourceInfo'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  159:5  warning  Unexpected console statement                                                                                     no-console
+  169:5  warning  Unexpected console statement                                                                                     no-console
+
+/app/web/src/pages/dataset/dataset-setting/configuration/common-item.tsx
+  124:6  warning  React Hook useMemo has a missing dependency: 'name'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/app/web/src/pages/dataset/dataset-setting/index.tsx
+  124:5  warning  Unexpected console statement                                                                                       no-console
+  157:6  warning  React Hook useEffect has a missing dependency: 'dataSourceInfo'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  161:7  warning  Unexpected console statement                                                                                       no-console
+  223:5  warning  Unexpected console statement                                                                                       no-console
+  231:7  warning  Unexpected console statement                                                                                       no-console
+
+/app/web/src/pages/dataset/dataset-setting/saving-button.tsx
+  27:15  error    'isValidate' is never reassigned. Use 'const' instead  prefer-const
+  61:17  error    'beValid' is never reassigned. Use 'const' instead     prefer-const
+  68:17  warning  Unexpected console statement                           no-console
+  91:13  warning  Unexpected console statement                           no-console
+  92:21  error    Empty block statement                                  no-empty
+
+/app/web/src/pages/dataset/dataset-setting/tag-word-cloud.tsx
+  8:7  error  'chartRef' is never reassigned. Use 'const' instead  prefer-const
+
+/app/web/src/pages/dataset/dataset/generate-button/generate.tsx
+  190:5   warning  Unexpected console statement  no-console
+  264:5   warning  Unexpected console statement  no-console
+  335:17  warning  Unexpected console statement  no-console
+
+/app/web/src/pages/dataset/dataset/index.tsx
+  83:6  warning  React Hook useEffect has a missing dependency: 'checkValue'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/app/web/src/pages/dataset/dataset/reparse-dialog.tsx
+  129:9   warning  Unexpected console statement  no-console
+  151:19  warning  Unexpected console statement  no-console
+
+/app/web/src/pages/dataset/dataset/set-meta-dialog.tsx
+  52:20  error  'error' is defined but never used  @typescript-eslint/no-unused-vars
+
+/app/web/src/pages/dataset/dataset/use-run-document.ts
+  26:14  error  'error' is defined but never used  @typescript-eslint/no-unused-vars
+
+/app/web/src/pages/dataset/knowledge-graph/constant.ts
+  124:10  error  'type' is defined but never used  @typescript-eslint/no-unused-vars
+
+/app/web/src/pages/dataset/knowledge-graph/force-graph.tsx
+  141:6  warning  React Hook useCallback has a missing dependency: 'isDark'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/app/web/src/pages/dataset/testing/testing-form.tsx
+  122:24  error  Redundant double negation  no-extra-boolean-cast
+
+/app/web/src/pages/datasets/dataset-creating-dialog.tsx
+   90:5  warning  Unexpected console statement  no-console
+  100:5  warning  Unexpected console statement  no-console
+
+/app/web/src/pages/datasets/index.tsx
+  69:6  warning  React Hook useEffect has a missing dependency: 'queryClient'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/app/web/src/pages/document-viewer/image/index.tsx
+  38:6  warning  React Hook useEffect has a missing dependency: 'imageSrc'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/app/web/src/pages/login-next/card.tsx
+  12:5  warning  Unexpected console statement  no-console
+
+/app/web/src/pages/login-next/index.tsx
+  129:7  warning  Unexpected console statement  no-console
+
+/app/web/src/pages/memories/add-or-edit-modal.tsx
+  17:31  error  Component definition is missing display name  react/display-name
+
+/app/web/src/pages/memories/hooks.ts
+  99:7  warning  Unexpected console statement  no-console
+
+/app/web/src/pages/memory/hooks/use-memory-setting.ts
+  15:7  error  'queryKey' is never reassigned. Use 'const' instead  prefer-const
+
+/app/web/src/pages/memory/memory-message/hook.ts
+  25:7  error    'queryKey' is never reassigned. Use 'const' instead                                                            prefer-const
+  88:6  warning  React Hook useCallback has a missing dependency: 'memoryId'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/app/web/src/pages/memory/memory-message/index.tsx
+  16:5  error  'loading' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/app/web/src/pages/memory/memory-message/message-table.tsx
+  233:5  warning  React Hook useMemo has missing dependencies: 'handleClickMessageContentDialog' and 'handleClickUpdateMessageState'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+/app/web/src/pages/memory/memory-setting/advanced-settings-form.tsx
+  61:21  warning  Unexpected console statement  no-console
+
+/app/web/src/pages/memory/memory-setting/hook.ts
+  22:11  error  'res' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/app/web/src/pages/memory/memory-setting/index.tsx
+   67:5   warning  Unexpected console statement  no-console
+  103:19  warning  Unexpected console statement  no-console
+
+/app/web/src/pages/next-chats/chat/app-settings/chat-settings.tsx
+  84:5  warning  Unexpected console statement  no-console
+
+/app/web/src/pages/next-chats/hooks/use-send-chat-message.ts
+  114:9  warning  Unexpected console statement  no-console
+
+/app/web/src/pages/next-chats/hooks/use-send-shared-message.ts
+  110:6  warning  React Hook useCallback has a missing dependency: 'data'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/app/web/src/pages/next-search/index.tsx
+  135:15  warning  Unexpected console statement  no-console
+
+/app/web/src/pages/next-search/markdown-content/index.tsx
+   87:7   error  'isPdf' is assigned a value but never used               @typescript-eslint/no-unused-vars
+   88:7   error  'documentUrl' is defined but never used                  @typescript-eslint/no-unused-vars
+  215:11  error  'replacedText' is never reassigned. Use 'const' instead  prefer-const
+
+/app/web/src/pages/next-search/retrieval-documents/index.tsx
+  86:5  warning  Unexpected console statement  no-console
+
+/app/web/src/pages/next-search/search-setting.tsx
+  204:5   warning  Unexpected console statement  no-console
+  314:17  warning  Unexpected console statement  no-console
+  318:17  warning  Unexpected console statement  no-console
+
+/app/web/src/pages/next-searches/hooks.ts
+  349:11  warning  Unexpected console statement  no-console
+
+/app/web/src/pages/user-setting/data-source/add-datasource-modal.tsx
+  59:11  warning  Unexpected console statement  no-console
+
+/app/web/src/pages/user-setting/data-source/component/box-token-field.tsx
+  130:28  error  '_userId' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  176:16  error  '_error' is defined but never used            @typescript-eslint/no-unused-vars
+  307:14  error  '_error' is defined but never used            @typescript-eslint/no-unused-vars
+
+/app/web/src/pages/user-setting/data-source/component/gmail-token-field.tsx
+   55:3   error  'placeholder' is defined but never used  @typescript-eslint/no-unused-vars
+  141:16  error  'err' is defined but never used          @typescript-eslint/no-unused-vars
+  253:14  error  'err' is defined but never used          @typescript-eslint/no-unused-vars
+
+/app/web/src/pages/user-setting/data-source/component/google-drive-token-field.tsx
+  138:16  error  'err' is defined but never used  @typescript-eslint/no-unused-vars
+  250:14  error  'err' is defined but never used  @typescript-eslint/no-unused-vars
+
+/app/web/src/pages/user-setting/data-source/constant/bitbucket-constant.tsx
+  64:7  warning  Unexpected console statement  no-console
+
+/app/web/src/pages/user-setting/data-source/constant/confluence-constant.tsx
+  48:7  warning  Unexpected console statement  no-console
+
+/app/web/src/pages/user-setting/data-source/constant/s3-constant.tsx
+  72:7  warning  Unexpected console statement  no-console
+
+/app/web/src/pages/user-setting/data-source/data-source-detail-page/index.tsx
+  166:7  warning  Unexpected console statement  no-console
+
+/app/web/src/pages/user-setting/data-source/data-source-detail-page/log-table.tsx
+   74:15  warning  Unexpected console statement  no-console
+  152:7   warning  Unexpected console statement  no-console
+
+/app/web/src/pages/user-setting/data-source/hooks.ts
+  49:9  error    'sourceList' is never reassigned. Use 'const' instead                                                            prefer-const
+  64:5  warning  Unexpected console statement                                                                                     no-console
+  66:6  warning  React Hook useMemo has a missing dependency: 'dataSourceInfo'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  94:7  warning  Unexpected console statement                                                                                     no-console
+
+/app/web/src/pages/user-setting/data-source/index.tsx
+  125:15  warning  Unexpected console statement  no-console
+
+/app/web/src/pages/user-setting/mcp/edit-mcp-dialog.tsx
+  108:21  error  Redundant double negation  no-extra-boolean-cast
+
+/app/web/src/pages/user-setting/mcp/edit-mcp-form.tsx
+  74:9  error  'FormSchema' is assigned a value but only used as a type  @typescript-eslint/no-unused-vars
+
+/app/web/src/pages/user-setting/mcp/use-import-mcp.ts
+  46:20  error  'error' is defined but never used  @typescript-eslint/no-unused-vars
+  58:18  error  'error' is defined but never used  @typescript-eslint/no-unused-vars
+
+/app/web/src/pages/user-setting/profile/hooks/use-profile.ts
+   92:5  warning  Unexpected console statement  no-console
+  126:5  warning  Unexpected console statement  no-console
+
+/app/web/src/pages/user-setting/setting-model/components/system-setting.tsx
+  27:32  error    'loading' is defined but never used  @typescript-eslint/no-unused-vars
+  45:7   warning  Unexpected console statement         no-console
+
+/app/web/src/pages/user-setting/setting-model/index.tsx
+  183:7  warning  Unexpected console statement                                                                                                 no-console
+  194:5  warning  React Hook useCallback has a missing dependency: 'showDynamicAddingModal'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  222:5  warning  React Hook useCallback has a missing dependency: 'showDynamicAddingModal'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/app/web/src/pages/user-setting/setting-model/langfuse/use-save-langfuse-configuration.tsx
+  23:5  warning  React Hook useCallback has a missing dependency: 'setLangfuseConfig'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/app/web/src/pages/user-setting/setting-model/modal/api-key-modal/index.tsx
+  47:3  error  'editMode' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/app/web/src/pages/user-setting/setting-model/modal/azure-openai-modal/index.tsx
+  128:11  warning  Unexpected console statement  no-console
+
+/app/web/src/pages/user-setting/setting-model/modal/dynamic-provider-modal/index.tsx
+  118:5  error  Unused eslint-disable directive (no problems were reported from 'react-hooks/exhaustive-deps')
+
+/app/web/src/pages/user-setting/setting-model/modal/fish-audio-modal/index.tsx
+  84:5   warning  Unexpected console statement  no-console
+  99:29  warning  Unexpected console statement  no-console
+
+/app/web/src/pages/user-setting/setting-model/modal/spark-modal/index.tsx
+  142:11  warning  Unexpected console statement  no-console
+
+/app/web/src/pages/user-setting/setting-model/modal/volcengine-modal/index.tsx
+   89:5   warning  Unexpected console statement  no-console
+  105:11  warning  Unexpected console statement  no-console
+
+/app/web/src/pages/user-setting/setting-model/modal/yiyan-modal/index.tsx
+   86:5   warning  Unexpected console statement  no-console
+  102:11  warning  Unexpected console statement  no-console
+
+/app/web/src/pages/user-setting/setting-team/hooks.ts
+  47:25  error  Empty block statement  no-empty
+
+/app/web/src/pages/user-setting/setting-team/user-table.tsx
+  42:5  warning  Unexpected console statement  no-console
+
+/app/web/src/services/admin.service.d.ts
+  1:1  error  Use 'namespace' instead of 'module' to declare custom TypeScript modules  @typescript-eslint/prefer-namespace-keyword
+
+/app/web/src/utils/api.ts
+  1:5  error  'api_host' is never reassigned. Use 'const' instead  prefer-const
+
+/app/web/src/utils/file-util.ts
+  57:7  error  'arr' is never reassigned. Use 'const' instead    prefer-const
+  58:5  error  'bstr' is never reassigned. Use 'const' instead   prefer-const
+  60:5  error  'u8arr' is never reassigned. Use 'const' instead  prefer-const
+
+/app/web/src/utils/next-request.ts
+  128:5  warning  Unexpected console statement  no-console
+
+/app/web/src/utils/register-server.ts
+   1:1   error  Unused eslint-disable directive (no problems were reported from 'guard-for-in')
+  20:12  error  'key' is never reassigned. Use 'const' instead                                   prefer-const
+
+/app/web/src/utils/simple-history-util.ts
+  108:14  warning  'history' was used before it was defined  @typescript-eslint/no-use-before-define
+
+✖ 356 problems (168 errors, 188 warnings)
+  55 errors and 0 warnings potentially fixable with the `--fix` option.
+
+ ELIFECYCLE  Command failed with exit code 1.

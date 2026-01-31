@@ -128,6 +128,49 @@ class TestConnectorService(unittest.TestCase):
             # Check arguments for filter_update specifically for cancellation
             mock_sync_logs_service.filter_update.assert_called_with(unittest.mock.ANY, {"status": MockTaskStatus.CANCEL})
 
+    @patch("api.db.services.connector_service.SyncLogsService")
+    @patch("api.db.services.connector_service.Connector2KbService")
+    def test_link_connectors_collects_failures(self, mock_c2k_service, mock_sync_logs_service):
+        """Test that link_connectors collects and returns failure messages"""
+        kb_id = "kb_1"
+        tenant_id = "tenant_1"
+        connectors = [{"id": "conn_1"}, {"id": "conn_2"}]
+
+        # Mock query and schedule
+        with patch.object(Connector2KbService, "query") as mock_query, patch("api.db.services.connector_service.SyncLogsService.schedule") as mock_schedule:
+            mock_query.return_value = []
+            mock_schedule.side_effect = ["failed", "scheduled"]
+            res = Connector2KbService.link_connectors(kb_id, connectors, tenant_id)
+
+            self.assertIn("Failed to schedule sync task for connector conn_1", res)
+            self.assertNotIn("conn_2", res)
+            self.assertEqual(mock_schedule.call_count, 2)
+
+    @patch("api.db.services.connector_service.SyncLogsService")
+    @patch("api.db.services.connector_service.Connector2KbService")
+    def test_resume_processes_all_kbs(self, mock_c2k_service, mock_sync_logs_service):
+        """Test that resume processes all linked KBs even if some fail to schedule"""
+        connector_id = "conn_1"
+        status = MockTaskStatus.SCHEDULE
+
+        # Mock two linked KBs
+        mock_c2k_service.query.return_value = [MagicMock(kb_id="kb_1"), MagicMock(kb_id="kb_2")]
+
+        # Mock SyncLogsService tasks
+        mock_sync_logs_service.get_latest_task.side_effect = [None, None]
+        mock_sync_logs_service.schedule.side_effect = ["failed", "scheduled"]
+
+        from api.db.services.connector_service import ConnectorService
+
+        with patch.object(ConnectorService, "update_by_id") as mock_update_by_id:
+            res = ConnectorService.resume(connector_id, status)
+
+            self.assertIn("Failed to schedule sync task for connector conn_1 and knowledge base kb_1", res)
+            self.assertNotIn("kb_2", res)
+            # Ensure ConnectorService.update_by_id was called for the connector overall
+            mock_update_by_id.assert_called_with(connector_id, {"status": status})
+            self.assertEqual(mock_sync_logs_service.schedule.call_count, 2)
+
     def test_link_connectors_exception_mapping(self):
         """Test that ValueError is caught and wrapped in ConnectorError"""
         with patch.object(Connector2KbService, "query") as mock_query:

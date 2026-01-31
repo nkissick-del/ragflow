@@ -37,27 +37,28 @@ class ConnectorService(CommonService):
 
     @classmethod
     def resume(cls, connector_id, status):
+        failures = []
         for c2k in Connector2KbService.query(connector_id=connector_id):
             task = SyncLogsService.get_latest_task(connector_id, c2k.kb_id)
             if not task:
                 if status == TaskStatus.SCHEDULE:
-                    if not SyncLogsService.schedule(connector_id, c2k.kb_id):
-                        return f"Failed to schedule sync task for connector {connector_id} and knowledge base {c2k.kb_id}"
-                    ConnectorService.update_by_id(connector_id, {"status": status})
-                    return ""
+                    res = SyncLogsService.schedule(connector_id, c2k.kb_id)
+                    if res == "failed":
+                        failures.append(f"Failed to schedule sync task for connector {connector_id} and knowledge base {c2k.kb_id}")
+                    continue
 
             if task.status == TaskStatus.DONE:
                 if status == TaskStatus.SCHEDULE:
-                    if not SyncLogsService.schedule(connector_id, c2k.kb_id, task.poll_range_end, total_docs_indexed=task.total_docs_indexed):
-                        return f"Failed to schedule sync task for connector {connector_id} and knowledge base {c2k.kb_id}"
-                    ConnectorService.update_by_id(connector_id, {"status": status})
-                    return ""
+                    res = SyncLogsService.schedule(connector_id, c2k.kb_id, task.poll_range_end, total_docs_indexed=task.total_docs_indexed)
+                    if res == "failed":
+                        failures.append(f"Failed to schedule sync task for connector {connector_id} and knowledge base {c2k.kb_id}")
+                    continue
 
             task = task.to_dict()
             task["status"] = status
             SyncLogsService.update_by_id(task["id"], task)
         ConnectorService.update_by_id(connector_id, {"status": status})
-        return ""
+        return "; ".join(failures) if failures else ""
 
     @classmethod
     def list(cls, tenant_id):
@@ -161,10 +162,10 @@ class SyncLogsService(CommonService):
             e = cls.query(kb_id=kb_id, connector_id=connector_id, status=TaskStatus.SCHEDULE)
             if e:
                 logging.warning(f"{kb_id}--{connector_id} has already had a scheduling sync task which is abnormal.")
-                return None
+                return "already_scheduled"
             reindex = "1" if reindex else "0"
             ConnectorService.update_by_id(connector_id, {"status": TaskStatus.SCHEDULE})
-            return cls.save(
+            cls.save(
                 **{
                     "id": get_uuid(),
                     "kb_id": kb_id,
@@ -175,14 +176,17 @@ class SyncLogsService(CommonService):
                     "total_docs_indexed": total_docs_indexed,
                 }
             )
+            return "scheduled"
         except Exception as e:
-            logging.exception(e)
+            logging.exception(f"Failed to schedule sync task for connector {connector_id} and knowledge base {kb_id}")
             task = cls.get_latest_task(connector_id, kb_id)
             if task:
                 cls.model.update(
                     status=TaskStatus.SCHEDULE, poll_range_start=poll_range_start, error_msg=cls.model.error_msg + str(e), full_exception_trace=cls.model.full_exception_trace + str(e)
                 ).where(cls.model.id == task.id).execute()
                 ConnectorService.update_by_id(connector_id, {"status": TaskStatus.SCHEDULE})
+                return "scheduled"
+            return "failed"
 
     @classmethod
     def increase_docs(cls, id, min_update, max_update, doc_num, err_msg="", error_count=0):
@@ -259,6 +263,7 @@ class Connector2KbService(CommonService):
             arr = cls.query(kb_id=kb_id)
             old_conn_ids = [a.connector_id for a in arr]
             connector_ids = []
+            failures = []
             for conn in connectors:
                 conn_id = conn["id"]
                 connector_ids.append(conn_id)
@@ -272,9 +277,12 @@ class Connector2KbService(CommonService):
                     [SyncLogs.connector_id == conn_id, SyncLogs.kb_id == kb_id, SyncLogs.status.in_([TaskStatus.SCHEDULE, TaskStatus.RUNNING])], {"status": TaskStatus.CANCEL}
                 )
                 cls.save(**{"id": get_uuid(), "connector_id": conn_id, "kb_id": kb_id, "auto_parse": conn.get("auto_parse", "1")})
-                if not SyncLogsService.schedule(conn_id, kb_id, reindex=True):
-                    return f"Failed to schedule sync task for connector {conn_id} and knowledge base {kb_id}"
+                res = SyncLogsService.schedule(conn_id, kb_id, reindex=True)
+                if res == "failed":
+                    failures.append(f"Failed to schedule sync task for connector {conn_id} and knowledge base {kb_id}")
 
+            if failures:
+                return "; ".join(failures)
             return ""
         except (ValueError, KeyError) as e:
             logging.exception("Error while linking connectors")

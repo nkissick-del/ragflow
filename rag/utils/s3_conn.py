@@ -221,22 +221,32 @@ class RAGFlowS3:
     def get_presigned_url(self, bucket, fnm, expires, *args, **kwargs):
         params = {"Bucket": bucket, "Key": fnm}
         params.update({k: v for k, v in kwargs.items() if k not in ["Bucket", "Key"]})
-        try:
-            if not self.conn:
-                self.__open__()
-            if not self.conn:
-                raise RuntimeError("S3 connection not available")
-            return self.conn[0].generate_presigned_url("get_object", Params=params, ExpiresIn=expires)
-        except Exception:
+        max_retries = kwargs.pop("max_retries", self.max_retries)
+        for i in range(max_retries):
             try:
-                logging.info(f"Retrying get_presigned_url for {bucket}/{fnm} after credential refresh")
-                self.__open__()
+                if not self.conn:
+                    self.__open__()
                 if not self.conn:
                     raise RuntimeError("S3 connection not available")
                 return self.conn[0].generate_presigned_url("get_object", Params=params, ExpiresIn=expires)
-            except Exception:
-                logging.exception(f"fail get url {bucket}/{fnm}")
-                raise
+            except Exception as e:
+                is_credential_error = False
+                if isinstance(e, ClientError):
+                    error_code = e.response.get("Error", {}).get("Code")
+                    if error_code in ("403", "Forbidden", "InvalidAccessKeyId", "SignatureDoesNotMatch", "ExpiredToken"):
+                        is_credential_error = True
+
+                if is_credential_error:
+                    logging.info(f"Retrying get_presigned_url for {bucket}/{fnm} after credential refresh (attempt {i + 1}/{max_retries})")
+                else:
+                    logging.exception(f"fail get url {bucket}/{fnm} (attempt {i + 1}/{max_retries})")
+
+                if i < max_retries - 1:
+                    time.sleep(min(2**i, 30))
+                    if is_credential_error:
+                        self.__open__()
+                else:
+                    raise
 
     @use_default_bucket
     def rm_bucket(self, bucket, *args, **kwargs):

@@ -122,9 +122,31 @@ class TestS3Connection(unittest.TestCase):
 
         s3.get_presigned_url("bucket", "key", 3600)
 
-        # Should call __open__ (mock_boto_client) again
-        self.assertEqual(mock_boto_client.call_count, 1)  # One more call in get_presigned_url
-        mock_s3.generate_presigned_url.assert_called_once()
+    @patch("rag.utils.s3_conn.boto3.client")
+    @patch("rag.utils.s3_conn.time.sleep")
+    def test_get_presigned_url_retries_and_raises(self, mock_sleep, mock_boto_client):
+        from botocore.exceptions import ClientError
+
+        mock_s3 = MagicMock()
+        mock_boto_client.return_value = mock_s3
+
+        # Simulate Forbidden error (credential error)
+        error_response = {"Error": {"Code": "403", "Message": "Forbidden"}}
+        mock_s3.generate_presigned_url.side_effect = ClientError(error_response, "generate_presigned_url")
+
+        s3_cls = self._get_s3_class()
+        s3 = s3_cls()
+        s3.max_retries = 2
+        mock_boto_client.reset_mock()
+
+        with self.assertRaises(ClientError):
+            s3.get_presigned_url("bucket", "key", 3600)
+
+        # 1 initial try + 1 retry = 2 calls
+        self.assertEqual(mock_s3.generate_presigned_url.call_count, 2)
+        # Should call __open__ (mock_boto_client) again for credential error
+        self.assertEqual(mock_boto_client.call_count, 1)
+        mock_sleep.assert_called_once()
 
 
 if __name__ == "__main__":

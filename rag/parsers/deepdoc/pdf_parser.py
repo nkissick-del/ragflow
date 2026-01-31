@@ -119,7 +119,9 @@ class RAGFlowPdfParser:
                 self.updown_cnt_mdl.load_model(os.path.join(model_dir, "updown_concat_xgb.model"))
         else:
             self.updown_cnt_mdl = None
-            logging.warning("xgboost is not installed. DeepDOC vertical text merging will be significantly reduced (or disabled for ML-guided merging) when xgboost is unavailable.")
+            logging.warning(
+                "xgboost is not installed. DeepDOC vertical text merging will skip the ML-guided check and fall back to non-ML merging logic in _concat_downward, which may result in more aggressive vertical merging."
+            )
 
         self.page_from = 0
         self.column_num = 1

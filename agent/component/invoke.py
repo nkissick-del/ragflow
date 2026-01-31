@@ -125,10 +125,12 @@ class Invoke(ComponentBase, ABC):
                     logging.debug(f"HTTP {status_code}: {truncated_text}")
 
                     if 500 <= status_code < 600 or status_code in (408, 429):
-                        raise Exception(f"HTTP {status_code}: error")
+                        raise Exception(f"HTTP {status_code}: {truncated_text}")
 
-                    self._handle_response(response)
-                    return self.output("result")
+                    allowed_4xx = {400}
+                    if status_code not in allowed_4xx:
+                        self.set_output("error", {"status_code": status_code, "message": truncated_text})
+                        return self.output("result")
 
                 self._handle_response(response)
                 return self.output("result")

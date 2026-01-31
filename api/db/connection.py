@@ -101,11 +101,11 @@ def ensure_database_exists():
                 conn.close()
 
             except Exception as e:
-                logging.error("Error ensuring PostgreSQL database exists", exc_info=True)
-                logging.warning(
-                    f"Failed to create PostgreSQL database '{db_name}': {e}. "
+                logging.error(
+                    f"Failed to ensure PostgreSQL database '{db_name}' exists: {e}. "
                     f"If using restricted user, ensure database is pre-created or user has CREATE DATABASE permission. "
-                    f"See docs/POSTGRESQL_SECURITY.md for sandboxed setup."
+                    f"See docs/POSTGRESQL_SECURITY.md for sandboxed setup.",
+                    exc_info=True,
                 )
 
         elif db_type == "mysql":
@@ -256,7 +256,7 @@ def log_connection_stats():
     try:
         from api.db.diagnostics import PoolDiagnostics
     except ImportError:
-        logging.error("Failed to import PoolDiagnostics from api.db.diagnostics")
+        logging.warning("Failed to import PoolDiagnostics from api.db.diagnostics")
         return
 
     try:

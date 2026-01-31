@@ -14,10 +14,13 @@
 #  limitations under the License.
 #
 import os
+from functools import wraps
+
 
 def singleton(cls, *args, **kw):
     instances = {}
 
+    @wraps(cls)
     def _singleton():
         key = str(cls) + str(os.getpid())
         if key not in instances:

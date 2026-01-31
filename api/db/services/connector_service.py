@@ -29,6 +29,7 @@ from api.db.services.doc_metadata_service import DocMetadataService
 from common.misc_utils import get_uuid
 from common.constants import TaskStatus
 from common.time_utils import current_timestamp, timestamp_to_date
+from common.exceptions import ConnectorError
 
 
 class ConnectorService(CommonService):
@@ -260,18 +261,22 @@ class Connector2KbService(CommonService):
                 if conn_id in old_conn_ids:
                     cls.filter_update([cls.model.connector_id == conn_id, cls.model.kb_id == kb_id], {"auto_parse": conn.get("auto_parse", "1")})
                     continue
-                cls.save(**{"id": get_uuid(), "connector_id": conn_id, "kb_id": kb_id, "auto_parse": conn.get("auto_parse", "1")})
-                SyncLogsService.schedule(conn_id, kb_id, reindex=True)
 
                 # Ensure existing scheduling or running sync tasks for this connector and knowledge base are cancelled.
                 # This ensures that only the latest sync configuration is accessible and to prevent accidental data loss if the connector is re-linked.
                 SyncLogsService.filter_update(
                     [SyncLogs.connector_id == conn_id, SyncLogs.kb_id == kb_id, SyncLogs.status.in_([TaskStatus.SCHEDULE, TaskStatus.RUNNING])], {"status": TaskStatus.CANCEL}
                 )
+                cls.save(**{"id": get_uuid(), "connector_id": conn_id, "kb_id": kb_id, "auto_parse": conn.get("auto_parse", "1")})
+                SyncLogsService.schedule(conn_id, kb_id, reindex=True)
+
             return ""
-        except Exception as e:
+        except (ValueError, KeyError) as e:
             logging.exception("Error while linking connectors")
-            return str(e)
+            raise ConnectorError(str(e)) from e
+        except Exception as e:
+            logging.exception("Unexpected error while linking connectors")
+            raise e
 
     @classmethod
     def list_connectors(cls, kb_id):

@@ -743,7 +743,7 @@ class Canvas(Graph):
         loop = asyncio.get_running_loop()
         tasks = []
         for file in files:
-            if file["mime_type"].find("image") >= 0:
+            if file["mime_type"].lower().startswith("image/"):
                 tasks.append(loop.run_in_executor(self._thread_pool, image_to_base64, file))
                 continue
             tasks.append(loop.run_in_executor(self._thread_pool, FileService.parse, file["name"], FileService.get_blob(file["created_by"], file["id"]), True, file["created_by"]))

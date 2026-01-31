@@ -103,7 +103,8 @@ class Agent(LLM, ToolBase):
                 self.tools[tnm] = tool_call_session
         self.callback = partial(self._canvas.tool_use_callback, id)
         self.toolcall_session = LLMToolPluginCallSession(self.tools, self.callback)
-        # self.chat_mdl.bind_tools(self.toolcall_session, self.tool_metas)
+        # TODO: self.chat_mdl.bind_tools(self.toolcall_session, self.tool_meta)
+        # Binding is currently disabled until the underlying model interface supports it.
 
     def _load_tool_obj(self, cpn: dict) -> object:
         from agent.component import component_class
@@ -223,13 +224,7 @@ class Agent(LLM, ToolBase):
             error = ""
             for _ in range(self._param.max_retries + 1):
                 try:
-
-                    def clean_formated_answer(ans: str) -> str:
-                        ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
-                        ans = re.sub(r"^.*```json", "", ans, flags=re.DOTALL)
-                        return re.sub(r"```\n*$", "", ans, flags=re.DOTALL)
-
-                    obj = json_repair.loads(clean_formated_answer(ans))
+                    obj = json_repair.loads(self._clean_formatted_answer(ans))
                     self.set_output("structured", obj)
                     if use_tools:
                         self.set_output("use_tools", use_tools)
@@ -421,134 +416,10 @@ Respond immediately with your final comprehensive answer.
         async for txt, tkcnt in complete():
             yield txt, tkcnt
 
-    #     async def _react_with_tools_streamly_async(self, prompt, history: list[dict], use_tools, user_defined_prompt={}, schema_prompt: str = ""):
-    #         token_count = 0
-    #         tool_metas = self.tool_meta
-    #         hist = deepcopy(history)
-    #         last_calling = ""
-    #         if len(hist) > 3:
-    #             st = timer()
-    #             user_request = await full_question(messages=history, chat_mdl=self.chat_mdl)
-    #             self.callback("Multi-turn conversation optimization", {}, user_request, elapsed_time=timer()-st)
-    #         else:
-    #             user_request = history[-1]["content"]
-
-    #         async def use_tool_async(name, args):
-    #             nonlocal hist, use_tools, last_calling
-    #             logging.info(f"{last_calling=} == {name=}")
-    #             last_calling = name
-    #             tool_response = await self.toolcall_session.tool_call_async(name, args)
-    #             use_tools.append({
-    #                 "name": name,
-    #                 "arguments": args,
-    #                 "results": tool_response
-    #             })
-    #             # self.callback("add_memory", {}, "...")
-    #             #self.add_memory(hist[-2]["content"], hist[-1]["content"], name, args, str(tool_response), user_defined_prompt)
-
-    #             return name, tool_response
-
-    #         async def complete():
-    #             nonlocal hist
-    #             need2cite = self._param.cite and self._canvas.get_reference()["chunks"] and self._id.find("-->") < 0
-    #             if schema_prompt:
-    #                 need2cite = False
-    #             cited = False
-    #             if hist and hist[0]["role"] == "system":
-    #                 if schema_prompt:
-    #                     hist[0]["content"] += "\n" + schema_prompt
-    #                 if need2cite and len(hist) < 7:
-    #                     hist[0]["content"] += citation_prompt()
-    #                     cited = True
-    #             yield "", token_count
-
-    #             _hist = hist
-    #             if len(hist) > 12:
-    #                 _hist = [hist[0], hist[1], *hist[-10:]]
-    #             entire_txt = ""
-    #             async for delta_ans in self._generate_streamly(_hist):
-    #                 if not need2cite or cited:
-    #                     yield delta_ans, 0
-    #                 entire_txt += delta_ans
-    #             if not need2cite or cited:
-    #                 return
-
-    #             st = timer()
-    #             txt = ""
-    #             async for delta_ans in self._gen_citations_async(entire_txt):
-    #                 if self.check_if_canceled("Agent streaming"):
-    #                     return
-    #                 yield delta_ans, 0
-    #                 txt += delta_ans
-
-    #             self.callback("gen_citations", {}, txt, elapsed_time=timer()-st)
-
-    #         def append_user_content(hist, content):
-    #             if hist[-1]["role"] == "user":
-    #                 hist[-1]["content"] += content
-    #             else:
-    #                 hist.append({"role": "user", "content": content})
-
-    #         st = timer()
-    #         task_desc = await analyze_task_async(self.chat_mdl, prompt, user_request, tool_metas, user_defined_prompt)
-    #         self.callback("analyze_task", {}, task_desc, elapsed_time=timer()-st)
-    #         for _ in range(self._param.max_rounds + 1):
-    #             if self.check_if_canceled("Agent streaming"):
-    #                 return
-    #             response, tk = await next_step_async(self.chat_mdl, hist, tool_metas, task_desc, user_defined_prompt)
-    #             # self.callback("next_step", {}, str(response)[:256]+"...")
-    #             token_count += tk or 0
-    #             hist.append({"role": "assistant", "content": response})
-    #             try:
-    #                 functions = json_repair.loads(re.sub(r"```.*", "", response))
-    #                 if not isinstance(functions, list):
-    #                     raise TypeError(f"List should be returned, but `{functions}`")
-    #                 for f in functions:
-    #                     if not isinstance(f, dict):
-    #                         raise TypeError(f"An object type should be returned, but `{f}`")
-
-    #                 tool_tasks = []
-    #                 for func in functions:
-    #                     name = func["name"]
-    #                     args = func["arguments"]
-    #                     if name == COMPLETE_TASK:
-    #                         append_user_content(hist, f"Respond with a formal answer. FORGET(DO NOT mention) about `{COMPLETE_TASK}`. The language for the response MUST be as the same as the first user request.\n")
-    #                         async for txt, tkcnt in complete():
-    #                             yield txt, tkcnt
-    #                         return
-
-    #                     tool_tasks.append(asyncio.create_task(use_tool_async(name, args)))
-
-    #                 results = await asyncio.gather(*tool_tasks) if tool_tasks else []
-    #                 st = timer()
-    #                 reflection = await reflect_async(self.chat_mdl, hist, results, user_defined_prompt)
-    #                 append_user_content(hist, reflection)
-    #                 self.callback("reflection", {}, str(reflection), elapsed_time=timer()-st)
-
-    #             except Exception as e:
-    #                 logging.exception(msg=f"Wrong JSON argument format in LLM ReAct response: {e}")
-    #                 e = f"\nTool call error, please correct the input parameter of response format and call it again.\n *** Exception ***\n{e}"
-    #                 append_user_content(hist, str(e))
-
-    #         logging.warning( f"Exceed max rounds: {self._param.max_rounds}")
-    #         final_instruction = f"""
-    # {user_request}
-    # IMPORTANT: You have reached the conversation limit. Based on ALL the information and research you have gathered so far, please provide a DIRECT and COMPREHENSIVE final answer to the original request.
-    # Instructions:
-    # 1. SYNTHESIZE all information collected during this conversation
-    # 2. Provide a COMPLETE response using existing data - do not suggest additional research
-    # 3. Structure your response as a FINAL DELIVERABLE, not a plan
-    # 4. If information is incomplete, state what you found and provide the best analysis possible with available data
-    # 5. DO NOT mention conversation limits or suggest further steps
-    # 6. Focus on delivering VALUE with the information already gathered
-    # Respond immediately with your final comprehensive answer.
-    #         """
-    #         if self.check_if_canceled("Agent final instruction"):
-    #             return
-    #         append_user_content(hist, final_instruction)
-
-    #         async for txt, tkcnt in complete():
-    #             yield txt, tkcnt
+    def _clean_formatted_answer(self, ans: str) -> str:
+        ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
+        ans = re.sub(r"^.*```json", "", ans, flags=re.DOTALL)
+        return re.sub(r"```\n*$", "", ans, flags=re.DOTALL)
 
     async def _gen_citations_async(self, text):
         retrievals = self._canvas.get_reference()

@@ -149,8 +149,9 @@ llm-replicate = ["replicate==0.31.0"]
 llm-voyage = ["voyageai==0.2.3"]
 llm-ollama = ["ollama>=0.5.0"]
 llm-hunyuan = ["tencentcloud-sdk-python==3.0.1478"]
+llm-openai = ["openai>=1.58.1"]
 llm-all = [
-    "ragflow[llm-anthropic,llm-google,llm-cohere,llm-mistral,llm-baidu]",
+    "ragflow[llm-anthropic,llm-google,llm-cohere,llm-mistral,llm-baidu,llm-openai]",
     "ragflow[llm-alibaba,llm-volcengine,llm-zhipu,llm-groq,llm-replicate]",
     "ragflow[llm-voyage,llm-ollama,llm-hunyuan,grpc]",
 ]

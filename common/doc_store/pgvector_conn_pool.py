@@ -89,6 +89,17 @@ class PGVectorConnPool:
             logger.warning("Invalid max_connections config, falling back to 20")
             max_conn = 20
 
+        # Validate connection pool sizes
+        if min_conn <= 0:
+            logger.warning(f"min_conn ({min_conn}) must be positive. Falling back to 2.")
+            min_conn = 2
+        if max_conn <= 0:
+            logger.warning(f"max_conn ({max_conn}) must be positive. Falling back to 20.")
+            max_conn = 20
+        if min_conn > max_conn:
+            logger.warning(f"min_conn ({min_conn}) exceeds max_conn ({max_conn}). Adjusting min_conn to {max_conn}.")
+            min_conn = max_conn
+
         try:
             PGVectorConnPool._pool = pool.ThreadedConnectionPool(
                 minconn=min_conn,
@@ -146,8 +157,6 @@ class PGVectorConnPool:
                 if attempt == max_retries - 1:
                     logger.error(f"Failed to get valid PG connection after {max_retries} attempts: {e}")
                     raise
-
-        raise RuntimeError("Failed to get valid connection from pool after retries")
 
     def put_conn(self, conn, close=False):
         """Return a connection to the pool."""

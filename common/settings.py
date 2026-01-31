@@ -27,8 +27,6 @@ from common.misc_utils import pip_install_torch
 from common.constants import SVR_QUEUE_NAME, Storage
 
 # Connection instances and settings initialized in init_settings()
-
-# Connection instances and settings initialized in init_settings()
 LLM = None
 LLM_FACTORY = None
 LLM_BASE_URL = None
@@ -126,6 +124,7 @@ EMBEDDING_BATCH_SIZE: int = 16
 PARALLEL_DEVICES: int = 0
 
 STORAGE_IMPL_TYPE = os.getenv("STORAGE_IMPL", "MINIO")
+S3_MAX_RETRIES = int(os.getenv("S3_MAX_RETRIES", "3"))
 STORAGE_IMPL = None
 
 

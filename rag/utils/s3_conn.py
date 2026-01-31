@@ -40,7 +40,7 @@ class RAGFlowS3:
         self.addressing_style = self.s3_config.get("addressing_style") or None
         self.bucket = self.s3_config.get("bucket") or None
         self.prefix_path = self.s3_config.get("prefix_path") or None
-        self.max_retries = 3
+        self.max_retries = max(0, settings.S3_MAX_RETRIES)
         if not self.access_key or not self.secret_key:
             logging.info("S3 initialized without explicit credentials; will use boto3 default chain.")
         self.__open__()
@@ -101,15 +101,18 @@ class RAGFlowS3:
 
             self.conn = [boto3.client("s3", **s3_params)]
         except Exception:
-            self.conn = []
+            self.conn = None
             logging.exception(f"Fail to connect at region {self.region_name} or endpoint {self.endpoint_url}")
 
     def __close__(self):
-        del self.conn[0]
+        if self.conn:
+            del self.conn[0]
         self.conn = None
 
     @use_default_bucket
     def bucket_exists(self, bucket, *args, **kwargs):
+        if not self.conn:
+            raise RuntimeError("S3 connection not available")
         try:
             logging.debug(f"head_bucket bucketname {bucket}")
             self.conn[0].head_bucket(Bucket=bucket)
@@ -120,6 +123,8 @@ class RAGFlowS3:
         return exists
 
     def health(self):
+        if not self.conn:
+            raise RuntimeError("S3 connection not available")
         bucket = self.bucket
         fnm = "txtxtxtxt1"
         fnm, binary = f"{self.prefix_path}/{fnm}" if self.prefix_path else fnm, b"_t@@@1"
@@ -140,13 +145,18 @@ class RAGFlowS3:
     @use_default_bucket
     def put(self, bucket, fnm, binary, *args, **kwargs):
         logging.debug(f"bucket name {bucket}; filename :{fnm}:")
-        max_retries = kwargs.get("max_retries", self.max_retries)
+        max_retries = kwargs.pop("max_retries", self.max_retries)
         for i in range(max_retries):
             try:
+                if not self.conn:
+                    self.__open__()
+                if not self.conn:
+                    raise RuntimeError("S3 connection not available")
+
                 if not self.bucket_exists(bucket):
                     self.conn[0].create_bucket(Bucket=bucket)
                     logging.info(f"create bucket {bucket} ********")
-                r = self.conn[0].upload_fileobj(BytesIO(binary), bucket, fnm)
+                r = self.conn[0].upload_fileobj(BytesIO(binary), bucket, fnm, **kwargs)
 
                 return r
             except Exception:
@@ -160,6 +170,10 @@ class RAGFlowS3:
     @use_prefix_path
     @use_default_bucket
     def rm(self, bucket, fnm, *args, **kwargs):
+        if not self.conn:
+            self.__open__()
+        if not self.conn:
+            raise RuntimeError("S3 connection not available")
         try:
             self.conn[0].delete_object(Bucket=bucket, Key=fnm)
         except Exception:
@@ -168,10 +182,14 @@ class RAGFlowS3:
     @use_prefix_path
     @use_default_bucket
     def get(self, bucket, fnm, *args, **kwargs):
-        max_retries = self.max_retries
+        max_retries = kwargs.pop("max_retries", self.max_retries)
         for i in range(max_retries):
             try:
-                r = self.conn[0].get_object(Bucket=bucket, Key=fnm)
+                if not self.conn:
+                    self.__open__()
+                if not self.conn:
+                    raise RuntimeError("S3 connection not available")
+                r = self.conn[0].get_object(Bucket=bucket, Key=fnm, **kwargs)
                 object_data = r["Body"].read()
                 return object_data
             except Exception:
@@ -185,6 +203,10 @@ class RAGFlowS3:
     @use_prefix_path
     @use_default_bucket
     def obj_exist(self, bucket, fnm, *args, **kwargs):
+        if not self.conn:
+            self.__open__()
+        if not self.conn:
+            raise RuntimeError("S3 connection not available")
         try:
             if self.conn[0].head_object(Bucket=bucket, Key=fnm):
                 return True
@@ -200,24 +222,42 @@ class RAGFlowS3:
         try:
             if not self.conn:
                 self.__open__()
-            return self.conn[0].generate_presigned_url("get_object", Params={"Bucket": bucket, "Key": fnm}, ExpiresIn=expires)
+            if not self.conn:
+                raise RuntimeError("S3 connection not available")
+            return self.conn[0].generate_presigned_url("get_object", Params={"Bucket": bucket, "Key": fnm, **kwargs}, ExpiresIn=expires)
         except Exception:
             try:
                 logging.info(f"Retrying get_presigned_url for {bucket}/{fnm} after credential refresh")
                 self.__open__()
-                return self.conn[0].generate_presigned_url("get_object", Params={"Bucket": bucket, "Key": fnm}, ExpiresIn=expires)
+                if not self.conn:
+                    raise RuntimeError("S3 connection not available")
+                return self.conn[0].generate_presigned_url("get_object", Params={"Bucket": bucket, "Key": fnm, **kwargs}, ExpiresIn=expires)
             except Exception:
                 logging.exception(f"fail get url {bucket}/{fnm}")
                 raise
 
     @use_default_bucket
     def rm_bucket(self, bucket, *args, **kwargs):
+        if not self.conn:
+            self.__open__()
+        if not self.conn:
+            raise RuntimeError("S3 connection not available")
         for conn in self.conn:
             try:
-                if not conn.bucket_exists(bucket):
+                # Note: This logic seems to assume self.conn is a list of clients
+                # which it is (even if it only has one)
+                try:
+                    conn.head_bucket(Bucket=bucket)
+                except ClientError:
                     continue
-                for o in conn.list_objects_v2(Bucket=bucket):
-                    conn.delete_object(bucket, o.object_name)
+
+                # List and delete objects
+                paginator = conn.get_paginator("list_objects_v2")
+                for page in paginator.paginate(Bucket=bucket):
+                    if "Contents" in page:
+                        delete_keys = [{"Key": obj["Key"]} for obj in page["Contents"]]
+                        conn.delete_objects(Bucket=bucket, Delete={"Objects": delete_keys})
+
                 conn.delete_bucket(Bucket=bucket)
                 return
             except Exception as e:

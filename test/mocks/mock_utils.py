@@ -53,11 +53,23 @@ def setup_mocks():
     sys.modules["common.time_utils"].datetime_format = lambda ts: "2026-01-28 22:00:00"
 
     sys.modules["common.float_utils"] = MagicMock()
+    # rag.utils package
+    mock_rag_utils = mock_package("rag.utils")
+    sys.modules["rag.utils"] = mock_rag_utils
+
+    # These will be populated later or individually
     sys.modules["rag.utils.s3_conn"] = MagicMock()
     sys.modules["rag.utils.minio_conn"] = MagicMock()
     sys.modules["rag.utils.infinity_conn"] = MagicMock()
     sys.modules["rag.utils.azure_spn_conn"] = MagicMock()
     sys.modules["rag.utils.oss_conn"] = MagicMock()
+
+    # Link to rag.utils
+    mock_rag_utils.s3_conn = sys.modules["rag.utils.s3_conn"]
+    mock_rag_utils.minio_conn = sys.modules["rag.utils.minio_conn"]
+    mock_rag_utils.infinity_conn = sys.modules["rag.utils.infinity_conn"]
+    mock_rag_utils.azure_spn_conn = sys.modules["rag.utils.azure_spn_conn"]
+    mock_rag_utils.oss_conn = sys.modules["rag.utils.oss_conn"]
 
     # Database & Storage
     sys.modules["elasticsearch"] = MagicMock()
@@ -207,9 +219,13 @@ def setup_mocks():
     mock_config_utils.decrypt_database_config.side_effect = side_effect_decrypt
     sys.modules["common.config_utils"] = mock_config_utils
 
+    # Mock common.settings
+    mock_settings = MagicMock()
+    sys.modules["common.settings"] = mock_settings
+
     # Mock common package
     # We must preserve submodules we explicitly mocked, but mocking the parent helps with attribute access
-    sys.modules["common"] = MagicMock()
+    sys.modules["common"] = mock_package("common")
     # Link mocked submodules to common mock
     sys.modules["common"].file_utils = sys.modules["common.file_utils"]
     sys.modules["common"].float_utils = sys.modules["common.float_utils"]
@@ -219,6 +235,7 @@ def setup_mocks():
     sys.modules["common"].parser_config_utils = sys.modules["common.parser_config_utils"]
     sys.modules["common"].misc_utils = sys.modules["common.misc_utils"]
     sys.modules["common"].time_utils = sys.modules["common.time_utils"]
+    sys.modules["common"].settings = sys.modules["common.settings"]
 
     # Mock rag.nlp package
     mock_rag_nlp = MagicMock()

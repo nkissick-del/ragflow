@@ -8,17 +8,22 @@ import {
   useGetChatSearchParams,
 } from '@/hooks/use-chat-request';
 import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
-import { IClientConversation } from '@/interfaces/database/chat';
+import {
+  IClientConversation,
+  IReference,
+} from '@/interfaces/database/chat';
 import { buildMessageUuidWithRole } from '@/utils/chat';
-import { useEffect } from 'react';
+import { isEmpty } from 'lodash';
+import { useEffect, useMemo } from 'react';
 import {
   useGetSendButtonDisabled,
   useSendButtonDisabled,
 } from '../../hooks/use-button-disabled';
 import { useCreateConversationBeforeUploadDocument } from '../../hooks/use-create-conversation';
 import { useSendMessage } from '../../hooks/use-send-chat-message';
-import { buildMessageItemReference } from '../../utils';
 import { useShowInternet } from '../use-show-internet';
+
+const EMPTY_REFERENCE: IReference = { chunks: [], doc_aggs: [], total: 0 };
 
 interface IProps {
   controller: AbortController;
@@ -58,6 +63,30 @@ export function SingleChatBox({
 
   const showInternet = useShowInternet();
 
+  const referenceMap = useMemo(() => {
+    const map = new Map<string, IReference>();
+    // The legacy logic in `buildMessageItemReference` skips the first assistant message (likely prologue)
+    // and aligns the remaining messages with the `conversation.reference` array by index.
+    const assistantMessages = derivedMessages
+      ?.filter(
+        (x) =>
+          x.role === MessageType.Assistant &&
+          !x.content.startsWith('**ERROR**:'),
+      )
+      .slice(1);
+
+    assistantMessages?.forEach((msg, index) => {
+      const ref = !isEmpty(msg?.reference)
+        ? msg?.reference
+        : (conversation?.reference ?? [])[index];
+      if (ref) {
+        map.set(msg.id, ref);
+      }
+    });
+
+    return map;
+  }, [derivedMessages, conversation?.reference]);
+
   useEffect(() => {
     const messages = conversation?.message;
     if (Array.isArray(messages)) {
@@ -89,13 +118,7 @@ export function SingleChatBox({
                 nickname={userInfo.nickname}
                 avatar={userInfo.avatar}
                 avatarDialog={currentDialog.icon}
-                reference={buildMessageItemReference(
-                  {
-                    message: derivedMessages,
-                    reference: conversation.reference,
-                  },
-                  message,
-                )}
+                reference={referenceMap.get(message.id) ?? EMPTY_REFERENCE}
                 clickDocumentButton={clickDocumentButton}
                 index={i}
                 removeMessageById={removeMessageById}

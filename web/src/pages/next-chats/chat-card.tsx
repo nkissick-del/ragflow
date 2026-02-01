@@ -1,8 +1,9 @@
 import { HomeCard } from '@/components/home-card';
 import { MoreButton } from '@/components/more-button';
-import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { IDialog } from '@/interfaces/database/chat';
-import { memo } from 'react';
+import { Routes } from '@/routes';
+import { memo, useCallback } from 'react';
+import { useNavigate } from 'react-router';
 import { ChatDropdown } from './chat-dropdown';
 import { useRenameChat } from './hooks/use-rename-chat';
 
@@ -12,7 +13,11 @@ export type IProps = {
 
 // Memoized to prevent unnecessary re-renders when the parent list updates
 export const ChatCard = memo(({ data, showChatRenameModal }: IProps) => {
-  const { navigateToChat } = useNavigatePage();
+  const navigate = useNavigate();
+
+  const handleClick = useCallback(() => {
+    navigate(`${Routes.Chat}/${data?.id}`);
+  }, [navigate, data?.id]);
 
   return (
     <HomeCard
@@ -27,7 +32,7 @@ export const ChatCard = memo(({ data, showChatRenameModal }: IProps) => {
           <MoreButton></MoreButton>
         </ChatDropdown>
       }
-      onClick={navigateToChat(data?.id)}
+      onClick={handleClick}
     />
   );
 });

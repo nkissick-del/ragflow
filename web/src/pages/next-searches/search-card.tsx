@@ -1,7 +1,8 @@
 import { HomeCard } from '@/components/home-card';
 import { MoreButton } from '@/components/more-button';
-import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
-import { memo } from 'react';
+import { Routes } from '@/routes';
+import { memo, useCallback } from 'react';
+import { useNavigate } from 'react-router';
 import { ISearchAppProps } from './hooks';
 import { SearchDropdown } from './search-dropdown';
 
@@ -12,7 +13,11 @@ interface IProps {
 
 // Memoized to prevent unnecessary re-renders when the parent list updates
 export const SearchCard = memo(({ data, showSearchRenameModal }: IProps) => {
-  const { navigateToSearch } = useNavigatePage();
+  const navigate = useNavigate();
+
+  const handleClick = useCallback(() => {
+    navigate(`${Routes.Search}/${data?.id}`);
+  }, [navigate, data?.id]);
 
   return (
     <HomeCard
@@ -25,7 +30,7 @@ export const SearchCard = memo(({ data, showSearchRenameModal }: IProps) => {
           <MoreButton></MoreButton>
         </SearchDropdown>
       }
-      onClick={navigateToSearch(data?.id)}
+      onClick={handleClick}
     />
   );
 });

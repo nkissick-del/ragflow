@@ -86,6 +86,8 @@ export default {
         'Sign up for free to explore top RAG technology. Create knowledge bases and AIs to empower your business.',
       review: 'from 500+ reviews',
       seeAll: 'See all',
+      showPassword: 'Show password',
+      hidePassword: 'Hide password',
     },
     header: {
       knowledgeBase: 'Dataset',

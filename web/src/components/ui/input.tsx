@@ -29,6 +29,7 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
     },
     ref,
   ) => {
+    const { t } = useTranslation();
     const isControlled = value !== undefined;
     const { defaultValue, ...restProps } = props;
     const inputValue = isControlled ? value : defaultValue;
@@ -128,12 +129,16 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
           {isPasswordInput && (
             <button
               type="button"
+              aria-label={
+                showPassword ? t('login.hidePassword') : t('login.showPassword')
+              }
               className="
                 p-2 text-text-secondary
                 absolute border-0 right-1 top-[50%] translate-y-[-50%]
                 dark:peer-autofill/input:text-text-secondary-inverse
                 dark:peer-autofill/input:hover:text-text-primary-inverse
                 dark:peer-autofill/input:focus-visible:text-text-primary-inverse
+                focus-visible:ring-2 focus-visible:ring-accent-primary focus-visible:outline-none rounded-md
               "
               onClick={() => setShowPassword(!showPassword)}
             >

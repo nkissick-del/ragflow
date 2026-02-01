@@ -80,6 +80,8 @@ export default {
       description:
         '免费注册以探索顶级 RAG 技术。 创建知识库和人工智能来增强您的业务',
       review: '来自 500 多条评论',
+      showPassword: '显示密码',
+      hidePassword: '隐藏密码',
     },
     header: {
       knowledgeBase: '知识库',

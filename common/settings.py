@@ -208,9 +208,8 @@ class StorageFactory:
 def init_settings():
     global DATABASE_TYPE, DATABASE
     DATABASE_TYPE = os.getenv("DB_TYPE", "mysql")
-    print(f"DEBUG: init_settings DB_TYPE={DATABASE_TYPE}")
+    logging.debug(f"init_settings DB_TYPE={DATABASE_TYPE}")
     DATABASE = decrypt_database_config(name=DATABASE_TYPE)
-    print(f"DEBUG: init_settings DATABASE={DATABASE}")
 
     global ALLOWED_LLM_FACTORIES, LLM_FACTORY, LLM_BASE_URL
     llm_settings = get_base_config("user_default_llm", {}) or {}

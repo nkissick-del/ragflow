@@ -54,6 +54,7 @@ docker/data
 
 # Exclude local service configuration (user-specific overrides of conf/service_conf.yaml.template)
 conf/service_conf.yaml
+conf/local.service_conf.yaml
 
 # OceanBase data and conf
 docker/oceanbase/conf

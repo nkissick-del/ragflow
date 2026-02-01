@@ -58,6 +58,7 @@ class TestRunner:
 
         # Python interpreter path
         self.python = sys.executable
+        self.test = ""  # Initialize self.test to avoid AttributeError
 
     @staticmethod
     def print_info(message: str) -> None:
@@ -221,9 +222,12 @@ EXAMPLES:
         self.print_info("Running RAGFlow Tests")
         self.print_info("=" * 40)
         self.print_info(f"Test Type: {self.test_type}")
-        self.print_info("Test Directories:")
-        for path in test_paths:
-            self.print_info(f"  - {path.relative_to(self.project_root)}")
+        if self.test:
+            self.print_info(f"Test Path: {self.test}")
+        else:
+            self.print_info("Test Directories:")
+            for path in test_paths:
+                self.print_info(f"  - {path.relative_to(self.project_root)}")
         self.print_info(f"Coverage: {self.coverage}")
         self.print_info(f"Parallel: {self.parallel}")
         self.print_info(f"Verbose: {self.verbose}")

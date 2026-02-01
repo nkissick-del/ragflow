@@ -38,7 +38,7 @@ graph TD
 ```
 
 ### Current LiteLLM Usage
-The system already extensively uses LiteLLM for **33 providers** including:
+The system already extensively uses LiteLLM for **30+ providers**, including:
 - **Cloud Providers**: Bedrock, Azure OpenAI, Google Gemini, Anthropic
 - **Chinese Providers**: Tongyi-Qianwen, ZHIPU-AI, MiniMax, StepFun
 - **Open Source**: Ollama, LMStudio, LocalAI, Xinference
@@ -61,7 +61,7 @@ The system already extensively uses LiteLLM for **33 providers** including:
 
 ### Limitations Observed
 1. **Complex Provider Config**: Some providers (Bedrock IAM roles) still need custom handling
-2. **Chinese Provider Support**: LiteLLM's Chinese provider coverage matches RAGFlow's needs
+2. **Chinese Provider Support**: Chinese provider support requires careful configuration
 3. **Tool Calling**: RAGFlow implements custom tool calling logic that may need adaptation
 
 ## Efficiency Comparison: Current vs. Full LiteLLM
@@ -98,7 +98,7 @@ The system already extensively uses LiteLLM for **33 providers** including:
 ### Short-Term (1-2 Months)
 1. **Consolidate LiteLLM Providers**: Migrate remaining OpenAI-compatible providers to use `litellm.py`
 2. **Standardize Configuration**: Create unified JSON schema for all provider configurations
-3. **Enhance LiteLLM Wrapper**: Add missing features (custom tool calling, Chinese notifications)
+3. **Enhance LiteLLM Wrapper**: Add missing features (custom tool calling (e.g., provider-specific Chinese notifications))
 4. **Benchmark Performance**: Compare latency and cost between implementations
 
 ### Medium-Term (3-6 Months)

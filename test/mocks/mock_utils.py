@@ -8,9 +8,18 @@ def setup_mocks():
     Sets up a comprehensive set of mocks for system modules to allow unit tests to run
     in an environment with missing dependencies.
 
+    This strategy mocks heavy native extensions (e.g., deepdoc dependencies), optional
+    CI-only dependencies, and proprietary/internal libs. It transitions many modules
+    (like xxhash, tenacity, etc.) to use real packages to ensure stable, correct behavior,
+    fewer brittle mocks, and faster local development.
+
+    Contributors should generally prefer using real packages over mocks unless the
+    dependency is difficult to install in test environments, non-deterministic, or
+    strictly CI-related.
+
     Returns:
         dict: A dictionary of the original sys.modules entries that were replaced,
-              to be used with teardown_mocks.
+              to be used with teardown_mocks (which restores the original modules).
     """
     # Save original modules to restore later
     original_modules = sys.modules.copy()

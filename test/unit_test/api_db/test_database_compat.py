@@ -229,7 +229,7 @@ class TestFieldValidation(unittest.TestCase):
 class TestCapabilityDecorators(unittest.TestCase):
     """Test database capability decorators"""
 
-    @patch("api.db.migrations.settings")
+    @patch("api.db.compat.settings")
     def test_requires_decorator_supported_capability(self, mock_settings):
         """Test @requires decorator with supported capability"""
         mock_settings.DATABASE_TYPE = "postgres"
@@ -242,7 +242,7 @@ class TestCapabilityDecorators(unittest.TestCase):
         result = test_migration()
         self.assertEqual(result, "executed")
 
-    @patch("api.db.migrations.settings")
+    @patch("api.db.compat.settings")
     def test_requires_decorator_unsupported_capability(self, mock_settings):
         """Test @requires decorator with unsupported capability"""
         mock_settings.DATABASE_TYPE = "mysql"
@@ -255,7 +255,7 @@ class TestCapabilityDecorators(unittest.TestCase):
         result = test_migration()
         self.assertIsNone(result)
 
-    @patch("api.db.migrations.settings")
+    @patch("api.db.compat.settings")
     def test_db_specific_decorator_matching_db(self, mock_settings):
         """Test @db_specific decorator with matching database"""
         mock_settings.DATABASE_TYPE = "mysql"
@@ -267,7 +267,7 @@ class TestCapabilityDecorators(unittest.TestCase):
         result = mysql_only_migration()
         self.assertEqual(result, "mysql executed")
 
-    @patch("api.db.migrations.settings")
+    @patch("api.db.compat.settings")
     def test_db_specific_decorator_non_matching_db(self, mock_settings):
         """Test @db_specific decorator with non-matching database"""
         mock_settings.DATABASE_TYPE = "postgres"
@@ -280,7 +280,7 @@ class TestCapabilityDecorators(unittest.TestCase):
         result = mysql_only_migration()
         self.assertIsNone(result)
 
-    @patch("api.db.migrations.settings")
+    @patch("api.db.compat.settings")
     def test_requires_with_specific_db_types(self, mock_settings):
         """Test @requires decorator with specific database types"""
         mock_settings.DATABASE_TYPE = "postgres"
@@ -292,7 +292,7 @@ class TestCapabilityDecorators(unittest.TestCase):
         result = postgres_transaction_migration()
         self.assertEqual(result, "transactional")
 
-    @patch("api.db.migrations.settings")
+    @patch("api.db.compat.settings")
     def test_requires_with_list_of_db_types(self, mock_settings):
         """Test @requires decorator with list of allowed databases"""
         mock_settings.DATABASE_TYPE = "mysql"
@@ -341,7 +341,7 @@ class TestIntegrationScenarios(unittest.TestCase):
             # Warning should be informational, not critical
             self.assertNotIn("not compatible", warning.lower())
 
-    @patch("api.db.migrations.settings")
+    @patch("api.db.compat.settings")
     def test_conditional_migration_execution(self, mock_settings):
         """Test that migrations only run on appropriate databases"""
         # Simulate a PostgreSQL-specific migration

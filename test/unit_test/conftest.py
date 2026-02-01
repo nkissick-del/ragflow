@@ -149,7 +149,6 @@ class MockField:
 # sys.modules["playhouse.shortcuts"] = MagicMock()
 # sys.modules["playhouse.migrate"] = MagicMock()
 
-# 0q. Mock xxhash
 # 0q. Mock xxhash - UNMOCKED
 # sys.modules["xxhash"] = MagicMock()
 # sys.modules["itsdangerous"] = MagicMock()
@@ -159,7 +158,6 @@ class MockField:
 # sys.modules["quart_auth"] = MagicMock()
 # sys.modules["quart_auth"].AuthUser = MagicMock
 
-# 0t. Mock tenacity
 # 0t. Mock tenacity - UNMOCKED
 # sys.modules["tenacity"] = MagicMock()
 # sys.modules["langfuse"] = MagicMock()
@@ -248,7 +246,7 @@ sys.modules["google.genai"] = MagicMock()
 # mock_xgb = MagicMock()
 # sys.modules["xgboost"] = mock_xgb
 
-# 5. Mock file_utils which is imported by token_utils
+# 5. Mock file_utils which is imported by token_utils - UNMOCKED
 # mock_file_utils = types.ModuleType("common.file_utils")
 # mock_file_utils.get_project_base_directory = lambda: "/tmp"
 # sys.modules["common.file_utils"] = mock_file_utils

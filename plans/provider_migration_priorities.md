@@ -49,7 +49,7 @@ These have custom implementations that may need migration:
 |----------|------|------------|-------------------|
 | **BaiduYiyan** | `baidu.py` | Medium | Medium |
 | **Google** | `google.py` | Low | High |
-| **Hunyuan** | `hunyuan.py` | Medium | Medium |
+
 | **Spark** (XunFei) | `spark.py` | Low | High |
 | **VolcEngine** | `volcengine.py` | Low | High |
 | **Mistral** | `mistral.py` | Low | High |
@@ -62,7 +62,7 @@ These have custom implementations that may need migration:
 | **BaiChuan** | `baichuan.py` | Medium | Medium |
 | **LocalAI** | `localai.py` | Low | High |
 | **LmStudio** | `lmstudio.py` | Low | High |
-| **OpenAI_APIChat** | `openai.py` | Low | Already in LiteLLM |
+
 | **LocalLLM** | `localllm.py` | High | Low |
 
 ## Migration Priority Assessment Matrix
@@ -84,7 +84,7 @@ These providers have simple implementations and are likely fully supported by Li
 - **Mistral** - Supported via `mistral/` or `openai/` provider
 - **LeptonAI** - OpenAI-compatible
 - **Replicate** - Likely supported
-- **TokenPony** - Unknown, needs investigation
+- **TokenPony** - Status TBD: Needs investigation to confirm LiteLLM support and migration complexity (move to Tier 1 once confirmed)
 - **Xinference** - OpenAI-compatible
 - **LocalAI** - Already supported in LiteLLM (should be using LiteLLM)
 - **LmStudio** - Already supported in LiteLLM (should be using LiteLLM)
@@ -94,7 +94,7 @@ These providers have simple implementations and are likely fully supported by Li
 #### Tier 2: Medium Complexity (Medium Priority)
 These have some custom logic but could potentially use LiteLLM:
 - **BaiduYiyan** - Uses Qianfan SDK, LiteLLM may have `baidu/` provider
-- **Hunyuan** - Tencent provider, may already be in LiteLLM list
+
 - **BaiChuan** - Chinese provider, needs investigation
 - **OpenAI_APIChat** - Already covered by LiteLLM's OpenAI provider
 
@@ -120,13 +120,19 @@ These have complex implementations or may not be well-supported by LiteLLM:
    - Standardize JSON configuration schema
    - Create migration utility for existing deployments
 
-### Week 3-4: Tier 1 Providers
-1. **Google → LiteLLM migration**
-2. **Spark (XunFei) → LiteLLM migration** 
-3. **VolcEngine → LiteLLM migration**
-4. **Mistral → LiteLLM migration**
+3. **Operational Readiness**
+   - **Documentation**: Create "migration guides" and "API docs" for LiteLLM integration
+   - **User Communication**: Schedule deprecation notices and migration timelines
+   - **CI/CD**: Update test suites/deployment pipelines (enable `USE_LITELLM` flag tests) and run integration tests on config migration
+   - **Versioning Strategy**: Define semantic version bumps and compatibility matrix for config -> LiteLLM expected format
 
-**Success Criteria:** All tests pass, no breaking changes for existing users.
+### Week 3-6: Tier 1 Providers (Extended Schedule)
+1. **Google → LiteLLM migration** (Week 3)
+2. **Spark (XunFei) → LiteLLM migration** (Week 4)
+3. **VolcEngine → LiteLLM migration** (Week 5)
+4. **Mistral → LiteLLM migration** (Week 6)
+
+**Success Criteria:** All tests pass, no breaking changes for existing users. (Includes 20–30% contingency buffer for unit/integration/perf test cycles and rollback validation)
 
 ### Month 2: Tier 2 Providers
 1. **BaiduYiyan → LiteLLM investigation**

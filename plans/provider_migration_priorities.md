@@ -121,16 +121,24 @@ These have complex implementations or may not be well-supported by LiteLLM:
    - Create migration utility for existing deployments
 
 3. **Operational Readiness**
-   - **Documentation**: Create "migration guides" and "API docs" for LiteLLM integration
+   - **Documentation**: Create 4 migration guides (Google, Spark, VolcEngine, Mistral) and API docs for LiteLLM integration
    - **User Communication**: Schedule deprecation notices and migration timelines
    - **CI/CD**: Update test suites/deployment pipelines (enable `USE_LITELLM` flag tests) and run integration tests on config migration
    - **Versioning Strategy**: Define semantic version bumps and compatibility matrix for config -> LiteLLM expected format
+
+4. **TokenPony Investigation**
+   - Owner: TBD | Timeline: 3-5 days
+   - Acceptance Criteria: Verify LiteLLM compatibility, estimate complexity.
+   - Outcome: Update status to Tier 1 or document blocker; schedule migration.
 
 ### Week 3-6: Tier 1 Providers (Extended Schedule)
 1. **Google → LiteLLM migration** (Week 3)
 2. **Spark (XunFei) → LiteLLM migration** (Week 4)
 3. **VolcEngine → LiteLLM migration** (Week 5)
 4. **Mistral → LiteLLM migration** (Week 6)
+5. **Additional Tier 1 Migrations** (Month 2)
+   - LeptonAI, Replicate, Xinference, LocalAI, LmStudio (Deferred to Month 2 to prioritize stability of initial batch; see Tier 1 list)
+   - TokenPony (Conditional on investigation results)
 
 **Success Criteria:** All tests pass, no breaking changes for existing users. (Includes 20–30% contingency buffer for unit/integration/perf test cycles and rollback validation)
 

@@ -38,7 +38,7 @@ graph TD
 ```
 
 ### Current LiteLLM Usage
-The system already extensively uses LiteLLM for **30+ providers**, including:
+The system already extensively uses LiteLLM for **33 providers**, including:
 - **Cloud Providers**: Bedrock, Azure OpenAI, Google Gemini, Anthropic
 - **Chinese Providers**: Tongyi-Qianwen, ZHIPU-AI, MiniMax, StepFun
 - **Open Source**: Ollama, LMStudio, LocalAI, Xinference
@@ -98,7 +98,7 @@ The system already extensively uses LiteLLM for **30+ providers**, including:
 ### Short-Term (1-2 Months)
 1. **Consolidate LiteLLM Providers**: Migrate remaining OpenAI-compatible providers to use `litellm.py`
 2. **Standardize Configuration**: Create unified JSON schema for all provider configurations
-3. **Enhance LiteLLM Wrapper**: Add missing features (custom tool calling (e.g., provider-specific Chinese notifications))
+3. **Enhance LiteLLM Wrapper**: Add missing features — custom tool calling; provider-specific notifications (e.g., Chinese)
 4. **Benchmark Performance**: Compare latency and cost between implementations
 
 ### Medium-Term (3-6 Months)

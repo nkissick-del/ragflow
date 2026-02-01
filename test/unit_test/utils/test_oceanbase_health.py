@@ -159,7 +159,7 @@ class TestOBConnectionPerformanceMetrics:
         """Create a mock OBConnection with actual methods.
 
         This method uses introspection to find the original OBConnection class because
-        api.utils.ob_conn.OBConnection is wrapped by a @singleton decorator, making it a function.
+        rag.utils.OBConnection is wrapped by a @singleton decorator, making it a function.
         The original class is stored in the function's closure.
 
         If this breaks (e.g. if the singleton implementation changes), we may need to:

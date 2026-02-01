@@ -138,9 +138,7 @@ PARALLEL_DEVICES: int = 0
 STORAGE_IMPL_TYPE = os.getenv("STORAGE_IMPL", "MINIO")
 _s3_max_retries = int(os.getenv("S3_MAX_RETRIES", "3"))
 if _s3_max_retries < 0:
-    logging.warning(
-        f"Configured S3_MAX_RETRIES ({_s3_max_retries}) is negative; clamping to 0."
-    )
+    logging.warning(f"Configured S3_MAX_RETRIES ({_s3_max_retries}) is negative; clamping to 0.")
 S3_MAX_RETRIES = max(0, _s3_max_retries)
 STORAGE_IMPL = None
 
@@ -162,11 +160,7 @@ def _get_or_create_secret_key():
 
     # Check if there's a configured secret key
     configured_key = get_base_config(RAG_FLOW_SERVICE_NAME, {}).get("secret_key")
-    if (
-        configured_key
-        and configured_key != str(date.today())
-        and len(configured_key) >= 32
-    ):
+    if configured_key and configured_key != str(date.today()) and len(configured_key) >= 32:
         return configured_key
 
     # Generate a new secure key and warn about it
@@ -214,7 +208,9 @@ class StorageFactory:
 def init_settings():
     global DATABASE_TYPE, DATABASE
     DATABASE_TYPE = os.getenv("DB_TYPE", "mysql")
+    print(f"DEBUG: init_settings DB_TYPE={DATABASE_TYPE}")
     DATABASE = decrypt_database_config(name=DATABASE_TYPE)
+    print(f"DEBUG: init_settings DATABASE={DATABASE}")
 
     global ALLOWED_LLM_FACTORIES, LLM_FACTORY, LLM_BASE_URL
     llm_settings = get_base_config("user_default_llm", {}) or {}
@@ -250,37 +246,23 @@ def init_settings():
 
     global CHAT_MDL, EMBEDDING_MDL, RERANK_MDL, ASR_MDL, IMAGE2TEXT_MDL
     chat_entry = _parse_model_entry(llm_default_models.get("chat_model", CHAT_MDL))
-    embedding_entry = _parse_model_entry(
-        llm_default_models.get("embedding_model", EMBEDDING_MDL)
-    )
-    rerank_entry = _parse_model_entry(
-        llm_default_models.get("rerank_model", RERANK_MDL)
-    )
+    embedding_entry = _parse_model_entry(llm_default_models.get("embedding_model", EMBEDDING_MDL))
+    rerank_entry = _parse_model_entry(llm_default_models.get("rerank_model", RERANK_MDL))
     asr_entry = _parse_model_entry(llm_default_models.get("asr_model", ASR_MDL))
-    image2text_entry = _parse_model_entry(
-        llm_default_models.get("image2text_model", IMAGE2TEXT_MDL)
-    )
+    image2text_entry = _parse_model_entry(llm_default_models.get("image2text_model", IMAGE2TEXT_MDL))
 
     global CHAT_CFG, EMBEDDING_CFG, RERANK_CFG, ASR_CFG, IMAGE2TEXT_CFG
     CHAT_CFG = _resolve_per_model_config(chat_entry, LLM_FACTORY, API_KEY, LLM_BASE_URL)
-    EMBEDDING_CFG = _resolve_per_model_config(
-        embedding_entry, LLM_FACTORY, API_KEY, LLM_BASE_URL
-    )
-    RERANK_CFG = _resolve_per_model_config(
-        rerank_entry, LLM_FACTORY, API_KEY, LLM_BASE_URL
-    )
+    EMBEDDING_CFG = _resolve_per_model_config(embedding_entry, LLM_FACTORY, API_KEY, LLM_BASE_URL)
+    RERANK_CFG = _resolve_per_model_config(rerank_entry, LLM_FACTORY, API_KEY, LLM_BASE_URL)
     ASR_CFG = _resolve_per_model_config(asr_entry, LLM_FACTORY, API_KEY, LLM_BASE_URL)
-    IMAGE2TEXT_CFG = _resolve_per_model_config(
-        image2text_entry, LLM_FACTORY, API_KEY, LLM_BASE_URL
-    )
+    IMAGE2TEXT_CFG = _resolve_per_model_config(image2text_entry, LLM_FACTORY, API_KEY, LLM_BASE_URL)
 
     CHAT_MDL = CHAT_CFG.get("model", "") or ""
     EMBEDDING_MDL = EMBEDDING_CFG.get("model", "") or ""
     compose_profiles = os.getenv("COMPOSE_PROFILES", "")
     if "tei-" in compose_profiles:
-        EMBEDDING_MDL = os.getenv(
-            "TEI_MODEL", EMBEDDING_MDL or "BAAI/bge-small-en-v1.5"
-        )
+        EMBEDDING_MDL = os.getenv("TEI_MODEL", EMBEDDING_MDL or "BAAI/bge-small-en-v1.5")
     RERANK_MDL = RERANK_CFG.get("model", "") or ""
     ASR_MDL = ASR_CFG.get("model", "") or ""
     IMAGE2TEXT_MDL = IMAGE2TEXT_CFG.get("model", "") or ""
@@ -303,15 +285,7 @@ def init_settings():
     FEISHU_OAUTH = get_base_config("oauth", {}).get("feishu")
     OAUTH_CONFIG = get_base_config("oauth", {})
 
-    global \
-        DOC_ENGINE, \
-        DOC_ENGINE_INFINITY, \
-        DOC_ENGINE_OCEANBASE, \
-        docStoreConn, \
-        ES, \
-        OB, \
-        OS, \
-        INFINITY
+    global DOC_ENGINE, DOC_ENGINE_INFINITY, DOC_ENGINE_OCEANBASE, docStoreConn, ES, OB, OS, INFINITY
     DOC_ENGINE = os.environ.get("DOC_ENGINE", "elasticsearch")
     DOC_ENGINE_INFINITY = DOC_ENGINE.lower() == "infinity"
     DOC_ENGINE_OCEANBASE = DOC_ENGINE.lower() == "oceanbase"
@@ -434,15 +408,7 @@ def init_settings():
     global SMTP_CONF
     SMTP_CONF = get_base_config("smtp", {})
 
-    global \
-        MAIL_SERVER, \
-        MAIL_PORT, \
-        MAIL_USE_SSL, \
-        MAIL_USE_TLS, \
-        MAIL_USERNAME, \
-        MAIL_PASSWORD, \
-        MAIL_DEFAULT_SENDER, \
-        MAIL_FRONTEND_URL
+    global MAIL_SERVER, MAIL_PORT, MAIL_USE_SSL, MAIL_USE_TLS, MAIL_USERNAME, MAIL_PASSWORD, MAIL_DEFAULT_SENDER, MAIL_FRONTEND_URL
     MAIL_SERVER = SMTP_CONF.get("mail_server", "")
     MAIL_PORT = SMTP_CONF.get("mail_port", 000)
     MAIL_USE_SSL = SMTP_CONF.get("mail_use_ssl", True)
@@ -454,9 +420,7 @@ def init_settings():
         if len(mail_default_sender) >= 2:
             MAIL_DEFAULT_SENDER = (mail_default_sender[0], mail_default_sender[1])
         else:
-            logging.getLogger(__name__).warning(
-                f"Malformed truthy SMTP_CONF.get('mail_default_sender'): {mail_default_sender}. Expected [name, address]. Skipping assignment to MAIL_DEFAULT_SENDER."
-            )
+            logging.getLogger(__name__).warning(f"Malformed truthy SMTP_CONF.get('mail_default_sender'): {mail_default_sender}. Expected [name, address]. Skipping assignment to MAIL_DEFAULT_SENDER.")
     MAIL_FRONTEND_URL = SMTP_CONF.get("mail_frontend_url", "")
 
     global DOC_MAXIMUM_SIZE, DOC_BULK_SIZE, EMBEDDING_BATCH_SIZE
@@ -493,9 +457,7 @@ def _parse_model_entry(entry):
     return {"name": "", "factory": None, "api_key": None, "base_url": None}
 
 
-def _resolve_per_model_config(
-    entry_dict, backup_factory, backup_api_key, backup_base_url
-):
+def _resolve_per_model_config(entry_dict, backup_factory, backup_api_key, backup_base_url):
     name = (entry_dict.get("name") or "").strip()
     m_factory = entry_dict.get("factory") or backup_factory or ""
     m_api_key = entry_dict.get("api_key") or backup_api_key or ""
@@ -514,6 +476,4 @@ def _resolve_per_model_config(
 
 def print_rag_settings():
     logging.info(f"MAX_CONTENT_LENGTH: {DOC_MAXIMUM_SIZE}")
-    logging.info(
-        f"MAX_FILE_COUNT_PER_USER: {int(os.environ.get('MAX_FILE_NUM_PER_USER', 0))}"
-    )
+    logging.info(f"MAX_FILE_COUNT_PER_USER: {int(os.environ.get('MAX_FILE_NUM_PER_USER', 0))}")

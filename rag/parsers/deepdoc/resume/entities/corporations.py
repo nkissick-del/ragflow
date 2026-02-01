@@ -59,7 +59,7 @@ def corpNorm(nm, add_region=True):
     if not nm or (len(nm) < 5 and not regions.is_name(nm[0:2])):
         return nm
 
-    tks = rag_tokenizer.tokenize(nm).split()
+    tks = rag_tokenizer.tokenize(nm)
     reg = [t for i, t in enumerate(tks) if regions.is_name(t) and (t != "中国" or i > 0)]
     nm = ""
     for t in tks:

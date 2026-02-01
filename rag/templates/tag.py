@@ -18,7 +18,7 @@ import re
 import csv
 from copy import deepcopy
 
-from rag.parsers.deepdoc.parser.utils import get_text
+from rag.parsers.deepdoc.utils import get_text
 from rag.templates.q_and_a import Excel
 from rag.nlp import rag_tokenizer
 from common import settings

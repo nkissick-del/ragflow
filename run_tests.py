@@ -21,6 +21,10 @@ import subprocess
 from pathlib import Path
 from typing import List
 
+# Ensure DB_TYPE is set to postgres for tests to avoid KeyError in connection initialization
+if "DB_TYPE" not in os.environ:
+    os.environ["DB_TYPE"] = "postgres"
+
 
 class Colors:
     """ANSI color codes for terminal output"""
@@ -156,7 +160,10 @@ EXAMPLES:
             raise ValueError(f"No test directories found for test type: {self.test_type}")
 
         # Use python -m pytest to ensure virtual environment is used
-        cmd = [self.python, "-m", "pytest"] + [str(p) for p in test_paths]
+        if self.test:
+            cmd = [self.python, "-m", "pytest", self.test]
+        else:
+            cmd = [self.python, "-m", "pytest"] + [str(p) for p in test_paths]
 
         # Add markers
         if self.markers:
@@ -310,6 +317,7 @@ Examples:
             self.coverage = args.coverage
             self.parallel = args.parallel
             self.verbose = args.verbose
+            self.test = args.test
             self.markers = args.markers
 
             return True

@@ -16,7 +16,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 # Check if we're running in Docker (with real database) or locally (need mocks)
-IN_DOCKER = os.path.exists('/ragflow/.venv') or os.environ.get('DOCKER_CONTAINER') == 'true'
+IN_DOCKER = os.path.exists("/ragflow/.venv") or os.environ.get("DOCKER_CONTAINER") == "true"
 
 if not IN_DOCKER:
     # Only mock settings when running locally without real database
@@ -30,7 +30,7 @@ if not IN_DOCKER:
 from peewee import CharField  # noqa: E402
 
 # Now we can import after mocking dependencies
-from api.db.migrations import DatabaseCompat  # noqa: E402
+from api.db.compat import DatabaseCompat  # noqa: E402
 
 
 # Create mock field classes for testing

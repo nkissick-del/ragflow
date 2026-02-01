@@ -1,217 +1,80 @@
-networks:
-  ragflow:
-    name: ragflow
-    driver: bridge
-  postgresql:
-    external: true
-    name: postgresql
-
 services:
-  elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.3
-    container_name: ragflow-elasticsearch
-    environment:
-      - discovery.type=single-node
-      - xpack.security.enabled=true
-      - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
-      - ES_USER=${ES_USER}
-      - ES_JAVA_OPTS=-Xms2g -Xmx2g
-      - cluster.routing.allocation.disk.watermark.low=85%
-      - cluster.routing.allocation.disk.watermark.high=90%
-      - cluster.routing.allocation.disk.watermark.flood_stage=95%
-      - bootstrap.memory_lock=false
-      - xpack.security.http.ssl.enabled=false
-    mem_limit: ${ES_MEM_LIMIT}
-    ulimits:
-      memlock:
-        soft: -1
-        hard: -1
-    volumes:
-      - /mnt/user/appdata/ragflow/elasticsearch:/usr/share/elasticsearch/data:rw
-      - ./.es_netrc:/tmp/.es_netrc:ro
-    ports:
-      - ${ES_PORT}:9200
-    networks:
-      - ragflow
-    restart: unless-stopped
-    healthcheck:
-      test: [ "CMD-SHELL", "curl -fs --netrc-file /tmp/.es_netrc http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s || exit 1" ]
-      interval: 10s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
-    labels:
-      net.unraid.docker.icon: "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/elasticsearch.png"
-      net.unraid.docker.webui: "http://[IP]:${ES_PORT}"
-      net.unraid.docker.shell: "/bin/bash"
-
-  minio:
-    image: minio/minio:RELEASE.2024-11-07T00-52-20Z
-    command: [ "server", "--console-address", ":9001", "/data" ]
-    container_name: ragflow-minio
-    environment:
-      MINIO_ROOT_USER: ${MINIO_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD}
-    ports:
-      - ${MINIO_PORT}:9000
-      - ${MINIO_CONSOLE_PORT}:9001
-    networks:
-      - ragflow
-    volumes:
-      - /mnt/user/appdata/ragflow/minio:/data:rw
-    restart: unless-stopped
-    healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
-      interval: 10s
-      timeout: 10s
-      retries: 15
-    labels:
-      net.unraid.docker.icon: "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/minio.png"
-      net.unraid.docker.webui: "http://[IP]:${MINIO_PORT}"
-      net.unraid.docker.shell: "/bin/sh"
-
-  redis:
-    image: valkey/valkey:8
-    container_name: ragflow-redis
-    command: [ "redis-server", "/usr/local/etc/redis/redis.conf" ]
-    ports:
-      - ${REDIS_PORT}:6379
-    networks:
-      - ragflow
-    volumes:
-      - /mnt/user/appdata/ragflow/redis:/data:rw
-      - ./redis.conf:/usr/local/etc/redis/redis.conf:ro
-    restart: unless-stopped
-    environment:
-      - REDISCLI_AUTH=${REDIS_PASSWORD}
-    healthcheck:
-      test: [ "CMD", "redis-cli", "ping" ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-    labels:
-      net.unraid.docker.icon: "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/redis.png"
-      net.unraid.docker.shell: "/bin/sh"
-
   ragflow:
-    image: ragflow-local:dev
-    sysctls:
-      - net.ipv4.tcp_keepalive_time=30
-      - net.ipv4.tcp_keepalive_intvl=10
-      - net.ipv4.tcp_keepalive_probes=3
-    env_file: .env
+    image: ${RAGFLOW_IMAGE}
     container_name: ragflow-server
-    command: [ "--enable-adminserver" ]
-    mem_limit: ${RAGFLOW_MEM_LIMIT}
+    restart: unless-stopped
     depends_on:
-      minio:
+      docling:
         condition: service_healthy
-      redis:
-        condition: service_healthy
-      elasticsearch:
-        condition: service_healthy
-    ports:
-      - ${SVR_WEB_HTTP_PORT}:80
-      - ${SVR_HTTP_PORT}:9380
-    environment:
-      # Database
-      - DB_TYPE=${DB_TYPE}
-      - POSTGRES_HOST=${POSTGRES_HOST}
-      - POSTGRES_PORT=${POSTGRES_PORT}
-      - POSTGRES_DBNAME=${POSTGRES_DBNAME}
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - MAX_CONNECTIONS=${MAX_CONNECTIONS}
-      - STALE_TIMEOUT=${STALE_TIMEOUT}
-      # Redis
-      - REDIS_HOST=${REDIS_HOST}
-      - REDIS_PASSWORD=${REDIS_PASSWORD}
-      # Minio
-      - MINIO_HOST=${MINIO_HOST}
-      - MINIO_USER=${MINIO_USER}
-      - MINIO_PASSWORD=${MINIO_PASSWORD}
-      # Elasticsearch
-      - ES_HOST=${ES_HOST}
-      - ES_USER=${ES_USER}
-      - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
-      # RAGFlow
-      - DOC_ENGINE=${DOC_ENGINE}
-      - SVR_HTTP_PORT=${SVR_HTTP_PORT}
-      - TZ=${TZ}
-      - DOCLING_BASE_URL=${DOCLING_BASE_URL}
-      - DEVICE=${DEVICE}
+    # Connects to the external Postgres network + internal bridge
     networks:
       - ragflow
       - postgresql
+    # Expose ports to Unraid Host (NPM will proxy to SVR_HTTP_PORT)
+    ports:
+      - "${SVR_HTTP_PORT}:9380"
+    #  - "${SVR_WEB_HTTP_PORT}:80" # Optional: if you want direct access to the web UI without NPM for testing
+    environment:
+      - TZ=${TZ}
+      - DOCLING_BASE_URL=${DOCLING_BASE_URL}
+      # Database Configuration (mapped from .env to service_conf via templating or direct file)
+      # RAGFlow v0.16+ typically uses service_conf.yaml, but we inject some ENVs just in case
+      - POSTGRES_HOST=${POSTGRES_HOST}
+      - POSTGRES_PORT=${POSTGRES_PORT}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - REDIS_HOST=${REDIS_HOST}
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
     volumes:
-      - /mnt/user/appdata/ragflow/deps:/opt/ragflow/.deps:rw
-      - /mnt/user/appdata/ragflow/pip-cache:/root/.cache/pip:rw
-      - /mnt/user/appdata/ragflow/logs:/ragflow/logs:rw
-    #  - /mnt/user/appdata/ragflow/nginx/ragflow.conf:/etc/nginx/conf.d/ragflow.conf:rw
-    #  - /mnt/user/appdata/ragflow/nginx/proxy.conf:/etc/nginx/proxy.conf:rw
-    #  - /mnt/user/appdata/ragflow/nginx/nginx.conf:/etc/nginx/nginx.conf:rw
-    #  - /mnt/user/appdata/ragflow/conf/service_conf.yaml.template:/ragflow/conf/service_conf.yaml.template:rw
-    labels:
-      net.unraid.docker.icon: "http://localhost/appdata/icons/ragflow_icon.png"
-      net.unraid.docker.webui: "http://[IP]:${SVR_WEB_HTTP_PORT}"
-      net.unraid.docker.shell: "/bin/sh"
-    restart: unless-stopped
+      # Data Persistence
+      - /mnt/user/appdata/ragflow/logs:/ragflow/logs
+      # Configuration (Mounting the Nathan specific config as the active one)
+      - ./service_conf.yaml.nathan:/ragflow/conf/service_conf.yaml
+      # Dependencies (optional, for caching)
+      - /mnt/user/appdata/ragflow/deps:/opt/ragflow/.deps
+      - /mnt/user/appdata/ragflow/pip-cache:/root/.cache/pip
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:9380/v1/system/healthz" ]
+      test: ["CMD", "curl", "-f", "http://localhost:9380/v1/system/healthz"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 180s
     deploy:
       resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [ gpu ]
+        limits:
+          memory: ${RAGFLOW_MEM_LIMIT}
 
   docling:
     image: ${DOCLING_IMAGE}
     container_name: ragflow-docling
+    restart: unless-stopped
+    ports:
+      - "${DOCLING_PORT}:5001"
+    environment:
+      - PORT=5001
+      - DOCLING_SERVE_ENABLE_UI=${DOCLING_SERVE_ENABLE_UI}
+      - APP_UID=99   # Unraid "nobody" user usually
+      - APP_GID=100  # Unraid "users" group usually
+    volumes:
+      - /mnt/user/appdata/ragflow/docling/models:/app/models
+    networks:
+      - ragflow
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     deploy:
       resources:
+        limits:
+          memory: ${DOCLING_MEM_LIMIT}
         reservations:
           devices:
             - driver: nvidia
               count: all
-              capabilities: [ gpu ]
-    ports:
-      - ${DOCLING_PORT}:5001
-    environment:
-      - PORT=5001
-      - DOCLING_SERVE_ENABLE_UI=${DOCLING_SERVE_ENABLE_UI}
-      - DOCLING_SERVE_ALLOW_DOWNLOADS=${DOCLING_SERVE_ALLOW_DOWNLOADS}
-      - DOCLING_SERVE_IMAGE_TO_TEXT_MODEL=${DOCLING_SERVE_IMAGE_TO_TEXT_MODEL}
-      - DOCLING_SERVE_PICTURE_CLASSIFICATION_MODEL=${DOCLING_SERVE_PICTURE_CLASSIFICATION_MODEL}
-      - NVIDIA_VISIBLE_DEVICES=all
-      - PUID=${PUID:-99}
-      - PGID=${PGID:-100}
-      - XDG_CACHE_HOME=/app/models/docling
-      - EASYOCR_MODULE_PATH=/app/models/easyocr
-      - HF_HOME=/app/models/huggingface
-      #  - TESSDATA_PREFIX=/app/models/tesseract/
-      - XDG_DATA_HOME=/app/models/.local/share
-    volumes:
-      - /mnt/user/appdata/ragflow/docling/models:/app/models
-    healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:5001/health" ]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
-    mem_limit: ${DOCLING_MEM_LIMIT}
-    labels:
-      net.unraid.docker.icon: "https://raw.githubusercontent.com/DS4SD/docling/main/docs/assets/logo.png"
-      net.unraid.docker.webui: "http://[IP]:${DOCLING_PORT}"
-      net.unraid.docker.shell: "/bin/sh"
-    profiles:
-      - docling
-    networks:
-      - ragflow
-    restart: unless-stopped
+              capabilities: [gpu]
+
+networks:
+  ragflow:
+    driver: bridge
+  postgresql:
+    external: true
+    name: postgresql

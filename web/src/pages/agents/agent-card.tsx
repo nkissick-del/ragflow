@@ -2,11 +2,12 @@ import { HomeCard } from '@/components/home-card';
 import { MoreButton } from '@/components/more-button';
 import { SharedBadge } from '@/components/shared-badge';
 import { Button } from '@/components/ui/button';
-import { AgentCategory } from '@/constants/agent';
-import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
+import { AgentCategory, AgentQuery } from '@/constants/agent';
 import { IFlow } from '@/interfaces/database/agent';
+import { Routes } from '@/routes';
 import { Route } from 'lucide-react';
-import { memo } from 'react';
+import { memo, useCallback } from 'react';
+import { useNavigate } from 'react-router';
 import { AgentDropdown } from './agent-dropdown';
 import { useRenameAgent } from './use-rename-agent';
 
@@ -17,7 +18,13 @@ export type DatasetCardProps = {
 // Memoized to prevent unnecessary re-renders when the parent list updates
 export const AgentCard = memo(
   ({ data, showAgentRenameModal }: DatasetCardProps) => {
-    const { navigateToAgent } = useNavigatePage();
+    const navigate = useNavigate();
+
+    const handleClick = useCallback(() => {
+      const id = data?.id;
+      const category = data.canvas_category as AgentCategory;
+      navigate(`${Routes.Agent}/${id}?${AgentQuery.Category}=${category}`);
+    }, [navigate, data?.id, data.canvas_category]);
 
     return (
       <HomeCard
@@ -35,12 +42,7 @@ export const AgentCard = memo(
           </AgentDropdown>
         }
         sharedBadge={<SharedBadge>{data.nickname}</SharedBadge>}
-        onClick={
-          // data.canvas_category === AgentCategory.DataflowCanvas
-          //   ? navigateToDataflow(data.id)
-          //   :
-          navigateToAgent(data?.id, data.canvas_category as AgentCategory)
-        }
+        onClick={handleClick}
         icon={
           data.canvas_category === AgentCategory.DataflowCanvas && (
             <Button variant={'ghost'} size={'sm'}>

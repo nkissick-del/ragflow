@@ -49,7 +49,6 @@ These have custom implementations that may need migration:
 |----------|------|------------|-------------------|
 | **BaiduYiyan** | `baidu.py` | Medium | Medium |
 | **Google** | `google.py` | Low | High |
-
 | **Spark** (XunFei) | `spark.py` | Low | High |
 | **VolcEngine** | `volcengine.py` | Low | High |
 | **Mistral** | `mistral.py` | Low | High |
@@ -62,7 +61,6 @@ These have custom implementations that may need migration:
 | **BaiChuan** | `baichuan.py` | Medium | Medium |
 | **LocalAI** | `localai.py` | Low | High |
 | **LmStudio** | `lmstudio.py` | Low | High |
-
 | **LocalLLM** | `localllm.py` | High | Low |
 
 ## Migration Priority Assessment Matrix
@@ -121,7 +119,7 @@ These have complex implementations or may not be well-supported by LiteLLM:
    - Create migration utility for existing deployments
 
 3. **Operational Readiness**
-   - **Documentation**: Create 4 migration guides (Google, Spark, VolcEngine, Mistral) and API docs for LiteLLM integration
+   - **Documentation**: Create migration guides for all Tier 1 providers (Google, Spark, VolcEngine, Mistral, LeptonAI, Replicate, Xinference, LocalAI, LmStudio, TokenPony) and API docs for LiteLLM integration. Consider grouping OpenAI-compatible providers (LeptonAI, Xinference, LocalAI, LmStudio) into a single guide.
    - **User Communication**: Schedule deprecation notices and migration timelines
    - **CI/CD**: Update test suites/deployment pipelines (enable `USE_LITELLM` flag tests) and run integration tests on config migration
    - **Versioning Strategy**: Define semantic version bumps and compatibility matrix for config -> LiteLLM expected format

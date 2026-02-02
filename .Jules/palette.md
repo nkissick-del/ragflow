@@ -20,3 +20,7 @@
 ## 2026-02-28 - Keyboard Inaccessible Icons
 **Learning:** Found interactive actions (like "delete tag") implemented as raw SVG icons with `onClick` handlers. These are completely invisible to keyboard users and screen readers.
 **Action:** Always wrap interactive icons in a `<button>` element (or use a `Button` component) with `type="button"`, `aria-label`, and visible focus styles to ensure they are accessible.
+
+## 2025-02-18 - [Accessibility: Chat Input Buttons]
+**Learning:** Toggle buttons in the chat input (Thinking, Internet) were using visual cues only (color change) to indicate state. They needed `aria-pressed` to communicate this to screen readers. Also, several icon-only buttons lacked `aria-label`.
+**Action:** When implementing toggle buttons, always pair the visual state change (CSS class) with `aria-pressed={booleanState}`. For icon-only buttons, check `aria-label` availability in translations.

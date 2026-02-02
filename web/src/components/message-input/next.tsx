@@ -198,6 +198,7 @@ export function NextMessageInput({
                   size="icon"
                   className="-top-1 -right-1 absolute size-4 shrink-0 cursor-pointer rounded-full"
                   onClick={handleRemoveFile(file)}
+                  aria-label={t('common.remove')}
                 >
                   <X className="size-2.5" />
                 </Button>
@@ -241,6 +242,7 @@ export function NextMessageInput({
                   },
                 )}
                 onClick={handleThinkingToggle}
+                aria-pressed={enableThinking}
               >
                 <Atom />
                 <span>Thinking</span>
@@ -257,13 +259,19 @@ export function NextMessageInput({
                   },
                 )}
                 onClick={handleInternetToggle}
+                aria-label={t('chat.enableWebSearch')}
+                aria-pressed={enableInternet}
               >
                 <Globe />
               </Button>
             )}
           </div>
           {sendLoading ? (
-            <Button onClick={stopOutputMessage} className="size-5 rounded-sm">
+            <Button
+              onClick={stopOutputMessage}
+              className="size-5 rounded-sm"
+              aria-label={t('common.cancel')}
+            >
               <CircleStop />
             </Button>
           ) : (

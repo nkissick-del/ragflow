@@ -9,3 +9,7 @@
 ## 2024-05-27 - Frontend: Memoizing React Markdown Props
 **Learning:** `react-markdown` is a heavy component. Passing new object references for props like `components`, `rehypePlugins`, or `remarkPlugins` on every render (e.g., defined inline) forces the library to re-parse the Markdown AST, leading to significant performance penalties.
 **Action:** Always wrap `components`, `rehypePlugins`, and `remarkPlugins` in `useMemo` to ensure referential stability, and extract helper functions outside the component scope where possible.
+
+## 2025-02-20 - Backend: Peewee Query Immutability
+**Learning:** Peewee query methods like `order_by`, `where`, etc. return a new query object and do not modify the existing one in-place. Failure to assign the result leads to ignored clauses (e.g., `query.order_by(...)` does nothing effectively if result is not used).
+**Action:** Always assign the result of Peewee query modifications: `query = query.order_by(...)`.

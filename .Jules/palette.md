@@ -20,3 +20,7 @@
 ## 2026-02-28 - Keyboard Inaccessible Icons
 **Learning:** Found interactive actions (like "delete tag") implemented as raw SVG icons with `onClick` handlers. These are completely invisible to keyboard users and screen readers.
 **Action:** Always wrap interactive icons in a `<button>` element (or use a `Button` component) with `type="button"`, `aria-label`, and visible focus styles to ensure they are accessible.
+
+## 2026-03-01 - State-Dependent Aria Labels
+**Learning:** When a single button toggles between two distinct modes or actions (e.g., entering "Batch Mode" vs. "Select All"), the `aria-label` must update dynamically to reflect the current function. Failing to do so leaves screen reader users confused about the button's purpose in different states.
+**Action:** Use conditional logic for `aria-label` (e.g., `aria-label={isModeActive ? "Action B" : "Action A"}`) to ensure the accessible name always matches the current behavior.

@@ -12,7 +12,14 @@ import {
   useRemoveConversation,
 } from '@/hooks/use-chat-request';
 import { cn } from '@/lib/utils';
-import { Check, PanelLeftClose, Plus, Trash2 } from 'lucide-react';
+import {
+  ArrowLeft,
+  Check,
+  ListChecks,
+  PanelLeftClose,
+  Plus,
+  Trash2,
+} from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useHandleClickConversationCard } from '../hooks/use-click-card';
@@ -127,10 +134,15 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
           ></RAGFlowAvatar>
           <span className="flex-1 truncate">{data.name}</span>
         </div>
-        <PanelLeftClose
-          className="cursor-pointer size-4"
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-6"
           onClick={switchVisible}
-        />
+          aria-label={t('common.close')}
+        >
+          <PanelLeftClose className="size-4" />
+        </Button>
       </section>
       <div className="flex justify-between items-center mb-4 pt-10">
         <div className="flex items-center gap-3">
@@ -147,8 +159,9 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
               size="icon"
               className="size-6"
               onClick={exitSelectionMode}
+              aria-label={t('mcp.exitBulkManage')}
             >
-              <img src="/return2.png" alt="返回" className="h-4 w-4" />
+              <ArrowLeft className="h-4 w-4" />
             </Button>
             <ConfirmDeleteDialog
               onOk={handleBatchDelete}
@@ -163,6 +176,7 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
                 variant="ghost"
                 size="icon"
                 className="size-6 text-state-error"
+                aria-label={t('common.delete')}
               >
                 <Trash2 className="h-4 w-4" />
               </Button>
@@ -176,6 +190,7 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
               size="icon"
               className="size-6"
               onClick={addTemporaryConversation}
+              aria-label={t('common.add')}
             >
               <Plus className="h-4 w-4" />
             </Button>
@@ -184,15 +199,14 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
               size="icon"
               className="size-6"
               onClick={selectionMode ? toggleSelectAll : toggleSelectionMode}
+              aria-label={
+                selectionMode ? t('common.selectAll') : t('mcp.bulkManage')
+              }
             >
               {selectionMode && allSelected ? (
                 <Check className="h-4 w-4" />
               ) : (
-                <img
-                  src="/batch_delete2.png"
-                  alt="批量删除"
-                  className="h-4 w-4"
-                />
+                <ListChecks className="h-4 w-4" />
               )}
             </Button>
           </div>

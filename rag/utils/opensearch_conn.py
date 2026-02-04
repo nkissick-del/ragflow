@@ -154,6 +154,12 @@ class OSConnection(DocStoreConnection):
         bqry = Q("bool", must=[])
         condition["kb_id"] = knowledgebaseIds
         for k, v in condition.items():
+            if k == "id":
+                if isinstance(v, list):
+                    bqry.filter.append(Q("ids", values=v))
+                elif isinstance(v, str):
+                    bqry.filter.append(Q("ids", values=[v]))
+                continue
             if k == "available_int":
                 if v == 0:
                     bqry.filter.append(Q("range", available_int={"lt": 1}))

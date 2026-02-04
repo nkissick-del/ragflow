@@ -758,7 +758,11 @@ class DocMetadataService:
             Dictionary mapping doc_id to meta_fields dict
         """
         try:
-            results = cls._search_metadata(kb_id, condition={"kb_id": kb_id})
+            condition = {"kb_id": kb_id}
+            if doc_ids:
+                condition["id"] = doc_ids
+
+            results = cls._search_metadata(kb_id, condition=condition)
             if not results:
                 return {}
 
@@ -818,7 +822,11 @@ class DocMetadataService:
             return "string"
 
         try:
-            results = cls._search_metadata(kb_id, condition={"kb_id": kb_id})
+            condition = {"kb_id": kb_id}
+            if doc_ids:
+                condition["id"] = doc_ids
+
+            results = cls._search_metadata(kb_id, condition=condition)
             if not results:
                 return {}
 
@@ -997,7 +1005,11 @@ class DocMetadataService:
             return changed
 
         try:
-            results = cls._search_metadata(kb_id, condition=None)
+            condition = {"kb_id": kb_id}
+            if doc_ids:
+                condition["id"] = doc_ids
+
+            results = cls._search_metadata(kb_id, condition=condition)
             if not results:
                 results = []  # Treat as empty list if None
 

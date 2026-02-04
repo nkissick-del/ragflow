@@ -125,6 +125,12 @@ class ESConnection(ESConnectionBase):
         bool_query = Q("bool", must=[])
         condition["kb_id"] = knowledgebase_ids
         for k, v in condition.items():
+            if k == "id":
+                if isinstance(v, list):
+                    bool_query.filter.append(Q("ids", values=v))
+                elif isinstance(v, str):
+                    bool_query.filter.append(Q("ids", values=[v]))
+                continue
             if k == "available_int":
                 if v == 0:
                     bool_query.filter.append(Q("range", available_int={"lt": 1}))

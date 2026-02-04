@@ -61,6 +61,8 @@ export default {
         tokenPlaceholder: 'e.g. eyJhbGciOiJIUzI1Ni...',
       },
       selected: 'Selected',
+      showPassword: 'Show password',
+      hidePassword: 'Hide password',
     },
     login: {
       loginTitle: 'Sign in to your account',

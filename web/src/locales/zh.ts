@@ -55,6 +55,8 @@ export default {
         '提示：Access Key / Secret Key 可留空，以启用 AWS IAM 自动验证。',
       zendeskDescription: '连接 Zendesk，同步工单、文章及其他内容。',
       promptPlaceholder: '请输入或使用 / 快速插入变量。',
+      showPassword: '显示密码',
+      hidePassword: '隐藏密码',
       selected: '已选择',
     },
     login: {

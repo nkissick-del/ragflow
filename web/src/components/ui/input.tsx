@@ -31,6 +31,7 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
   ) => {
     const isControlled = value !== undefined;
     const { defaultValue, ...restProps } = props;
+    const { t } = useTranslation();
     const inputValue = isControlled ? value : defaultValue;
     const [showPassword, setShowPassword] = useState(false);
     const [prefixWidth, setPrefixWidth] = useState(0);
@@ -136,6 +137,11 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
                 dark:peer-autofill/input:focus-visible:text-text-primary-inverse
               "
               onClick={() => setShowPassword(!showPassword)}
+              aria-label={
+                showPassword
+                  ? t('common.hidePassword')
+                  : t('common.showPassword')
+              }
             >
               {showPassword ? (
                 <EyeOff className="size-[1em]" />

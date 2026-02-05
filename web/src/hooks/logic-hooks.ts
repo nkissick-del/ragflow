@@ -17,7 +17,7 @@ import { message } from 'antd';
 import { FormInstance } from 'antd/lib';
 import axios from 'axios';
 import { EventSourceParserStream } from 'eventsource-parser/stream';
-import { has, isEmpty, omit } from 'lodash';
+import { has, isEmpty, omit, throttle } from 'lodash';
 import {
   ChangeEventHandler,
   useCallback,
@@ -389,18 +389,25 @@ export const useScrollToBottom = (
     return Math.abs(scrollTop + clientHeight - scrollHeight) < 25;
   }, [containerRef]);
 
+  const handleScroll = useMemo(
+    () =>
+      throttle(() => {
+        setIsAtBottom(checkIfUserAtBottom());
+      }, 200),
+    [checkIfUserAtBottom],
+  );
+
   useEffect(() => {
     if (!containerRef?.current) return;
     const container = containerRef.current;
 
-    const handleScroll = () => {
-      setIsAtBottom(checkIfUserAtBottom());
-    };
-
     container.addEventListener('scroll', handleScroll);
     handleScroll();
-    return () => container.removeEventListener('scroll', handleScroll);
-  }, [containerRef, checkIfUserAtBottom]);
+    return () => {
+      container.removeEventListener('scroll', handleScroll);
+      handleScroll.cancel();
+    };
+  }, [containerRef, handleScroll]);
 
   // Imperative scroll function
   const scrollToBottom = useCallback(() => {

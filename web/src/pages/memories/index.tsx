@@ -45,6 +45,15 @@ export default function MemoryList() {
       refetchList();
     });
   };
+
+  const handleEditMemory = useCallback(
+    (memory: IMemory) => {
+      setAddOrEditType('edit');
+      showMemoryRenameModal(memory);
+    },
+    [showMemoryRenameModal],
+  );
+
   const openCreateModalFun = useCallback(() => {
     // setIsEdit(false);
     setAddOrEditType('add');
@@ -128,10 +137,7 @@ export default function MemoryList() {
                   <MemoryCard
                     key={x.id}
                     data={x}
-                    showMemoryRenameModal={() => {
-                      setAddOrEditType('edit');
-                      showMemoryRenameModal(x);
-                    }}
+                    showMemoryRenameModal={handleEditMemory}
                   ></MemoryCard>
                 );
               })}

@@ -1,6 +1,7 @@
 import { HomeCard } from '@/components/home-card';
 import { MoreButton } from '@/components/more-button';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
+import { memo } from 'react';
 import { IMemory } from './interface';
 import { MemoryDropdown } from './memory-dropdown';
 
@@ -8,7 +9,9 @@ interface IProps {
   data: IMemory;
   showMemoryRenameModal: (data: IMemory) => void;
 }
-export function MemoryCard({ data, showMemoryRenameModal }: IProps) {
+
+// Memoized to prevent unnecessary re-renders when the parent list updates
+export const MemoryCard = memo(({ data, showMemoryRenameModal }: IProps) => {
   const { navigateToMemory } = useNavigatePage();
 
   return (
@@ -30,4 +33,6 @@ export function MemoryCard({ data, showMemoryRenameModal }: IProps) {
       onClick={navigateToMemory(data?.id)}
     />
   );
-}
+});
+
+MemoryCard.displayName = 'MemoryCard';

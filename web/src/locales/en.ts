@@ -11,6 +11,8 @@ export default {
       deleteThem: 'Are you sure to delete them ?',
       ok: 'Ok',
       cancel: 'Cancel',
+      showPassword: 'Show password',
+      hidePassword: 'Hide password',
       yes: 'Yes',
       no: 'No',
       total: 'Total',

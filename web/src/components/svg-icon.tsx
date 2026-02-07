@@ -29,13 +29,17 @@ const svgModules = import.meta.glob('@/assets/svg/**/*.svg', {
   query: '?url',
 });
 
-const routeList: { name: string; value: string }[] = Object.entries(
-  svgModules,
-).map(([path, module]) => {
-  const name = path.replace(/^.*\/assets\/svg\//, '').replace(/\.[^/.]+$/, '');
-  // @ts-ignore
-  return { name, value: module.default || module };
-});
+const svgMap: Record<string, string> = Object.entries(svgModules).reduce(
+  (acc, [path, module]) => {
+    const name = path
+      .replace(/^.*\/assets\/svg\//, '')
+      .replace(/\.[^/.]+$/, '');
+    // @ts-ignore
+    acc[name] = module.default || module;
+    return acc;
+  },
+  {} as Record<string, string>,
+);
 
 interface IProps extends IconComponentProps {
   name: string;
@@ -46,12 +50,12 @@ interface IProps extends IconComponentProps {
 
 const SvgIcon = memo(
   ({ name, width, height, imgClass, ...restProps }: IProps) => {
-    const ListItem = routeList.find((item) => item.name === name);
+    const value = svgMap[name];
     return (
       <Icon
         component={() => (
           <img
-            src={ListItem?.value}
+            src={value}
             alt=""
             width={width}
             height={height}
